@@ -1,0 +1,1 @@
+These are all the sounds. Much thanks go to SarasSerenityAndSleep for these lovely vocalizations. They are fed into a preprocess.py script for amplification and tempo modification. There is a sqlite db that keeps track of them. 
