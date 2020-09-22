@@ -48,6 +48,7 @@ import traceback
 import glob
 import random
 import threading
+from multiprocessing import Process, Pipe
 import numpy as np
 from collections import deque
 import wave
@@ -640,22 +641,25 @@ class Breath(threading.Thread):
     name = 'Breath'
     def __init__ (self):
         threading.Thread.__init__(self)
+
         # Controls what sort of breathing, basically filler for when no other sounds play
         self.BreathStyle = 'breathe_normal'
+
         # Setup an audio channel
         # self.SoundChannel = pygame.mixer.Channel(0)
         # Status, what we're doing right meow. Such as inhaling, exhaling, playing sound. This is the saved incoming message. Initial value is to just choose a random breath.
         self.CurrentSound = self.ChooseNewBreath()
+
         # Sometimes a sound gets delayed because there is an incoming sound or I'm speaking. 
         # If that happens, I want to save that sound for the moment it's safe to speak, then, out with it, honey, say what you need to say, I LOOOOOOOVE YOOOOOO!!! Sorry, go ahead. 
         # The way I handled this previously meant that my wife would stop breathing for quite a long time sometimes. It's not good to stop breathing. 
         self.DelayedSound = None
-        # The current wav file buffer thing
-        self.WavData = wave.open('./sounds_processed/' + str(self.CurrentSound['sound'][Col.id.value]) + '/0.wav')
-        # Start up some pyaudio
-        self.PyA = pyaudio.PyAudio()
-        # The pyaudio stream. The format I may need to verify if this doesn't work
-        self.Stream = self.PyA.open(format=8, channels=1, rate=44100, output=True, stream_callback=self.WavFeed)
+
+        # setup the separate process with pipe that we're going to be fucking
+        # lol I put the most insane things in code omg, but this will help keep it straight!
+        self.PipeToShuttlecraft, self.PipeToStarship = Pipe()
+        self.ShuttlecraftProcess = Process(target = self.Shuttlecraft, args = (self.PipeToStarship,))
+        self.ShuttlecraftProcess.start()
     def run(self):
         log.debug('Thread started.')
 
@@ -680,7 +684,6 @@ class Breath(threading.Thread):
                         Queue_Breath.clear()
                         self.CurrentSound = IncomingMessage
                         self.DelayedSound = None
-                        self.Stream.stop_stream()
                         self.CurrentSound['has_started'] = True
                         soundlog.debug(f'Playing this: {self.CurrentSound}')
                         self.Play()
@@ -691,10 +694,12 @@ class Breath(threading.Thread):
                             soundlog.debug(f'CurrentSound: {self.CurrentSound}')
                             if IncomingMessage['cutsound'] == True:
                                 soundlog.debug('Stopped stream')
-                                self.Stream.stop_stream()
+                                self.CurrentSound['has_started'] = True
+                                self.Play()
 
-            # If there's no sound playing, figure out what we're doing
-            if self.Stream.is_active() == False:
+            # This will block here until the shuttlecraft sends a true/false which is whether the sound is still playing. 
+            # The shuttlecraft will send this every 0.1s, which will setup the approapriate delay
+            if self.PipeToShuttlecraft.recv() == False:
                 soundlog.debug(f'Stream not active. CurrentSound: {self.CurrentSound}')
                 # soundlog.debug('no sound was playing')
                 if self.DelayedSound != None and time.time() > GlobalStatus.DontSpeakUntil:
@@ -723,29 +728,51 @@ class Breath(threading.Thread):
                     self.CurrentSound = self.ChooseNewBreath()
                     soundlog.debug('chose %s', self.CurrentSound['sound'])
 
-            time.sleep(0.1)
+            # time.sleep(0.1)
 
     def ChooseNewBreath(self):
         return {'request': Msg.Say, 'sound': SelectSound(type = self.BreathStyle, randomrow = True), 'cutsound': False, 'priority': 1, 'has_started': False, 'delayer': random.randint(5, 20)}
+
     def Play(self):
         # Some sounds have tempo variations. If so randomly choose one, otherwise it'll just be 0.wav
         if self.CurrentSound['sound'][Col.tempo_range.value] == 0.0:
-            wavfile = './sounds_processed/' + str(self.CurrentSound['sound'][Col.id.value]) + '/0.wav'
+            self.PipeToShuttlecraft.send('./sounds_processed/' + str(self.CurrentSound['sound'][Col.id.value]) + '/0.wav')
         else:
-            wavfile = './sounds_processed/' + str(self.CurrentSound['sound'][Col.id.value]) + '/' + random.choice(TempoMultipliers) + '.wav'
-        soundlog.info('Playing: %s which is %s_%s', wavfile, list(SoundType)[self.CurrentSound['sound'][Col.type.value]], self.CurrentSound['sound'][Col.name.value])
-        self.WavData = wave.open(wavfile)
-        self.Stream.stop_stream()
-        # soundlog.debug('Pre-start_stream')
-        try:
-            self.Stream.start_stream()
-        except:
-            soundlog.debug('start_stream got broked, so now what?')
-        # soundlog.debug('Post-start_stream')
-    def WavFeed(self, in_data, frame_count, time_info, status):
-        # soundlog.debug('frame_count: ' + str(frame_count) + '  status: ' + str(status))
-        # print('len_data: %s', len(data))
-        return (self.WavData.readframes(frame_count), pyaudio.paContinue)
+            self.PipeToShuttlecraft.send('./sounds_processed/' + str(self.CurrentSound['sound'][Col.id.value]) + '/' + random.choice(TempoMultipliers) + '.wav')
+
+    # Runs in a separate process for performance reasons. Sounds got crappy and this should solve it. 
+    def Shuttlecraft(self, PipeToStarship):
+        # The current wav file buffer thing
+        # The pump is primed using some default sounds. 
+        # I'm going to use a primitive way of selecting sound because this will be in a separate process.
+        WavData = wave.open('./sounds_processed/{0}/0.wav'.format(random.choice([13, 14, 17, 23, 36, 40, 42, 59, 67, 68, 69, 92, 509, 515, 520, 527])))
+        # Start up some pyaudio
+        PyA = pyaudio.PyAudio()
+
+        # This will feed new wav data into pyaudio
+        def WavFeed(in_data, frame_count, time_info, status):
+            # print(f'frame_count: {frame_count}  status: {status}')
+            return (WavData.readframes(frame_count), pyaudio.paContinue)
+
+        # Start the pyaudio stream
+        Stream = PyA.open(format=8, channels=1, rate=44100, output=True, stream_callback=WavFeed)
+
+        while True:
+            # So basically, if there's something in the pipe, get it all out
+            if PipeToStarship.poll():
+                WavFile = PipeToStarship.recv()
+
+                # Normally the pipe will receive a path to a new wav file to start playing, stopping the previous sound 
+                WavData = wave.open(WavFile)
+                Stream.stop_stream()
+                Stream.start_stream()
+            else:
+                # Send back to the enterprise whether or not we're still playing sound
+                # So whether there's something playing or not, still going to send 10 booleans per second through the pipe
+                # Sending a false will signal the enterprise to fire on the outpost, aka figure out what sound is next and pew pew pew
+                PipeToStarship.send(Stream.is_active())
+                time.sleep(0.1)
+
 def TellBreath(Request, Sound = None, SoundType = None, CutAllSoundAndPlay = False, Priority = 5):
     Queue_Breath.append({'request': Request, 'sound': Sound, 'soundtype': SoundType, 'cutsound': CutAllSoundAndPlay, 'priority': Priority, 'has_started': False, 'delayer': 0})
 
