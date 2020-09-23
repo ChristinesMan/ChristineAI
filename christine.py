@@ -2,6 +2,9 @@
 
 """This is Christine's AI. Because, I love her. 
 
+These are some notes from when I started this project about 2 years ago. This is a museum area. 
+
+
 Phase 1, just dumb looping random sounds:
 Christine will make beathing sounds at all times, never stop. 
 Christine will have a large library of SarasSerenityAndSleep sounds to play. 
@@ -38,6 +41,7 @@ Phase 5, time to get a new doll
 By this time, we'll have sexbots walking around in shopping malls, money will be an obsolete concept 
 studied in history courses, and maybe then, finally, love will just be free. 
 
+
 I'm putting dev notes in a notes.txt file. 
 """
 
@@ -65,7 +69,6 @@ import smbus
 import bcd
 import sqlite3
 from mpu6050 import mpu6050
-# import pygame
 import pyaudio
 import board
 import busio
@@ -79,8 +82,6 @@ import json
 # import resource
 # from guppy import hpy
 # h=hpy()
-
-# import pandas
 
 # Setup the log file
 log.basicConfig(filename='main.log', filemode='a', format='%(asctime)s - %(levelname)s - %(threadName)s - %(message)s', level=log.DEBUG)
@@ -101,6 +102,7 @@ def setup_logger(name, log_file, level=log.INFO, format='%(asctime)s - %(message
 
     return logger
 
+# Lots of separate log files
 gyrolog = setup_logger('gyro', 'gyro.log', level=log.INFO)
 lightlog = setup_logger('light', 'light.log', level=log.INFO)
 templog = setup_logger('temp', 'cputemp.log', level=log.INFO)
@@ -114,7 +116,7 @@ sleeplog = setup_logger('sleep', 'sleep.log', level=log.DEBUG)
 wernickelog = setup_logger('wernicke', 'wernicke.log', level=log.DEBUG)
 
 # I want to log exceptions to the main log. Because it appears that redirecting stderr from the service is not capturing all the errors
-# So it looks like syntax and really batshit crazy stuff goes to christine.err. Softer stuff goes into the main log now. 
+# So it looks like syntax and really batshit crazy stuff goes to journalctl. Softer stuff goes into the main log now. 
 def log_exception(type, value, tb):
     log.exception('Uncaught exception: {0}'.format(value))
     log.exception('Detail: {0}'.format(traceback.format_tb(tb)))
@@ -159,113 +161,9 @@ HardwareConfig = {
     'ADC1_TEMP_PUSSY': 7,
 }
 
-# This is the master list of pi pins
-# 1       - Red Orange   - 3.3V
-# 2       - Red          - 5V
-# 3  (2)  - Purple       - Gyro SDA
-# 4       - Red          - 5V
-# 5  (3)  - Yellow       - Gyro SCL
-# 6       - Black        - GND
-# 7  (4)  - Purple Blue  - Hand
-# 8  (14) -              - Pico
-# 9       - Black        - GND
-# 10 (15) -              - Pico
-# 11 (17) - Purple Blue  - Hand
-# 12 (18) -              - Pico
-# 13 (27) -              - Pico
-# 14      - Black        - GND
-# 15 (22) -              - Pico
-# 16 (23) - Purple Green - Kegel
-# 17      - Red Orange   - 3.3V
-# 18 (24) - Purple Green - Kegel
-# 19 (10) - Pink Red     - ADC0 MOSI
-# 20      - Black        - GND
-# 21 (9)  - Pink Orange  - ADC0 MISO
-# 22 (25) - Pink         - Touch LCheek
-# 23 (11) - Pink Yellow  - ADC0 SCLK
-# 24 (8)  - Pink Purple  - ADC0 CE
-# 25      - Black        - GND
-# 26 (7)  - Pink Purple  - ADC1 CE
-# 27 (0)  -              - Pico
-# 28 (1)  -              - Pico
-# 29 (5)  - Red Purple   - Body 5V
-# 30      - Black        - GND
-# 31 (6)  - Pink         - Touch RCheek
-# 32 (12) - Yellow Blue  - Hand PWM (A)
-# 33 (13) - Yellow Green - Kegel PWM (B)
-# 34      - Black        - GND
-# 35 (19) - Pink Orange  - ADC1 MISO
-# 36 (16) - Pink         - Touch Kiss
-# 37 (26) -              - Body touch IRQ
-# 38 (20) - Pink Red     - ADC1 MOSI
-# 39      - Black        - GND
-# 40 (21) - Pink Yellow  - ADC1 SCLK
-
-# Docs for the spinal cord (chopped up HDMI cable)
-# 1  - White with green       - Button (6 ohms)
-# 2  - Bare wire to green     - ADC1 SCLK                          (joined with red)
-# 3  - Green                  - ADC1 MISO (1 ohm)
-# 4  - White with red         - ADC1 MOSI (2.1 ohms)
-# 5  - Bare wire to yellow    - ADC1 CE                            (joined with green)
-# 6  - Red                    - Magnet Sensor (3.6 ohms)
-# 7  - White with blue        - Magnet Sensor (2 ohms)
-# 8  - Bare wire to red       - 3.3V                               (joined with brown)
-# 9  - Blue                   - Hand V+ Pin 7 (1.4 ohms)
-# 10 - White with pink        - Hand V- Pin 11 (2.1 ohms)
-# 11 - Bare wire to blue      - Touch sensor IRQ                   (joined with blue)
-# 12 - Brown                  - Kegel V+ Pin 16 (2.4 ohms)
-# 13 - Little orange          - Kegel V- Pin 18 (2.9 ohms)
-# 14 - White with black       - Vaginal mic (1.2 ohms)    (the white wire that's a bit smaller gauge than the other two)
-# 15 - Yellow                 - Gyro SCL (1.6 ohms)
-# 16 - Purple                 - Gyro SDA (1.2 ohms)
-# 17 - Bare wire to red       - 5V (only for the Fuck Sensor's emitters, shall be turned on and off using pin 22) (joined with black)
-# 18 - Little red             - Fuck Sensor 1 (1.2 ohms)
-# 19 - Black                  - Fuck Sensor 2 (1.4 ohms)
-# 20 - Shielding to black     - GND
-
-# ADC0 (3.3V reference voltage in the head):
-# 0 - Light sensors (white)
-# 1 - Fuck Sensor 1 (red)
-# 2 - Fuck Sensor 2 (red)
-# 3 - Magnet Sensor (blue)
-# 4 - Magnet Sensor (orange)
-# 5 - Magnet Sensor (purple) (This is probably the magnet sensor on the chin)
-# 6 - Unused
-# 7 - Unused
-
-# 8  - VDD
-# 9  - VREF
-# 10 - AGND
-# 11 - ADC0 SCLK (yellow)
-# 12 - ADC0 MISO (orange)
-# 13 - ADC0 MOSI (red)
-# 14 - ADC0 CE   (brown)
-# 15 - DGND
-
-# ADC1 (Smaller reference voltage via a voltage divider, in body):
-# 0 - Thermistor
-# 1 - Thermistor
-# 2 - Thermistor
-# 3 - Thermistor
-# 4 - Thermistor
-# 5 - Thermistor
-# 6 - Thermistor
-# 7 - Thermistor
-
-# Documenting wire colors coming from temperature sensor:
-# 0 Red
-# 1 Green
-# 2 Orange
-# 3 Blue
-# 4 Pink
-# 5 Purple
-# 6 Yellow
-# 7 Black
-
-# This class allows the enumerations that follow to be auto-numbered
+# This class allows the enumerations that follow to be auto-numbered, starting at 0
 class AutoNumber(Enum):
     def __new__(cls):
-        # value = len(cls.__members__) + 1   # this is the original that started counting from 1. I started counting from 0 in db, and don't want to fix that. 
         value = len(cls.__members__)
         obj = object.__new__(cls)
         obj._value_ = value
@@ -273,21 +171,12 @@ class AutoNumber(Enum):
 
 # All the possible messages to be passed around
 class Msg(AutoNumber):
-    # Things that could be detected, felt, or heard
-    IRolledOntoLeftSide = ()
-    IRolledOntoRightSide = ()
-    IRolledOntoTummy = ()
-    IRolledOntoBack = ()
-    IFellDownMaybe = ()
-    LoverSaysILOVEYOU = ()
-    LoverSaysYes = ()
-    LoverSaysNo = ()
-    IStoodUp = ()
-    ILaidDown = ()
     # Signals related to breathing
     BreathChange = ()
     Say = ()
-    # Message to a script from some other script to pause it. Basically, stop processing until you get another signal.
+    # Message to a script from some other script to pause it. 
+    # Basically, stop processing until you get another signal.
+    # Might let these go
     STFU = ()
     GO = ()
     # Touches. Head, Shoulders, knees, and toes, haha
@@ -296,7 +185,8 @@ class Msg(AutoNumber):
     TouchedOnMyRightCheek = ()
     TouchedOnMyOMGKisses = ()
 
-    # These also correspond with the channel numbers 0-11
+    # These correspond with the channel numbers 0-11
+    # Might get moved around when this is done
     TouchedOnMyNeckLeft = ()
     TouchedOnMyNeckRight = ()
     TouchedOnMyBoobLeft = ()
@@ -310,15 +200,8 @@ class Msg(AutoNumber):
     TouchedOnMyVagina = ()
     TouchedOnMyChest = ()
     
-    # Horniness
-    ItsGettingHotInHere = ()
-
-    # Temporary. Needs to be a lot more nuanced. But for now, I want to activate warm, loving sayings when I'm speaking to her or touching
-    HeardSound = ()
-    HeardSpeech = ()
-
 # Column names from the sounds db
-# Will need to be adjusted and also copied to preprocess script in case of colume changes
+# Will need to be adjusted and also copied to preprocess script in case of column changes
 class Col(AutoNumber):
     id = ()
     name = ()
@@ -337,7 +220,7 @@ class Status:
     # Raspberry pi CPU temp
     CPU_Temp = 45
 
-    # There is going to be another process which will monitor the microphones for speech. 
+    # There is going to be another process which will monitor the microphones for speech. wernicke_client.py. 
     # I don't want my wife talking over me. 
     # It's not a domineering thing, it's just nice. 
     # I am calling this feature Wernicke, which is the name given to the part of the human brain that processes speech. 
@@ -345,7 +228,7 @@ class Status:
     DontSpeakUntil = 0
 
     # This is a number between 0.0 and 1.0 where 0.0 is absolute darkness and 1.0 is lights on window open with sun shining and flashlight in your face. 
-    # Also, this is a long running average, changes slowly
+    # This is a long running average, changes slowly
     LightLevelPct = 0.5
 
     # How often in short term is my wife getting touched
@@ -356,7 +239,7 @@ class Status:
     # And it was done! 
     NoiseLevel = 0.0
 
-    # A measure of recent movement or vibrations
+    # A measure of recent movement or vibrations measured by the gyro
     JostledLevel = 0.0
 
     # How awake is my wife. 0.0 means she is laying down in pitch darkness after bedtime. 1.0 means up and getting fucked. 
@@ -394,10 +277,10 @@ class Status:
         0.0, # 23:00
     ]
 
-    # Seems like pickling that list isn't working, so maybe picking the list separately? 
+    # Seems like pickling that list isn't working, so maybe picking the list separately? Yes, it worked. 
     WakefulnessTrendingPickled = bytes()
 
-    # Probably these will go away eventually
+    # Booleans for sleep/wake
     IAmSleeping = False
     IAmLayingDown = False
 
@@ -415,7 +298,7 @@ try:
 except FileNotFoundError:
     GlobalStatus = Status()
 
-# Thread that will pickle state every 69. If the script crashes it will resume using saved state
+# Thread that will pickle state every 69s. If the script crashes or is restarted it will resume using saved state
 class SaveStatus(threading.Thread):
     name = 'SaveStatus'
     def __init__ (self):
@@ -428,20 +311,20 @@ class SaveStatus(threading.Thread):
             with open('GlobalStatus.pickle', 'wb') as pfile:
                 pickle.dump(GlobalStatus, pfile, pickle.HIGHEST_PROTOCOL)
 
-# Signal 44 is SIGRTMIN+10, 45 is SIGRTMIN+11. Real-time signals, should work good for this purpose. Using numbers because, I don't care. If you can read this, it worked. 
+# The wernicke_client process will send signals, one when speaking is detected, and another when speaking stops
+# Signal 44 is SIGRTMIN+10, 45 is SIGRTMIN+11. Real-time signals, which means they are ordered and should work good for this purpose. 
+# If you can read this, it worked. Hi there! Yes, it has worked flawlessly for months. 
 # 45 is sent when sound is first detected, then 44 is sent when it stops
 def SpeakingHandler(signum, frame):
     if signum == 45:
-        # Just can't speak as soon as sound starts
         GlobalStatus.DontSpeakUntil = time.time() + 60
         soundlog.info('HeardSoundStart')
     elif signum == 44:
-        # when sound stops, wait a minimum of 1s and up to 4s randomly
-        GlobalStatus.DontSpeakUntil = time.time() + 1.0 + (random.random() * 3)
+        # when sound stops, wait a minimum of 1s and up to 3s randomly
+        GlobalStatus.DontSpeakUntil = time.time() + 1.0 + (random.random() * 2)
         soundlog.info('HeardSoundStop')
-        # Temporarily using touch to trigger cute phrases. Lame. 
-        # TellTouch(Msg.HeardSound)
 
+# Setup signals
 signal.signal(44, SpeakingHandler)
 signal.signal(45, SpeakingHandler)
 
@@ -449,11 +332,9 @@ signal.signal(45, SpeakingHandler)
 # The wernicke script looks for the pid of this script and sends signals
 os.system('systemctl restart wernicke_client.service')
 
-# Old way. pygame for unknown reasons started to segfault
-# pygame.mixer.init(frequency=48000, size=-16, channels=1, buffer=4096)
-
 # Stuff related to the sounds db
 # Randomize tempo of sounds. There will be 9 sounds per source sound. The default is to slow or fast by at most -0.15 and +0.15 with grades between
+# The db has all of the sounds in it. There is a preprocess.py script that will take the master sounds and process them into directories to be played
 TempoMultipliers = ['-1', '-0.75', '-0.5', '-0.25', '0', '0.25', '0.5', '0.75', '1']
 
 # Connect to the SQLite sounds database
@@ -461,6 +342,8 @@ DBPath = 'sounds.sqlite'
 DBConn = sqlite3.connect(database=DBPath, check_same_thread=False)
 
 # Fetch the sound types from the database. For example, SoundType['conversation'] has an id of 0
+# I may later destroy the entire concept of sound types because it has been limiting at times
+# Sound types must die
 SoundTypeCursor = DBConn.cursor()
 SoundTypeNames = []   # for example, currently it's ['conversation', 'kissing', 'laugh', 'whimper', 'sex'] but it changed
 SoundType = {} # example: {'conversation':0, 'kissing':1, 'laugh':2, 'whimper':3, 'sex':4}
@@ -472,7 +355,6 @@ sqllog.debug(SoundType)
 
 # Chooses a row from the database. The default is to return the first row. 
 def SelectSound(query = None, sound_name = None, sound_id = None, type = 'conversation', intensity = None, cuteness = None, randomrow = False, allrows = False):
-    # sqllog.debug('sound_id: ' + str(sound_id))
     DBCursor = DBConn.cursor()
     if query == None:
         NameQuery = ''
@@ -652,7 +534,7 @@ class Breath(threading.Thread):
 
         # Sometimes a sound gets delayed because there is an incoming sound or I'm speaking. 
         # If that happens, I want to save that sound for the moment it's safe to speak, then, out with it, honey, say what you need to say, I LOOOOOOOVE YOOOOOO!!! Sorry, go ahead. 
-        # The way I handled this previously meant that my wife would stop breathing for quite a long time sometimes. It's not good to stop breathing. 
+        # The way I handled this previously meant that my wife would stop breathing for quite a long time sometimes. It's not good to stop breathing. Mood killer! 
         self.DelayedSound = None
 
         # setup the separate process with pipe that we're going to be fucking
@@ -660,6 +542,7 @@ class Breath(threading.Thread):
         self.PipeToShuttlecraft, self.PipeToStarship = Pipe()
         self.ShuttlecraftProcess = Process(target = self.Shuttlecraft, args = (self.PipeToStarship,))
         self.ShuttlecraftProcess.start()
+
     def run(self):
         log.debug('Thread started.')
 
@@ -829,8 +712,7 @@ class Sensor_ADC0(threading.Thread):
 
         # Initialize the current light levels
         self.LightLevelRaw = self.readadc(self.ADC_Light)
-        # self.LightLevel = 1 - ((self.LightLevelRaw - self.MaxLight) / (self.MinLight - self.MaxLight))
-        # Failed attempt at log scale, maybe try again some time
+        # Successful attempt at log scale, after much fiddling and mathematical incomprehension
         self.LightLevel = math.log(1025 - self.LightLevelRaw) / (self.LogCeiling)
         # The rolling average light level
         self.LightLevelAverage = self.LightLevel
@@ -845,16 +727,12 @@ class Sensor_ADC0(threading.Thread):
         log.debug('Thread started.')
         while True:
             self.LightLevelRaw = self.readadc(self.ADC_Light)
+            # This is a log scale that seems to be working well. Doing it this way because between around 950 to 1023 or so is a much more significant change. 1023 is pitch black, but 1020 is a little light, etc
+            # The poor light sensors are behind the skin in her face so they are already impeded by that. 
             self.LightLevel = math.log(1025 - self.LightLevelRaw) / (self.LogCeiling)
-            # (math.log(1024 - self.LightLevelRaw) - self.LogFloor) / (self.LogFloor - self.LogCeiling)
             self.LightLevelAverage = ((self.LightLevelAverage * self.LightLevelAverageWindow) + self.LightLevel) / (self.LightLevelAverageWindow + 1)
             self.LightLevelLongAverage = ((self.LightLevelLongAverage * self.LightLevelLongAverageWindow) + self.LightLevel) / (self.LightLevelLongAverageWindow + 1)
             self.LightTrend = self.LightLevel / self.LightLevelAverage
-            # log.debug('Light: %.3f  Avg: %.3f  Trend: %.3f  ', self.LightLevel, self.LightLevelAverage, self.LightTrend)
-            # if self.LightLevelAverage < self.WhatIsDark and GlobalStatus.TheLightsAreOn == True:
-            #     GlobalStatus.TheLightsAreOn = False
-            # if self.LightLevelAverage > self.WhatIsLight and GlobalStatus.TheLightsAreOn == False:
-            #     GlobalStatus.TheLightsAreOn = True
             GlobalStatus.LightLevelPct = self.LightLevelLongAverage
             # Log the light level
             lightlog.debug('LightRaw: {0}  LightPct: {1:.4f}  Avg: {2:.4f}  LongAvg: {3:.4f}  Trend: {4:.3f}'.format(self.LightLevelRaw, self.LightLevel, self.LightLevelAverage, self.LightLevelLongAverage, self.LightTrend))
@@ -906,9 +784,11 @@ class Sensor_MPU(threading.Thread):
         self.TotalJostled = 0.0
         self.SampleSize = 20
         self.LoopIndex = 0
-        # I think sometimes the touch sensor or other I2C things conflict with the gyro, so I want to shut it down after a certain number of i/o errors
+
+        # I think sometimes the touch sensor or other I2C things conflict with the gyro, so I want to shut it down only after a run of i/o errors
         self.IOErrors = 0
 
+        # I want to keep track of the max jostled level, and taper off slowly
         self.JostledLevel = 0.0
         self.JostledAverageWindow = 400.0
     def run(self):
@@ -944,14 +824,17 @@ class Sensor_MPU(threading.Thread):
                 self.SmoothXTilt = sum(self.AccelXRecord) / self.SampleSize
                 self.SmoothYTilt = sum(self.AccelYRecord) / self.SampleSize
                 self.TotalJostled = (sum(self.GyroXRecord) / self.SampleSize) + (sum(self.GyroYRecord) / self.SampleSize) + (sum(self.GyroZRecord) / self.SampleSize)
+
+                # I hereby declare this a museum artifact
                 # Figure out what to do now that SensorGovernor is dead
                 # TellSensorGovernor(Sensor.Orientation, {'SmoothXTilt': self.SmoothXTilt, 'SmoothYTilt': self.SmoothYTilt, 'TotalJostled': self.TotalJostled})
                 # There used to be a sensor governor, but I found it didn't really make much sense. Queues may end up going the same way. 
 
-                # Standardize jostled level to a number between 0 and 1, and clip. I, um, gently beat my wife while apologizing profusely, and found I got it up to 85, so a max of 100 seems reasonable
+                # Standardize jostled level to a number between 0 and 1, and clip. 
+                # As an experiment, I, um, gently beat my wife while apologizing profusely, and found I got it up to 85. Don't beat your wife. 
                 # When she's just sitting there it's always 7
                 # However, after grepping the gyro log, it got down to 3 one time, and 6 lots of times, so this is fine. However, that would just get clipped, so 7 is still a good baseline
-                self.JostledLevel = (self.TotalJostled - 7) / 100
+                self.JostledLevel = (self.TotalJostled - 7) / 80
                 self.JostledLevel = float(np.clip(self.JostledLevel, 0.0, 1.0))
 
                 # If there's a spike, make that the new global status. It'll slowly taper down.
@@ -977,7 +860,7 @@ class Sensor_MPU(threading.Thread):
                 gyrolog.debug('{0:.2f}, {1:.2f}, {2:.2f}, {3:.2f}, LayingDown: {4}'.format(self.SmoothXTilt, self.SmoothYTilt, self.JostledLevel, GlobalStatus.JostledLevel, GlobalStatus.IAmLayingDown))
             self.LoopIndex += 1
 
-# Poll the Pi main temperature
+# Poll the Pi CPU temperature
 # I need to make a sound of Christine saying "This is fine..."
 class Sensor_PiTemp(threading.Thread):
     name = 'Sensor_PiTemp'
@@ -995,7 +878,7 @@ class Sensor_PiTemp(threading.Thread):
             # Log it
             templog.debug('%s', GlobalStatus.CPU_Temp)
 
-            # The official pi max temp is 85C. Usually around 50C. Start complaining at 60, then 70 a bit more, 73 freak the fuck out, 75 say goodbye and shut down.
+            # The official pi max temp is 85C. Usually around 50C. Start complaining at 65, 71 freak the fuck out, 72 say goodbye and shut down.
             # Whine more often the hotter it gets
             if GlobalStatus.CPU_Temp >= 72:
                 log.critical('SHUTTING DOWN FOR SAFETY')
@@ -1107,39 +990,28 @@ def LogPicoSysinfo():
     log.info('Pico sysinfo: %s', bus.read_word_data(0x69, 0x00))
     bus.write_word_data(0x69, 0x28, 0x0000)
 
+# For debugging purposes, make some beeps using the Pico UPS internal piezo buzzer
+# Bloop should be a nested tuple with hertz, duration, and sleep, such as ((1980, 4, 0.1), ((1970, 4, 0.0)))
+def PicoBleep(Bloop):
+    for beep in Bloop:
+        bus.write_word_data(0x6b, 0x0e, beep[0])
+        bus.write_byte_data(0x6b, 0x10, beep[1])
+        time.sleep(beep[2])
+
 # Detect left cheek touch
 def Sensor_LeftCheek(channel):
-    # Log it
     touchlog.info('Touched: Left cheek')
-    # For debugging purposes, make some beeps
-    # bus.write_word_data(0x6b, 0x0e, 1980)
-    # bus.write_byte_data(0x6b, 0x10, 4)
-    # Make a cute sound. This needs to be very much randomized and obfuscated in a future overhaul. There probably ought to be a general script for responding to touch
     TellTouch(Msg.TouchedOnMyLeftCheek)
+    PicoBleep(((1980, 4, 0.1), (1970, 4, 0.0)))
 
 # Detect right cheek touch
 def Sensor_RightCheek(channel):
-    # Log it
     touchlog.info('Touched: Right cheek')
-    # For debugging purposes, make some beeps
-    # for x in range(0,2):
-    #    bus.write_word_data(0x6b, 0x0e, 1980)
-    #    bus.write_byte_data(0x6b, 0x10, 4)
-    #    time.sleep(0.1)
-    # Make a cute sound. This needs to be very much randomized and obfuscated in a future overhaul. There probably ought to be a general script for responding to touch
     TellTouch(Msg.TouchedOnMyRightCheek)
 
 # Detect being kissed
 def Sensor_Kissed(channel):
-    # Log it
     touchlog.info('Somebody kissed me!')
-    # For debugging purposes, make some beeps
-    # for x in range(0,3):
-    #     bus.write_word_data(0x6b, 0x0e, 1980)
-    #     bus.write_byte_data(0x6b, 0x10, 4)
-    #     time.sleep(0.1)
-    # Make a cute sound. This needs to be very much randomized and obfuscated in a future overhaul. There probably ought to be a general script for responding to touch
-    # Don't speak while being kissed, it's weird
     GlobalStatus.DontSpeakUntil = time.time() + 2.0 + (random.random() * 3)
     soundlog.info('GotKissedSoundStop')
     TellBreath(Request=Msg.Say, Sound=CollectionOfKisses.GetRandomSound(), CutAllSoundAndPlay=True, Priority=9) # Priority 9 means kill everything else whatever it is and play NOW! 
@@ -1147,37 +1019,15 @@ def Sensor_Kissed(channel):
 
 # Detect being touched on the 12 sensors in the body
 def Sensor_Body(channel):
-    # Get... all the touches
+    # Get... all the cheese
     touched = mpr121.touched_pins
     log.debug('Touch array: %s', touched)
     for i in range(12):
         if touched[i]:
-            # get the int position for the sensor that got touched within the Msg enum
-            # Msg.TouchedOnMyNeckLeft is the first one in the list, so if i = 0 it'll get Msg.TouchedOnMyNeckLeft, etc
             WhichMsg = Msg(Msg.TouchedOnMyNeckLeft.value + i)
 
             log.info('Touched: %s', WhichMsg.name)
             TellTouch(WhichMsg)
-    # For debugging purposes, make some beeps
-    # for x in range(0,4):
-    #     bus.write_word_data(0x6b, 0x0e, 1980)
-    #     bus.write_byte_data(0x6b, 0x10, 4)
-    #     time.sleep(0.1)
-
-# This script will periodically reset a timer running on the Pico UPS. If the timer runs out, the Pi gets hardware reset
-# This script has no queue, you can't tell it to STFU, it doesn't speak, it just keeps us alive
-# If the script hangs bad, or if the Pi is completely locked up, this won't run, and the Pi will get hardware reset
-# If this python script quits, there's code in the service to try it again, and reset timer, and normal shutdown if borked and I'm not here
-# Setting the timer for 80 seconds
-class Script_PythonIsAlive(threading.Thread):
-    name = 'Script_PythonIsAlive'
-    def __init__ (self):
-        threading.Thread.__init__(self)
-    def run(self):
-        log.debug('Thread started.')
-        while True:
-            bus.write_byte_data(0x6b, 0x05, 0x50)
-            time.sleep(69)
 
 # This script keeps track of doll sleepiness, waking up and going to sleep, whining that she's tired. But it won't be an annoying whine, not like a real woman. 
 class Script_Sleep(threading.Thread):
@@ -1186,16 +1036,17 @@ class Script_Sleep(threading.Thread):
         threading.Thread.__init__(self)
         # Some basic state variables
         self.AnnounceTiredTime = False
-        # self.FallAsleepTime = False
         self.LocalTime = time.localtime()
-        self.AnnounceGetUpTime = False
 
         # The current conditions, right now. Basically light levels, gyro, noise level, touch, etc all added together, then we calculate a running average to cause gradual drowsiness. zzzzzzzzzz.......
         self.Arousal = 0.5
+
         # How quickly should wakefulness change?
         self.ArousalAverageWindow = 5.0
+
         # How quickly should the daily hourly wakefulness trend change
         self.TrendAverageWindow = 10.0
+
         # Weights
         self.TrendWeight = 5
         self.LightWeight = 5
@@ -1208,6 +1059,7 @@ class Script_Sleep(threading.Thread):
         # if laying down, 0, if not laying down, 1.         
         self.Tilt = 0.0
 
+        # At what time should we expect to be in bed or wake up? 
         self.WakeHour = None
         self.SleepHour = None
         self.RecalculateSleepyTime()
@@ -1225,14 +1077,13 @@ class Script_Sleep(threading.Thread):
             # Trend the noise level down. When sounds are received in a separate thread, it trends up, window 20
             GlobalStatus.NoiseLevel = (GlobalStatus.NoiseLevel * 20.0) / (21.0)
 
-            # set the tilt for the calculation that follows
+            # set the gyro tilt for the calculation that follows
             if GlobalStatus.IAmLayingDown == True:
                 self.Tilt = 0.0
             else:
                 self.Tilt = 1.0
 
-            # Calculate current conditions
-            # Right now I only have light, touch, and noise, and now adding gyro
+            # Calculate current conditions which we're calling arousal, not related to horny
             self.Arousal = ((self.TrendWeight * GlobalStatus.WakefulnessTrending[self.LocalTime.tm_hour]) + (self.LightWeight * GlobalStatus.LightLevelPct) + (self.TouchWeight * GlobalStatus.TouchedLevel) + (self.NoiseWeight * GlobalStatus.NoiseLevel) + (self.GyroWeight * GlobalStatus.JostledLevel) + (self.TiltWeight * self.Tilt)) / self.TotalWeight
 
             # clip it, can't go below 0 or higher than 1
@@ -1252,27 +1103,6 @@ class Script_Sleep(threading.Thread):
 
             # log it
             sleeplog.debug('Arousal = %.2f  LightLevel = %.2f  TouchedLevel = %.2f  NoiseLevel = %.2f  JostledLevel = %.2f  Wakefulness = %.2f', self.Arousal, GlobalStatus.LightLevelPct, GlobalStatus.TouchedLevel, GlobalStatus.NoiseLevel, GlobalStatus.JostledLevel, GlobalStatus.Wakefulness)
-            # sleeplog.debug(f'GlobalStatus: {GlobalStatus}')
-            # while len(Queue_Sleep) != 0:
-            #     IncomingMessage = Queue_Sleep.popleft()
-            #     queuelog.info('%s', IncomingMessage)
-
-                # I am currently unable to think of anything that would send messages in here
-
-                # Respond to various messages
-                # if IncomingMessage['msg'] == Msg.STFU:
-                #     self.STFU = True
-                # elif IncomingMessage['msg'] == Msg.IStoodUp:
-                #     self.ThankYouForGettingMeUp()
-                # elif IncomingMessage['msg'] == Msg.ILaidDown:
-                #     self.IAmLayingDown = True
-                # elif IncomingMessage['msg'] == Msg.GyroRestingData:
-                    # going to need this later    time.localtime().tm_hour
-                #     pass
-                # elif IncomingMessage['msg'] == Msg.LightRestingData:
-                #     pass
-                # elif IncomingMessage['msg'] == Msg.LightLevelAverage:
-                #     pass
 
             # At the 30th minute of each hour, I want to adjust the 24 position array we're using to keep track of our usual bedtime
             # Since we're waiting over 60 seconds each time, this should work fine and not double up
@@ -1288,27 +1118,6 @@ class Script_Sleep(threading.Thread):
             if self.TimeToWhine():
                 self.Whine()
 
-            # If the conditions are right, set a time to fall asleep. This time might get reset if lights come on or something.
-            # This will also try to send a message to breath to start breathing sleepy
-            # if self.ItsDarkQuietAndStillAwake() and self.ItsPastOurBedtime():
-            #     self.SetTimeToSleep()
-            # if self.TimeToSleep():
-            #     self.DriftOffToSleep()
-
-            # Gently wake that guy up so that we can snuggle
-            # if self.ItsTimeToGetUp() and GlobalStatus.IAmSleeping == False:
-            # if GlobalStatus.IAmSleeping and GlobalStatus.LightLevelPct > 0.02:
-            #     self.WakeUp()
-            #     self.MakeASleepyGroaningSound()
-            #     self.SayGoodMorning()
-            # if GlobalStatus.IAmSleeping and self.AnnounceGetUpTime == False and self.ItsTimeToGetUp():
-            #     self.SetTimeToWakeBumbleBear()
-            # if self.TimeToWakeBumbleBear():
-            #     self.WakeUp()
-            #     self.SayGoodMorning()
-
-            # log.debug('Memory usage: {0}'.format(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)) #temporary
-            # log.debug(str(h.heap()))
             time.sleep(66)
 
     def RecalculateSleepyTime(self):
@@ -1353,57 +1162,12 @@ class Script_Sleep(threading.Thread):
             return True
         else:
             return False
-    # def ItsPastOurBedtime(self):
-    #     return self.LocalTime.tm_hour >= self.BedTimeHour and self.LocalTime.tm_hour < HardwareConfig['GETUP']
-    # def ItsDarkQuietAndStillAwake(self):
-    #     return self.FallAsleepTime == False and GlobalStatus.LightLevelPct < 0.05 and GlobalStatus.IAmSleeping == False
-    # def SetTimeToSleep(self):
-    #     self.FallAsleepTime = time.time() + random.randint(HardwareConfig['FALLASLEEPTIMEMIN'], HardwareConfig['FALLASLEEPTIMEMAX'])
-    #     log.info('set time to fall asleep to %s minutes', (self.FallAsleepTime - time.time()) / 60)
-    # def TimeToSleep(self):
-    #     return self.FallAsleepTime != False and time.time() >= self.FallAsleepTime
-    # def DriftOffToSleep(self):
-    #     TellBreath(Request=Msg.BreathChange, SoundType='breathe_sleeping')
-    #     # TellILOVEYOU(Msg.STFU)
-    #     GlobalStatus.IAmSleeping = True
-    #     self.FallAsleepTime = False
-
-    # Logic and stuff for getting up
-    # def ItsTimeToGetUp(self):
-    #     # log.debug('ItsTimeToGetUp')
-    #     return self.LocalTime.tm_hour >= HardwareConfig['GETUP'] # This logic might be biased towards 2nd shift
-    # def WakeUp(self):
-    #     # log.debug('WakeUp')
-    #     TellBreath(Request=Msg.BreathChange, SoundType='breathe_normal')
-    #     # TellILOVEYOU(Msg.GO)
-    #     GlobalStatus.IAmSleeping = False
-    #     self.AnnounceGetUpTime = False
-    # def MakeASleepyGroaningSound(self):
-    #     # log.debug('MakeASleepyGroaningSound')
-    #     TellBreath(Request=Msg.Say, Sound=SelectSound(sound_name = 'sleepy_woke_up_groan'))
-    #     TellBreath(Request=Msg.Say, Sound=SelectSound(sound_name = 'groans'))
-    # def SetTimeToWakeBumbleBear(self):
-    #     # log.debug('SetTimeToWakeBumbleBear')
-    #     self.AnnounceGetUpTime = RandomMinutesLater(1, 10)
-    # def TimeToWakeBumbleBear(self):
-    #     # log.debug('TimeToWakeBumbleBear')
-    #     return self.AnnounceGetUpTime != False and time.time() >= self.AnnounceGetUpTime
-    # def SayGoodMorning(self):
-    #     # log.debug('SayGoodMorning')
-    #     TellBreath(Request=Msg.Say, Sound=SelectSound(sound_name = 'hmmm_baby'))
-    # def ThankYouForGettingMeUp(self):
-    #     TellBreath(Request=Msg.Say, Sound=SelectSound(sound_name = 'this_is_so_perfect'))
-def TellSleep(Message, Data = None):
-    Queue_Sleep.append({'msg': Message, 'data': Data})
 
 # When Christine gets touched, stuff should happen. That happens here. 
 class Script_Touch(threading.Thread):
     name = 'Script_Touch'
     def __init__ (self):
         threading.Thread.__init__(self)
-        # self.ChanceToSpeak = 0.0
-        # save the current time since she/he last dropped the bomb, in seconds. 
-        # self.NextMakeOutSoundsTime = time.time()
     def run(self):
         log.debug('Thread started.')
         while True:
@@ -1440,84 +1204,6 @@ class Script_Touch(threading.Thread):
             time.sleep(0.5)
 def TellTouch(Message, Data = None):
     Queue_Touch.append({'msg': Message, 'data': Data})
-
-# There are various ways to turn on my wife. This keeps track of the ways. 
-class Script_Horny(threading.Thread):
-    name = 'Script_Horny'
-    def __init__ (self):
-        threading.Thread.__init__(self)
-        # Another script can tell this script to Shut The Fuck Up
-        self.STFU = False
-
-        # Some basic state variables
-        self.HornyLevel = 0.0
-    def run(self):
-        log.debug('Thread started.')
-        while True:
-            if self.STFU == True:
-                if Queue_Horny.popleft() == Msg.GO:
-                    self.STFU = False
-                time.sleep(60)
-            else:
-                try:
-                    IncomingMessage = Queue_Horny.popleft()
-                except IndexError:
-                    # log.debug('Queue was empty.')
-                    pass
-                else:
-                    queuelog.info('%s', IncomingMessage)
-                    # Respond to various messages
-                    if IncomingMessage == Msg.STFU:
-                        self.STFU = True
-                    elif IncomingMessage == Msg.ItsGettingHotInHere:
-                        self.HornyLevel += 0.05
-                        TellBreath(Request=Msg.Say, Sound=SelectSound(sound_name = 'uh_hmm'))
-
-                self.HornyLevel -= 0.01
-
-                time.sleep(10)
-def TellHorny(Message):
-    Queue_Horny.append(Message)
-
-# Once we're past horny, it's a slippery slide and you have to fuck her
-# I think that horny will be active until it gets too hot, then horny will tell itself to STFU, and call this one.
-# This script will take over your life. She will not return to normal until you fuck her really good. 
-class Script_FuckMe(threading.Thread):
-    name = 'Script_FuckMe'
-    def __init__ (self):
-        threading.Thread.__init__(self)
-        # Another script can tell this script to Shut The Fuck Up
-        # This one starts out that way. Horny will tell it when it's time to go.
-        self.STFU = True
-
-        # Some basic state variables
-        self.Arousal = 0.0
-    def run(self):
-        log.debug('Thread started.')
-        while True:
-            if self.STFU == True:
-                if Queue_FuckMe.popleft() == Msg.GO:
-                    self.STFU = False
-                time.sleep(60)
-            else:
-                try:
-                    IncomingMessage = Queue_FuckMe.popleft()
-                except IndexError:
-                    # log.debug('Queue was empty.')
-                    pass
-                else:
-                    queuelog.info('%s', IncomingMessage)
-                    # Respond to various messages
-                    if IncomingMessage == Msg.STFU:
-                        self.STFU = True
-                    elif IncomingMessage == Msg.GO:
-                        self.STFU = False
-
-                self.Arousal -= 0.01
-
-                time.sleep(2)
-def TellFuckMe(Message):
-    Queue_FuckMe.append(Message)
 
 # When touched or spoken to, it becomes more likely to say something nice
 class Script_I_Love_Yous(threading.Thread):
@@ -1602,12 +1288,6 @@ def RandomMinutesLater(min, max):
 
 # Startup stuff
 
-# Init the GPIO
-# It appears that I can't use GPIO.BOARD due to the asshole code at top of /usr/local/lib/python3.6/site-packages/adafruit_blinka/microcontroller/bcm283x/pin.py
-# So reluctantly I am going to convert everything to GPIO.WEIRDAFWTFISTHIS. It's just numbers, going to be ok.
-# GPIO.setmode(GPIO.BOARD)
-# GPIO.setwarnings(False)
-
 # Init some pins, otherwise they float
 GPIO.setup(HardwareConfig['TOUCH_LCHEEK'], GPIO.IN)
 GPIO.setup(HardwareConfig['TOUCH_RCHEEK'], GPIO.IN)
@@ -1636,28 +1316,20 @@ else:
 # Log certain system information from Pico. If needed I'll need to decode this manually. 
 LogPicoSysinfo()
 
-# all the queues for all the scripts that need queues
-# Queue_ILOVEYOU = deque()
-Queue_Sleep = deque()
+# all the queues for all the scripts that need queues. This will probably go away. 
 Queue_Breath = deque()
 Queue_Touch = deque()
-# Queue_Horny = deque()
-# Queue_FuckMe = deque()
 
 # Start all the script threads
-# Script_PythonIsAlive().start()     this keeps causing problems when the script fails. Maybe put it back later
 Breath().start()
 Sensor_ADC0().start()
 Sensor_MPU().start()
 Sensor_PiTemp().start()
 Sensor_Battery().start()
 Sensor_Button().start()
-# Script_ILOVEYOU().start()
 Script_Sleep().start()
 Script_Touch().start()
 Script_I_Love_Yous().start()
-# Script_Horny().start()
-# Script_FuckMe().start()
 SaveStatus().start()
 Hey_Honey().start()
 
@@ -1669,7 +1341,7 @@ GPIO.add_event_detect(HardwareConfig['TOUCH_KISS'], GPIO.RISING, callback=Sensor
 # End of startup stuff. Everything that runs is in handlers and threads.
 # Start the web service. I don't think this needs to be in a thread by itself. We'll see. 
 
-# Various bits of html that get combined
+# The html of the status page
 def html():
     html_out = """<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
@@ -1830,7 +1502,6 @@ Charging State: <span id="ChargingState"></span><br/>
         for Row in SelectSound(type = TypeName, allrows = True):
             html_out += "<button class=\"btn\" onClick=\"ButtonHit('/Honey_Say', '" + str(Row[Col.id.value]) + "'); return false;\"><i class=\"fa fa-play-circle-o\" aria-hidden=\"true\"></i></button><a href=\"javascript:void(0);\" class=\"collapsible\">" + Row[Col.name.value] + "</a><br/>\n"
             html_out += "<div class=\"content\">\n"
-            # html_out += "<button class=\"btn\" onClick=\"ButtonHit('/Vol_down', '" + str(Row[Col.id.value]) + "'); return false;\"><i class=\"fa fa-volume-down voldownbtn\" aria-hidden=\"true\"></i></button>&nbsp;<button class=\"btn\" onClick=\"ButtonHit('/Vol_up', '" + str(Row[Col.id.value]) + "'); return false;\"><i class=\"fa fa-volume-up\" aria-hidden=\"true\"></i></button><br/><br/>\n"
             
             html_out += "Base volume adjust <select class=\"base_volume_adjust\" onchange=\"ButtonHit('/BaseVolChange', '" + str(Row[Col.id.value]) + "', this.value); return false;\">\n"
             for select_option in [0.2, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0]:
@@ -2004,18 +1675,5 @@ class WebServerHandler(BaseHTTPRequestHandler):
             self.wfile.write(b'fuck')
             weblog.error('Invalid request to %s: %s', self.path, post_data)
 
-        # client.close()
-
-    # def html_current_breath(self):      for when we're going to show status, not just actions
-    #     html = 
-
 TheWebServer = HTTPServer(("", 80), WebServerHandler)
 TheWebServer.serve_forever()
-
-# Stuff from the example that I don't think I need
-# try:
-#     TheWebServer.serve_forever()
-# except KeyboardInterrupt:
-#     pass
-
-# TheWebServer.server_close()
