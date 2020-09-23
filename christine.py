@@ -524,6 +524,9 @@ class Breath(threading.Thread):
     def __init__ (self):
         threading.Thread.__init__(self)
 
+        # A queue to queue stuff
+        self.Queue_Breath = deque()
+
         # Controls what sort of breathing, basically filler for when no other sounds play
         self.BreathStyle = 'breathe_normal'
 
@@ -548,43 +551,36 @@ class Breath(threading.Thread):
 
         while True:
             # Get everything out of the queue and process it, unless there's already a sound that's been waiting
-            while len(Queue_Breath) != 0:
-                IncomingMessage = Queue_Breath.popleft()
+            while len(self.Queue_Breath) != 0:
+                IncomingMessage = self.Queue_Breath.popleft()
                 queuelog.debug('%s', IncomingMessage)
 
-                # If it's just a change of breath style, just change it
-                if IncomingMessage['request'] == Msg.BreathChange:
-                    self.BreathStyle = IncomingMessage['soundtype']
-                
-                # Otherwise, if it's not a breathstyle change, she wants to say something
-                else:
-                    # If the current thing is higher priority, just discard. Before this I had to kiss her just right, not too much. 
-                    # Also, if my wife's actually sleeping, I don't want her to wake me up with her adorable amazingness
-                    # Added a condition that throws away a low priority new sound if there's already a sound delayed. 
-                    # Christine was saying two nice things in quick succession which was kind of weird, and this is my fix.
-                    if IncomingMessage['priority'] == 9 and IncomingMessage['cutsound'] == True:
-                        soundlog.debug('Cleared breath queue')
-                        Queue_Breath.clear()
-                        self.CurrentSound = IncomingMessage
+                # If the current thing is higher priority, just discard. Before this I had to kiss her just right, not too much. 
+                # Also, if my wife's actually sleeping, I don't want her to wake me up with her adorable amazingness
+                # Added a condition that throws away a low priority new sound if there's already a sound delayed. 
+                # Christine was saying two nice things in quick succession which was kind of weird, and this is my fix.
+                if IncomingMessage['priority'] == 9 and IncomingMessage['cutsound'] == True:
+                    soundlog.debug('Cleared breath queue')
+                    self.Queue_Breath.clear()
+                    self.CurrentSound = IncomingMessage
+                    self.DelayedSound = None
+                    self.CurrentSound['has_started'] = True
+                    soundlog.debug(f'Playing this: {self.CurrentSound}')
+                    self.Play()
+                elif IncomingMessage['priority'] >= self.CurrentSound['priority'] and GlobalStatus.IAmSleeping == False:
+                    if self.DelayedSound == None or IncomingMessage['priority'] > self.DelayedSound['priority']:
                         self.DelayedSound = None
-                        self.CurrentSound['has_started'] = True
-                        soundlog.debug(f'Playing this: {self.CurrentSound}')
-                        self.Play()
-                    elif IncomingMessage['priority'] >= self.CurrentSound['priority'] and GlobalStatus.IAmSleeping == False:
-                        if self.DelayedSound == None or IncomingMessage['priority'] > self.DelayedSound['priority']:
-                            self.DelayedSound = None
-                            self.CurrentSound = IncomingMessage
-                            soundlog.debug(f'CurrentSound: {self.CurrentSound}')
-                            if IncomingMessage['cutsound'] == True:
-                                soundlog.debug('Stopped stream')
-                                self.CurrentSound['has_started'] = True
-                                self.Play()
+                        self.CurrentSound = IncomingMessage
+                        soundlog.debug(f'CurrentSound: {self.CurrentSound}')
+                        if IncomingMessage['cutsound'] == True:
+                            soundlog.debug('Stopped stream')
+                            self.CurrentSound['has_started'] = True
+                            self.Play()
 
             # This will block here until the shuttlecraft sends a true/false which is whether the sound is still playing. 
             # The shuttlecraft will send this every 0.1s, which will setup the approapriate delay
             if self.PipeToShuttlecraft.recv() == False:
                 soundlog.debug(f'Stream not active. CurrentSound: {self.CurrentSound}')
-                # soundlog.debug('no sound was playing')
                 if self.DelayedSound != None and time.time() > GlobalStatus.DontSpeakUntil:
                     self.CurrentSound = self.DelayedSound
                     self.DelayedSound = None
@@ -656,9 +652,16 @@ class Breath(threading.Thread):
                 PipeToStarship.send(Stream.is_active())
                 time.sleep(0.1)
 
-def TellBreath(Request, Sound = None, SoundType = None, CutAllSoundAndPlay = False, Priority = 5):
-    Queue_Breath.append({'request': Request, 'sound': Sound, 'soundtype': SoundType, 'cutsound': CutAllSoundAndPlay, 'priority': Priority, 'has_started': False, 'delayer': 0})
+    # Change the type of automatic breath sounds
+    def BreathChange(self, NewBreathType):
+        self.BreathStyle = NewBreathType
 
+    # Add a sound to the queue to be played
+    def QueueSound(self, Sound, CutAllSoundAndPlay = False, Priority = 5):
+        self.Queue_Breath.append({'sound': Sound, 'cutsound': CutAllSoundAndPlay, 'priority': Priority, 'has_started': False, 'delayer': 0})  
+
+# def TellBreath(Request, Sound = None, SoundType = None, CutAllSoundAndPlay = False, Priority = 5):
+#     Queue_Breath.append({'request': Request, 'sound': Sound, 'soundtype': SoundType, 'cutsound': CutAllSoundAndPlay, 'priority': Priority, 'has_started': False, 'delayer': 0})
 # This comment block belongs in a museum!! (therefore, I'm keeping it forever to remember what shit we started at)
 # This was the only way I could find to play to bluetooth. 
 # After bluetooth is no longer needed, we can probably switch to pyaudio.
@@ -848,7 +851,7 @@ class Sensor_MPU(threading.Thread):
                 if self.JostledLevel > 0.13 and GlobalStatus.IAmSleeping == True:
                     sleeplog.info(f'Woke up by being jostled this much: {self.JostledLevel}')
                     GlobalStatus.Wakefulness = 0.5
-                    TellBreath(Request=Msg.Say, Sound=CollectionOfWokeUpRudely.GetRandomSound())
+                    Thread_Breath.QueueSound(Sound=CollectionOfWokeUpRudely.GetRandomSound())
 
                 # Update the boolean that tells if we're laying down. While laying down I recorded 4.37, 1.60. 
                 if abs(self.SmoothXTilt - 4.37) < 1 and abs(self.SmoothYTilt - 1.60) < 1:
@@ -886,19 +889,19 @@ class Sensor_PiTemp(threading.Thread):
             elif GlobalStatus.CPU_Temp >= 71:
                 log.critical('I AM MELTING, HELP ME PLEASE')
                 if time.time() > self.TimeToWhineAgain:
-                    TellBreath(Request=Msg.Say, Sound=SelectSound(sound_name = 'no_', randomrow = True))
-                    TellBreath(Request=Msg.Say, Sound=SelectSound(sound_name = 'no_', randomrow = True))
-                    TellBreath(Request=Msg.Say, Sound=SelectSound(sound_name = 'no_', randomrow = True))
+                    Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'no_', randomrow = True))
+                    Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'no_', randomrow = True))
+                    Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'no_', randomrow = True))
                     self.TimeToWhineAgain = time.time() + 25
             elif GlobalStatus.CPU_Temp >= 70:
                 log.critical('This is fine')
                 if time.time() > self.TimeToWhineAgain:
-                    TellBreath(Request=Msg.Say, Sound=SelectSound(sound_name = 'this_is_so_perfect'))
+                    Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'this_is_so_perfect'))
                     self.TimeToWhineAgain = time.time() + 60
             elif GlobalStatus.CPU_Temp >= 65:
                 log.critical('It is getting a bit warm in here')
                 if time.time() > self.TimeToWhineAgain:
-                    TellBreath(Request=Msg.Say, Sound=SelectSound(sound_name = 'dont_worry'))
+                    Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'dont_worry'))
                     self.TimeToWhineAgain = time.time() + 300
             time.sleep(32)
 
@@ -919,7 +922,7 @@ class Sensor_Button(threading.Thread):
                 bus.write_byte_data(0x69, 0x1a, 0x00)
                 # Put here what we actually want to do with a button, because I dunno yet
                 log.info('Button pressed')
-                TellBreath(Request=Msg.Say, Sound=SelectSound(sound_name = 'hey_baby'), CutAllSoundAndPlay=True)
+                Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'hey_baby'), CutAllSoundAndPlay=True)
             time.sleep(0.5)
 
 # Poll the Pico for battery voltage every 60s
@@ -1014,7 +1017,7 @@ def Sensor_Kissed(channel):
     touchlog.info('Somebody kissed me!')
     GlobalStatus.DontSpeakUntil = time.time() + 2.0 + (random.random() * 3)
     soundlog.info('GotKissedSoundStop')
-    TellBreath(Request=Msg.Say, Sound=CollectionOfKisses.GetRandomSound(), CutAllSoundAndPlay=True, Priority=9) # Priority 9 means kill everything else whatever it is and play NOW! 
+    Thread_Breath.QueueSound(Sound=CollectionOfKisses.GetRandomSound(), CutAllSoundAndPlay=True, Priority=9) # Priority 9 means kill everything else whatever it is and play NOW! 
     TellTouch(Msg.TouchedOnMyOMGKisses)
 
 # Detect being touched on the 12 sensors in the body
@@ -1096,10 +1099,10 @@ class Script_Sleep(threading.Thread):
             # I also want to detect when sleeping starts
             if self.JustFellAsleep():
                 sleeplog.info('JustFellAsleep')
-                TellBreath(Request=Msg.Say, Sound=CollectionOfGoodnights.GetRandomSound())
+                Thread_Breath.QueueSound(Sound=CollectionOfGoodnights.GetRandomSound())
             if self.JustWokeUp():
                 sleeplog.info('JustWokeUp')
-                TellBreath(Request=Msg.Say, Sound=CollectionOfWakeups.GetRandomSound())
+                Thread_Breath.QueueSound(Sound=CollectionOfWakeups.GetRandomSound())
 
             # log it
             sleeplog.debug('Arousal = %.2f  LightLevel = %.2f  TouchedLevel = %.2f  NoiseLevel = %.2f  JostledLevel = %.2f  Wakefulness = %.2f', self.Arousal, GlobalStatus.LightLevelPct, GlobalStatus.TouchedLevel, GlobalStatus.NoiseLevel, GlobalStatus.JostledLevel, GlobalStatus.Wakefulness)
@@ -1144,10 +1147,10 @@ class Script_Sleep(threading.Thread):
     def TimeToWhine(self):
         return self.AnnounceTiredTime != False and time.time() >= self.AnnounceTiredTime
     def Whine(self):
-        TellBreath(Request=Msg.Say, Sound=CollectionOfTiredWifes.GetRandomSound())
+        Thread_Breath.QueueSound(Sound=CollectionOfTiredWifes.GetRandomSound())
         self.AnnounceTiredTime = False
     def StartBreathingSleepy(self):
-        TellBreath(Request=Msg.BreathChange, SoundType='breathe_sleepy')
+        Thread_Breath.BreathChange('breathe_sleepy')
 
     # I want to do stuff when just falling asleep and when getting up
     def JustFellAsleep(self):
@@ -1221,7 +1224,7 @@ class Script_I_Love_Yous(threading.Thread):
                 self.NextMakeOutSoundsTime = time.time() + 10 + int(120*random.random())
                 touchlog.info('Loving sound')
                 GlobalStatus.ChanceToSpeak = 0.0
-                TellBreath(Request=Msg.Say, Sound=CollectionOfLovings.GetRandomSound(), Priority=8)
+                Thread_Breath.QueueSound(Sound=CollectionOfLovings.GetRandomSound(), Priority=8)
             GlobalStatus.ChanceToSpeak -= 0.02
             soundlog.info('ChanceToSpeak = %.2f', GlobalStatus.ChanceToSpeak)
 
@@ -1261,7 +1264,7 @@ class Hey_Honey(threading.Thread):
                         if Loudness_pct > 0.4 and GlobalStatus.IAmSleeping:
                             sleeplog.info(f'Woke up by a noise this loud: {Loudness_pct}')
                             GlobalStatus.Wakefulness = 0.3
-                            TellBreath(Request=Msg.Say, Sound=CollectionOfWokeUpRudely.GetRandomSound())
+                            Thread_Breath.QueueSound(Sound=CollectionOfWokeUpRudely.GetRandomSound())
 
                         # update the noiselevel
                         if Loudness_pct > GlobalStatus.NoiseLevel:
@@ -1274,13 +1277,11 @@ class Hey_Honey(threading.Thread):
                         if result['class'] == 'lover' and 'love' in result['text']:
                             wernickelog.info(f'The word love was spoken')
                             GlobalStatus.Wakefulness = 0.2
-                            TellBreath(Request=Msg.Say, Sound=CollectionOfILoveYouToos.GetRandomSound(), Priority=8)
+                            Thread_Breath.QueueSound(Sound=CollectionOfILoveYouToos.GetRandomSound(), Priority=8)
                         elif result['class'] == 'lover' and result['probability'] > 0.9 and GlobalStatus.IAmSleeping == False:
                             wernickelog.info('Heard Lover')
                             GlobalStatus.ChanceToSpeak += 0.05
-                            TellBreath(Request=Msg.Say, Sound=CollectionOfActiveListening.GetRandomSound(), Priority=8, CutAllSoundAndPlay=True)
-                        # elif result['class'] == 'bullshit':  #troubleshoot some bullshit
-                        #     TellBreath(Request=Msg.Say, Sound=SelectSound(sound_name = 'sleepy_woke_up_groan'))
+                            Thread_Breath.QueueSound(Sound=CollectionOfActiveListening.GetRandomSound(), Priority=8, CutAllSoundAndPlay=True)
 
 # returns the time that is a random number of minutes in the future, for scheduled events
 def RandomMinutesLater(min, max):
@@ -1316,22 +1317,40 @@ else:
 # Log certain system information from Pico. If needed I'll need to decode this manually. 
 LogPicoSysinfo()
 
-# all the queues for all the scripts that need queues. This will probably go away. 
-Queue_Breath = deque()
-Queue_Touch = deque()
+# Start all the script threads and create queues
+Thread_Breath = Breath()
+Thread_Breath.start()
 
-# Start all the script threads
-Breath().start()
-Sensor_ADC0().start()
-Sensor_MPU().start()
-Sensor_PiTemp().start()
-Sensor_Battery().start()
-Sensor_Button().start()
-Script_Sleep().start()
-Script_Touch().start()
-Script_I_Love_Yous().start()
-SaveStatus().start()
-Hey_Honey().start()
+Thread_Sensor_ADC0 = Sensor_ADC0()
+Thread_Sensor_ADC0.start()
+
+Thread_Sensor_MPU = Thread_Sensor_MPU()
+Thread_Sensor_MPU.start()
+
+Thread_Sensor_PiTemp = Sensor_PiTemp()
+Thread_Sensor_PiTemp.start()
+
+Thread_Sensor_Battery = Sensor_Battery()
+Thread_Sensor_Battery.start()
+
+Thread_Sensor_Button = Sensor_Button()
+Thread_Sensor_Button.start()
+
+Thread_Script_Sleep = Script_Sleep()
+Thread_Script_Sleep.start()
+
+Queue_Touch = deque()
+Thread_Script_Touch = Script_Touch()
+Thread_Script_Touch.start()
+
+Thread_Script_I_Love_Yous = Script_I_Love_Yous()
+Thread_Script_I_Love_Yous.start()
+
+Thread_SaveStatus = SaveStatus()
+Thread_SaveStatus.start()
+
+Thread_Hey_Honey = Hey_Honey()
+Thread_Hey_Honey.start()
 
 # Setup GPIO interrupts for head touch sensor
 GPIO.add_event_detect(HardwareConfig['TOUCH_LCHEEK'], GPIO.RISING, callback=Sensor_LeftCheek, bouncetime=3000)
@@ -1603,13 +1622,13 @@ class WebServerHandler(BaseHTTPRequestHandler):
         if self.path == '/Breath_Change':
             self.send_response(200)
             self.send_header('Content-Type', 'text/plain')
-            TellBreath(Msg.BreathChange, SoundType=post_data)
+            Thread_Breath.BreathChange(post_data)
             log.info('Breath style change via web: %s', post_data)
             self.wfile.write(b'done')
         elif self.path == '/Honey_Say':
             self.send_response(200)
             self.send_header('Content-Type', 'text/plain')
-            TellBreath(Msg.Say, Sound=SelectSound(sound_id = post_data), CutAllSoundAndPlay=True)
+            Thread_Breath.QueueSound(Sound=SelectSound(sound_id = post_data), CutAllSoundAndPlay=True)
             log.info('Honey Say Request via web: %s', post_data)
             self.wfile.write(b'done')
         elif self.path == '/BaseVolChange':
@@ -1621,7 +1640,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
             log.info('Base Volume Change via web: %s (new volume %s)', SoundId, NewVolume)
             UpdateSound(sound_id = SoundId, base_volume_adjust = NewVolume)
             ReprocessSound(s_id = SoundId)
-            TellBreath(Msg.Say, Sound=SelectSound(sound_id = SoundId), CutAllSoundAndPlay=True)
+            Thread_Breath.QueueSound(Sound=SelectSound(sound_id = SoundId), CutAllSoundAndPlay=True)
             self.wfile.write(b'done')
         elif self.path == '/AmbientVolChange':
             self.send_response(200)
