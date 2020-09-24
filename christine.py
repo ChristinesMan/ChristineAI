@@ -1324,7 +1324,7 @@ Thread_Breath.start()
 Thread_Sensor_ADC0 = Sensor_ADC0()
 Thread_Sensor_ADC0.start()
 
-Thread_Sensor_MPU = Thread_Sensor_MPU()
+Thread_Sensor_MPU = Sensor_MPU()
 Thread_Sensor_MPU.start()
 
 Thread_Sensor_PiTemp = Sensor_PiTemp()
