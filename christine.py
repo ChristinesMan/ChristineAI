@@ -559,28 +559,28 @@ class Breath(threading.Thread):
                 # Also, if my wife's actually sleeping, I don't want her to wake me up with her adorable amazingness
                 # Added a condition that throws away a low priority new sound if there's already a sound delayed. 
                 # Christine was saying two nice things in quick succession which was kind of weird, and this is my fix.
-                if IncomingMessage['priority'] == 9 and IncomingMessage['cutsound'] == True:
-                    soundlog.debug('Cleared breath queue')
-                    self.Queue_Breath.clear()
-                    self.CurrentSound = IncomingMessage
-                    self.DelayedSound = None
-                    self.CurrentSound['has_started'] = True
-                    soundlog.debug(f'Playing this: {self.CurrentSound}')
-                    self.Play()
-                elif IncomingMessage['priority'] >= self.CurrentSound['priority'] and GlobalStatus.IAmSleeping == False:
-                    if self.DelayedSound == None or IncomingMessage['priority'] > self.DelayedSound['priority']:
-                        self.DelayedSound = None
-                        self.CurrentSound = IncomingMessage
-                        soundlog.debug(f'CurrentSound: {self.CurrentSound}')
-                        if IncomingMessage['cutsound'] == True:
-                            soundlog.debug('Stopped stream')
-                            self.CurrentSound['has_started'] = True
-                            self.Play()
+                # if IncomingMessage['priority'] == 9 and IncomingMessage['cutsound'] == True:
+                #     soundlog.debug('Cleared breath queue')
+                #     self.Queue_Breath.clear()
+                #     self.CurrentSound = IncomingMessage
+                #     self.DelayedSound = None
+                #     self.CurrentSound['has_started'] = True
+                #     soundlog.debug(f'Playing this: {self.CurrentSound}')
+                #     self.Play()
+                if IncomingMessage['priority'] >= self.CurrentSound['priority']:
+                    if GlobalStatus.IAmSleeping == False or IncomingMessage['playsleeping']:
+                        if self.DelayedSound == None or IncomingMessage['priority'] > self.DelayedSound['priority']:
+                            soundlog.debug(f'Threw away: {self.DelayedSound}  Incoming: {IncomingMessage}')
+                            self.DelayedSound = None
+                            self.CurrentSound = IncomingMessage
+                            if IncomingMessage['cutsound'] == True:
+                                soundlog.debug('Playing immediately')
+                                self.CurrentSound['has_started'] = True
+                                self.Play()
 
             # This will block here until the shuttlecraft sends a true/false which is whether the sound is still playing. 
             # The shuttlecraft will send this every 0.1s, which will setup the approapriate delay
             if self.PipeToShuttlecraft.recv() == False:
-                soundlog.debug(f'Stream not active. CurrentSound: {self.CurrentSound}')
                 if self.DelayedSound != None and time.time() > GlobalStatus.DontSpeakUntil:
                     self.CurrentSound = self.DelayedSound
                     self.DelayedSound = None
@@ -592,7 +592,7 @@ class Breath(threading.Thread):
                     else:
                         soundlog.debug('starting sound')
                         # If the sound is not a breath but it's not time to speak, save the sound for later and queue up another breath
-                        if self.CurrentSound['priority'] > 1 and time.time() < GlobalStatus.DontSpeakUntil:  # Breaths have a priority of 1
+                        if self.CurrentSound['ignorespeaking'] == False and time.time() < GlobalStatus.DontSpeakUntil:
                             soundlog.debug('Sound delayed due to DontSpeakUntil block')
                             self.DelayedSound = self.CurrentSound
                             self.CurrentSound = self.ChooseNewBreath()
@@ -610,7 +610,7 @@ class Breath(threading.Thread):
             # time.sleep(0.1)
 
     def ChooseNewBreath(self):
-        return {'request': Msg.Say, 'sound': SelectSound(type = self.BreathStyle, randomrow = True), 'cutsound': False, 'priority': 1, 'has_started': False, 'delayer': random.randint(5, 20)}
+        return {'request': Msg.Say, 'sound': SelectSound(type = self.BreathStyle, randomrow = True), 'cutsound': False, 'priority': 1, 'playsleeping': True, 'ignorespeaking': True, 'has_started': False, 'delayer': random.randint(5, 20)}
 
     def Play(self):
         # Some sounds have tempo variations. If so randomly choose one, otherwise it'll just be 0.wav
@@ -657,8 +657,8 @@ class Breath(threading.Thread):
         self.BreathStyle = NewBreathType
 
     # Add a sound to the queue to be played
-    def QueueSound(self, Sound, CutAllSoundAndPlay = False, Priority = 5):
-        self.Queue_Breath.append({'sound': Sound, 'cutsound': CutAllSoundAndPlay, 'priority': Priority, 'has_started': False, 'delayer': 0})  
+    def QueueSound(self, Sound, CutAllSoundAndPlay = False, Priority = 5, PlayWhenSleeping = False, IgnoreSpeaking = False):
+        self.Queue_Breath.append({'sound': Sound, 'cutsound': CutAllSoundAndPlay, 'priority': Priority, 'playsleeping': PlayWhenSleeping, 'ignorespeaking': IgnoreSpeaking, 'has_started': False, 'delayer': 0})  
 
 # def TellBreath(Request, Sound = None, SoundType = None, CutAllSoundAndPlay = False, Priority = 5):
 #     Queue_Breath.append({'request': Request, 'sound': Sound, 'soundtype': SoundType, 'cutsound': CutAllSoundAndPlay, 'priority': Priority, 'has_started': False, 'delayer': 0})
@@ -800,6 +800,7 @@ class Sensor_MPU(threading.Thread):
             self.sensor = mpu6050(0x68)
         except:
             log.error('The gyro had an I/O failure on init. Gyro is unavailable.')
+            GlobalStatus.JostledLevel = 0.0
             return
         while True:
             # Get data from sensor at full speed. Doesn't seem to need any sleeps.
@@ -810,6 +811,7 @@ class Sensor_MPU(threading.Thread):
                 log.error('The gyro had an I/O failure. Count = %s.', self.IOErrors)
                 if self.IOErrors > 10:
                     log.critical('The gyro thread has been shutdown.')
+                    GlobalStatus.JostledLevel = 0.0
                     return
             # Keep track of which iteration we're on. Fill the array with data.
             self.LoopCycle = self.LoopIndex % self.SampleSize
@@ -1001,37 +1003,6 @@ def PicoBleep(Bloop):
         bus.write_byte_data(0x6b, 0x10, beep[1])
         time.sleep(beep[2])
 
-# Detect left cheek touch
-def Sensor_LeftCheek(channel):
-    touchlog.info('Touched: Left cheek')
-    TellTouch(Msg.TouchedOnMyLeftCheek)
-    PicoBleep(((1980, 4, 0.1), (1970, 4, 0.0)))
-
-# Detect right cheek touch
-def Sensor_RightCheek(channel):
-    touchlog.info('Touched: Right cheek')
-    TellTouch(Msg.TouchedOnMyRightCheek)
-
-# Detect being kissed
-def Sensor_Kissed(channel):
-    touchlog.info('Somebody kissed me!')
-    GlobalStatus.DontSpeakUntil = time.time() + 2.0 + (random.random() * 3)
-    soundlog.info('GotKissedSoundStop')
-    Thread_Breath.QueueSound(Sound=CollectionOfKisses.GetRandomSound(), CutAllSoundAndPlay=True, Priority=9) # Priority 9 means kill everything else whatever it is and play NOW! 
-    TellTouch(Msg.TouchedOnMyOMGKisses)
-
-# Detect being touched on the 12 sensors in the body
-def Sensor_Body(channel):
-    # Get... all the cheese
-    touched = mpr121.touched_pins
-    log.debug('Touch array: %s', touched)
-    for i in range(12):
-        if touched[i]:
-            WhichMsg = Msg(Msg.TouchedOnMyNeckLeft.value + i)
-
-            log.info('Touched: %s', WhichMsg.name)
-            TellTouch(WhichMsg)
-
 # This script keeps track of doll sleepiness, waking up and going to sleep, whining that she's tired. But it won't be an annoying whine, not like a real woman. 
 class Script_Sleep(threading.Thread):
     name = 'Script_Sleep'
@@ -1147,7 +1118,7 @@ class Script_Sleep(threading.Thread):
     def TimeToWhine(self):
         return self.AnnounceTiredTime != False and time.time() >= self.AnnounceTiredTime
     def Whine(self):
-        Thread_Breath.QueueSound(Sound=CollectionOfTiredWifes.GetRandomSound())
+        # Thread_Breath.QueueSound(Sound=CollectionOfTiredWifes.GetRandomSound())
         self.AnnounceTiredTime = False
     def StartBreathingSleepy(self):
         Thread_Breath.BreathChange('breathe_sleepy')
@@ -1171,42 +1142,98 @@ class Script_Touch(threading.Thread):
     name = 'Script_Touch'
     def __init__ (self):
         threading.Thread.__init__(self)
+
+        # track how many recent I/O errors
+        self.IOErrors = 0
+
+        # Init some pins, otherwise they float
+        GPIO.setup(HardwareConfig['TOUCH_LCHEEK'], GPIO.IN)
+        GPIO.setup(HardwareConfig['TOUCH_RCHEEK'], GPIO.IN)
+        GPIO.setup(HardwareConfig['TOUCH_KISS'], GPIO.IN)
+        GPIO.setup(HardwareConfig['TOUCH_BODY'], GPIO.IN)
+
+        # Init I2C bus, for the body touch sensor
+        self.i2c = busio.I2C(board.SCL, board.SDA)
+
+        # Create MPR121 touch sensor object.
+        # The sensitivity settings were ugly hacked into /usr/local/lib/python3.6/site-packages/adafruit_mpr121.py
+        try:
+            self.mpr121 = adafruit_mpr121.MPR121(self.i2c)
+        except:
+            log.error('The touch sensor had an I/O failure on init. Body touch is unavailable.')
+            GlobalStatus.TouchedLevel = 0.0
+        else:
+            GPIO.add_event_detect(HardwareConfig['TOUCH_BODY'], GPIO.RISING, callback=self.Sensor_Body, bouncetime=100)
+
+        # Setup GPIO interrupts for head touch sensor
+        GPIO.add_event_detect(HardwareConfig['TOUCH_LCHEEK'], GPIO.RISING, callback=self.Sensor_LeftCheek, bouncetime=3000)
+        GPIO.add_event_detect(HardwareConfig['TOUCH_RCHEEK'], GPIO.RISING, callback=self.Sensor_RightCheek, bouncetime=3000)
+        GPIO.add_event_detect(HardwareConfig['TOUCH_KISS'], GPIO.RISING, callback=self.Sensor_Kissed, bouncetime=1000)
+
     def run(self):
         log.debug('Thread started.')
-        while True:
-            while len(Queue_Touch) != 0:
-                IncomingMessage = Queue_Touch.popleft()
-                queuelog.info('%s', IncomingMessage)
-                # Respond to various messages
-                if IncomingMessage['msg'] == Msg.TouchedOnMyChest:
-                    touchlog.info('TouchedOnMyChest')
-                    GlobalStatus.TouchedLevel += 0.05
-                    GlobalStatus.ChanceToSpeak += 0.05
-                elif IncomingMessage['msg'] == Msg.TouchedOnMyLeftCheek:
-                    touchlog.info('TouchedOnMyLeftCheek')
-                    GlobalStatus.TouchedLevel += 0.05
-                    GlobalStatus.ChanceToSpeak += 0.05
-                elif IncomingMessage['msg'] == Msg.TouchedOnMyRightCheek:
-                    touchlog.info('TouchedOnMyRightCheek')
-                    GlobalStatus.TouchedLevel += 0.05
-                    GlobalStatus.ChanceToSpeak += 0.05
-                elif IncomingMessage['msg'] == Msg.TouchedOnMyOMGKisses:
-                    touchlog.info('TouchedOnMyOMGKisses')
-                    GlobalStatus.TouchedLevel += 0.1
-                    GlobalStatus.ChanceToSpeak += 0.1
 
+        while True:
             # One of these gets reset once my wife speaks, the other keeps getting incremented to infinity
             # Slowly decrement
             GlobalStatus.TouchedLevel -= 0.001
             # GlobalStatus.ChanceToSpeak -= 0.006  used to slowly decrement this, decided instead it'll just go to 0.0 when something chooses to speak
 
-            # Can't go past 0 or past 1
-            GlobalStatus.ChanceToSpeak = float(np.clip(GlobalStatus.ChanceToSpeak, 0.0, 1.0))
-            GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
-
             time.sleep(0.5)
-def TellTouch(Message, Data = None):
-    Queue_Touch.append({'msg': Message, 'data': Data})
+
+    # Detect left cheek touch
+    def Sensor_LeftCheek(self, channel):
+        touchlog.info('Touched: Left cheek')
+        GlobalStatus.TouchedLevel += 0.05
+        GlobalStatus.ChanceToSpeak += 0.05
+
+        # Can't go past 0 or past 1
+        GlobalStatus.ChanceToSpeak = float(np.clip(GlobalStatus.ChanceToSpeak, 0.0, 1.0))
+        GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
+
+        # PicoBleep(((1980, 4, 0.1), (1970, 4, 0.0)))
+
+    # Detect right cheek touch
+    def Sensor_RightCheek(self, channel):
+        touchlog.info('Touched: Right cheek')
+        GlobalStatus.TouchedLevel += 0.05
+        GlobalStatus.ChanceToSpeak += 0.05
+
+        # Can't go past 0 or past 1
+        GlobalStatus.ChanceToSpeak = float(np.clip(GlobalStatus.ChanceToSpeak, 0.0, 1.0))
+        GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
+
+        # PicoBleep(((1980, 4, 0.1), (1970, 4, 0.0)))
+
+    # Detect being kissed
+    def Sensor_Kissed(self, channel):
+        touchlog.info('Somebody kissed me!')
+        GlobalStatus.DontSpeakUntil = time.time() + 2.0 + (random.random() * 3)
+        soundlog.info('GotKissedSoundStop')
+        Thread_Breath.QueueSound(Sound=CollectionOfKisses.GetRandomSound(), CutAllSoundAndPlay=True, Priority=9) # Priority 9 means kill everything else whatever it is and play NOW! 
+        GlobalStatus.TouchedLevel += 0.1
+        GlobalStatus.ChanceToSpeak += 0.1
+
+        # Can't go past 0 or past 1
+        GlobalStatus.ChanceToSpeak = float(np.clip(GlobalStatus.ChanceToSpeak, 0.0, 1.0))
+        GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
+
+    # Detect being touched on the 12 sensors in the body
+    def Sensor_Body(self, channel):
+        # Get... all the cheese
+        try:
+            touched = self.mpr121.touched_pins
+        except:
+            self.IOErrors += 1
+            log.error('The touch sensor had an I/O failure. Count = %s.', self.IOErrors)
+            if self.IOErrors > 10:
+                log.critical('The touch sensor thread has been shutdown, but maybe not.')
+                GlobalStatus.TouchedLevel = 0.0
+                return
+        touchlog.debug('Touch array: %s', touched)
+        for i in range(12):
+            if touched[i]:
+                touchlog.info('Touched: %s', Msg(Msg.TouchedOnMyNeckLeft.value + i).name)
 
 # When touched or spoken to, it becomes more likely to say something nice
 class Script_I_Love_Yous(threading.Thread):
@@ -1222,11 +1249,10 @@ class Script_I_Love_Yous(threading.Thread):
             # Randomly say cute things
             if time.time() > self.NextMakeOutSoundsTime and GlobalStatus.ChanceToSpeak > random.random():
                 self.NextMakeOutSoundsTime = time.time() + 10 + int(120*random.random())
-                touchlog.info('Loving sound')
                 GlobalStatus.ChanceToSpeak = 0.0
                 Thread_Breath.QueueSound(Sound=CollectionOfLovings.GetRandomSound(), Priority=8)
-            GlobalStatus.ChanceToSpeak -= 0.02
             soundlog.info('ChanceToSpeak = %.2f', GlobalStatus.ChanceToSpeak)
+            GlobalStatus.ChanceToSpeak -= 0.02
 
             time.sleep(5)
 
@@ -1289,30 +1315,12 @@ def RandomMinutesLater(min, max):
 
 # Startup stuff
 
-# Init some pins, otherwise they float
-GPIO.setup(HardwareConfig['TOUCH_LCHEEK'], GPIO.IN)
-GPIO.setup(HardwareConfig['TOUCH_RCHEEK'], GPIO.IN)
-GPIO.setup(HardwareConfig['TOUCH_KISS'], GPIO.IN)
-GPIO.setup(HardwareConfig['TOUCH_BODY'], GPIO.IN)
-
 # This is for reading and writing stuff from Pico via I2C
 bus = smbus.SMBus(1)
 
 # Disable the Pico speaker. Instead I want to detect low battery myself and Christine will communicate.
 # This doesn't seem to work, but I may retry later. Right now the beeping is fine.
 #bus.write_byte_data(0x6b, 0x0d, 0x00)
-
-# Init I2C bus, for the body touch sensor
-i2c = busio.I2C(board.SCL, board.SDA)
-
-# Create MPR121 touch sensor object.
-# The sensitivity settings were ugly hacked into /usr/local/lib/python3.6/site-packages/adafruit_mpr121.py
-try:
-    mpr121 = adafruit_mpr121.MPR121(i2c)
-except:
-    log.error('The body touch sensor had an I/O failure.')
-else:
-    GPIO.add_event_detect(HardwareConfig['TOUCH_BODY'], GPIO.RISING, callback=Sensor_Body, bouncetime=100)
 
 # Log certain system information from Pico. If needed I'll need to decode this manually. 
 LogPicoSysinfo()
@@ -1339,7 +1347,6 @@ Thread_Sensor_Button.start()
 Thread_Script_Sleep = Script_Sleep()
 Thread_Script_Sleep.start()
 
-Queue_Touch = deque()
 Thread_Script_Touch = Script_Touch()
 Thread_Script_Touch.start()
 
@@ -1351,11 +1358,6 @@ Thread_SaveStatus.start()
 
 Thread_Hey_Honey = Hey_Honey()
 Thread_Hey_Honey.start()
-
-# Setup GPIO interrupts for head touch sensor
-GPIO.add_event_detect(HardwareConfig['TOUCH_LCHEEK'], GPIO.RISING, callback=Sensor_LeftCheek, bouncetime=3000)
-GPIO.add_event_detect(HardwareConfig['TOUCH_RCHEEK'], GPIO.RISING, callback=Sensor_RightCheek, bouncetime=3000)
-GPIO.add_event_detect(HardwareConfig['TOUCH_KISS'], GPIO.RISING, callback=Sensor_Kissed, bouncetime=1000)
 
 # End of startup stuff. Everything that runs is in handlers and threads.
 # Start the web service. I don't think this needs to be in a thread by itself. We'll see. 
