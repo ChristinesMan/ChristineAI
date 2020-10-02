@@ -103,9 +103,9 @@ def setup_logger(name, log_file, level=log.INFO, format='%(asctime)s - %(message
     return logger
 
 # Lots of separate log files
-gyrolog = setup_logger('gyro', 'gyro.log', level=log.INFO)
+gyrolog = setup_logger('gyro', 'gyro.log', level=log.DEBUG)
 lightlog = setup_logger('light', 'light.log', level=log.INFO)
-templog = setup_logger('temp', 'cputemp.log', level=log.INFO)
+cputemplog = setup_logger('cputemp', 'cputemp.log', level=log.INFO)
 battlog = setup_logger('batt', 'battery.log', level=log.DEBUG)
 soundlog = setup_logger('sound', 'sound.log', level=log.DEBUG)
 queuelog = setup_logger('queue', 'queue.log', level=log.DEBUG)
@@ -114,6 +114,7 @@ weblog = setup_logger('web', 'web.log', level=log.INFO)
 touchlog = setup_logger('touch', 'touch.log', level=log.DEBUG)
 sleeplog = setup_logger('sleep', 'sleep.log', level=log.DEBUG)
 wernickelog = setup_logger('wernicke', 'wernicke.log', level=log.DEBUG)
+templog = setup_logger('temp', 'temp.log', level=log.DEBUG)
 
 # I want to log exceptions to the main log. Because it appears that redirecting stderr from the service is not capturing all the errors
 # So it looks like syntax and really batshit crazy stuff goes to journalctl. Softer stuff goes into the main log now. 
@@ -152,12 +153,12 @@ HardwareConfig = {
     'ADC1_CS': 7,
     # Channels on ADC1
     'ADC1_TEMP_NECK': 0,
-    'ADC1_TEMP_DEEP': 1,
-    'ADC1_TEMP_LEFT_HAND': 2,
-    'ADC1_TEMP_RIGHT_HAND': 3,
-    'ADC1_TEMP_TORSO': 4,
-    'ADC1_TEMP_RIGHT_BOOB': 5,
-    'ADC1_TEMP_LEFT_BOOB': 6,
+    'ADC1_TEMP_LEFT_HAND': 1,
+    'ADC1_TEMP_RIGHT_HAND': 2,
+    'ADC1_TEMP_RIGHT_BOOB': 3,
+    'ADC1_TEMP_LEFT_BOOB': 4,
+    'ADC1_TEMP_TORSO': 5,
+    'ADC1_TEMP_DEEP': 6,
     'ADC1_TEMP_PUSSY': 7,
 }
 
@@ -740,6 +741,7 @@ class Sensor_ADC0(threading.Thread):
             # Log the light level
             lightlog.debug('LightRaw: {0}  LightPct: {1:.4f}  Avg: {2:.4f}  LongAvg: {3:.4f}  Trend: {4:.3f}'.format(self.LightLevelRaw, self.LightLevel, self.LightLevelAverage, self.LightLevelLongAverage, self.LightTrend))
             time.sleep(0.4)
+
     # read SPI data from MCP3008 chip, 8 possible adc's (0 thru 7)
     def readadc(self, adcnum):
         GPIO.output(HardwareConfig['ADC0_CS'], True)
@@ -768,6 +770,109 @@ class Sensor_ADC0(threading.Thread):
                 adcout |= 0x1
 
         GPIO.output(HardwareConfig['ADC0_CS'], True)
+        
+        adcout >>= 1       # first bit is 'null' so drop it
+        return adcout
+
+# ADC1 is all temperature sensors. What am I going to use this for? I dunno, I'm making this up as I go. 
+class Sensor_ADC1(threading.Thread):
+    name = 'Sensor_ADC1'
+    def __init__ (self):
+        threading.Thread.__init__(self)
+
+        # set up the SPI interface pins
+        GPIO.setup(HardwareConfig['ADC1_SCLK'], GPIO.OUT)
+        GPIO.setup(HardwareConfig['ADC1_MISO'], GPIO.IN)
+        GPIO.setup(HardwareConfig['ADC1_MOSI'], GPIO.OUT)
+        GPIO.setup(HardwareConfig['ADC1_CS'], GPIO.OUT)
+
+        # We have 8 temperature sensors numbered 0 through 7
+        self.TempRaw = [0, 0, 0, 0, 0, 0, 0, 0]
+        self.Temp = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+        # I expect even when everything is at the same temp there will be some small differences
+        # I will need to run a test. Leave body for hours with head switched off. Like 4 hours. At some point. It's gonna hurt. 
+        # Then turn on and immediately read temps
+        self.TempAdjust = (0, 0, 0, 0, 0, 0, 0, 0)
+
+        # Labels as I get sensors implanted
+        self.TempLabel = [None, None, None, None, None, 'TORSO', 'NECK ', None]
+
+        # The rolling average
+        self.TempAvg = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        self.TempAvgWindow = 8.0
+
+        # The rolling average, long term
+        self.TempLongAvg = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        self.TempLongAvgWindow = 500.0
+
+        # The pct change from the mean
+        self.TempTrend = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+    def run(self):
+        log.debug('Thread started.')
+
+        # Get an initial read on all sensors and set averages to this initial reading
+        self.GetAllTemps()
+        for pin in range(8):
+            self.TempAvg[pin] = self.Temp[pin]
+            self.TempLongAvg[pin] = self.Temp[pin]
+
+        while True:
+            # Read all channels on the ADC
+            self.GetAllTemps()
+
+            # Log it, do a lot more later
+            for pin in range(8):
+                if self.TempLabel[pin] != None:
+                    templog.debug('{0}: {1}, {2:.2f}, {3:.2f}, {4:.2f}, {5:.2f}'.format(self.TempLabel[pin], self.TempRaw[pin], self.Temp[pin], self.TempAvg[pin], self.TempLongAvg[pin], self.TempTrend[pin]))
+            time.sleep(5.0)
+
+    def GetAllTemps(self):
+        # Go through all pins
+        for pin in range(8):
+            # if there is no label, it's unassigned, don't worry about really checking it. It's going to be 1023 anyway. 
+            if self.TempLabel[pin] != None:
+                self.TempRaw[pin] = self.readadc(pin)
+                # I have observed outliers, where one reading is way lower than possible. May need to adjust this later. 
+                if self.TempRaw[pin] < 650:
+                    self.TempRaw[pin] = self.TempAvg[pin]
+                    templog.warning('Threw out weird ass temperature {0} from pin {1}'.format(self.TempRaw[pin], pin))
+            else:
+                self.TempRaw[pin] = 1023
+            self.Temp[pin] = float(self.TempRaw[pin]) # dunno how to do this yet, I need to test what normal ranges we can achieve
+            self.TempAvg[pin] = ((self.TempAvg[pin] * self.TempAvgWindow) + self.Temp[pin]) / (self.TempAvgWindow + 1)
+            self.TempLongAvg[pin] = ((self.TempLongAvg[pin] * self.TempLongAvgWindow) + self.Temp[pin]) / (self.TempLongAvgWindow + 1)
+            self.TempTrend[pin] = self.TempAvg[pin] / self.TempLongAvg[pin]
+
+    # read SPI data from MCP3008 chip, 8 possible adc's (0 thru 7)
+    def readadc(self, adcnum):
+        GPIO.output(HardwareConfig['ADC1_CS'], True)
+        GPIO.output(HardwareConfig['ADC1_SCLK'], False)  # start clock low
+        GPIO.output(HardwareConfig['ADC1_CS'], False)     # bring CS low
+
+        commandout = adcnum
+        commandout |= 0x18  # start bit + single-ended bit
+        commandout <<= 3    # we only need to send 5 bits here
+        for i in range(5):
+            if (commandout & 0x80):
+                GPIO.output(HardwareConfig['ADC1_MOSI'], True)
+            else:
+                GPIO.output(HardwareConfig['ADC1_MOSI'], False)
+            commandout <<= 1
+            GPIO.output(HardwareConfig['ADC1_SCLK'], True)
+            GPIO.output(HardwareConfig['ADC1_SCLK'], False)
+
+        adcout = 0
+        # read in one empty bit, one null bit and 10 ADC bits
+        for i in range(12):
+            GPIO.output(HardwareConfig['ADC1_SCLK'], True)
+            GPIO.output(HardwareConfig['ADC1_SCLK'], False)
+            adcout <<= 1
+            if (GPIO.input(HardwareConfig['ADC1_MISO'])):
+                adcout |= 0x1
+
+        GPIO.output(HardwareConfig['ADC1_CS'], True)
         
         adcout >>= 1       # first bit is 'null' so drop it
         return adcout
@@ -803,7 +908,7 @@ class Sensor_MPU(threading.Thread):
             GlobalStatus.JostledLevel = 0.0
             return
         while True:
-            # Get data from sensor at full speed. Doesn't seem to need any sleeps.
+            # Get data from sensor at full speed. Doesn't seem to need any sleeps. I'm testing with a sleep now. 
             try:
                 data = self.sensor.get_all_data()
             except:
@@ -855,8 +960,8 @@ class Sensor_MPU(threading.Thread):
                     GlobalStatus.Wakefulness = 0.5
                     Thread_Breath.QueueSound(Sound=CollectionOfWokeUpRudely.GetRandomSound())
 
-                # Update the boolean that tells if we're laying down. While laying down I recorded 4.37, 1.60. 
-                if abs(self.SmoothXTilt - 4.37) < 1 and abs(self.SmoothYTilt - 1.60) < 1:
+                # Update the boolean that tells if we're laying down. While laying down I recorded 4.37, 1.60. However, now it's 1.55, 2.7. wtf happened? The gyro has not moved. Maybe position difference. 
+                if abs(self.SmoothXTilt - 1.55) < 2 and abs(self.SmoothYTilt - 2.70) < 2:
                     GlobalStatus.IAmLayingDown = True
                 else:
                     GlobalStatus.IAmLayingDown = False
@@ -864,6 +969,7 @@ class Sensor_MPU(threading.Thread):
                 # log it
                 gyrolog.debug('{0:.2f}, {1:.2f}, {2:.2f}, {3:.2f}, LayingDown: {4}'.format(self.SmoothXTilt, self.SmoothYTilt, self.JostledLevel, GlobalStatus.JostledLevel, GlobalStatus.IAmLayingDown))
             self.LoopIndex += 1
+            time.sleep(0.01)
 
 # Poll the Pi CPU temperature
 # I need to make a sound of Christine saying "This is fine..."
@@ -881,7 +987,7 @@ class Sensor_PiTemp(threading.Thread):
             measure_temp.close()
 
             # Log it
-            templog.debug('%s', GlobalStatus.CPU_Temp)
+            cputemplog.debug('%s', GlobalStatus.CPU_Temp)
 
             # The official pi max temp is 85C. Usually around 50C. Start complaining at 65, 71 freak the fuck out, 72 say goodbye and shut down.
             # Whine more often the hotter it gets
@@ -1177,6 +1283,7 @@ class Script_Touch(threading.Thread):
             # One of these gets reset once my wife speaks, the other keeps getting incremented to infinity
             # Slowly decrement
             GlobalStatus.TouchedLevel -= 0.001
+            GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
             # GlobalStatus.ChanceToSpeak -= 0.006  used to slowly decrement this, decided instead it'll just go to 0.0 when something chooses to speak
 
             time.sleep(0.5)
@@ -1331,6 +1438,9 @@ Thread_Breath.start()
 
 Thread_Sensor_ADC0 = Sensor_ADC0()
 Thread_Sensor_ADC0.start()
+
+Thread_Sensor_ADC1 = Sensor_ADC1()
+Thread_Sensor_ADC1.start()
 
 Thread_Sensor_MPU = Sensor_MPU()
 Thread_Sensor_MPU.start()
