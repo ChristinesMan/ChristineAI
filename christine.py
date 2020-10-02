@@ -1140,9 +1140,8 @@ class Script_Sleep(threading.Thread):
         self.Tilt = 0.0
 
         # At what time should we expect to be in bed or wake up? 
-        self.WakeHour = None
-        self.SleepHour = None
-        self.RecalculateSleepyTime()
+        self.WakeHour = 7
+        self.SleepHour = 22
 
         # At what point to STFU at night
         self.MinWakefulnessToBeAwake = 0.25
@@ -1189,7 +1188,6 @@ class Script_Sleep(threading.Thread):
             if self.LocalTime.tm_min == 30:
                 GlobalStatus.WakefulnessTrending[self.LocalTime.tm_hour] = round(((GlobalStatus.WakefulnessTrending[self.LocalTime.tm_hour] * self.TrendAverageWindow) + GlobalStatus.Wakefulness) / (self.TrendAverageWindow + 1), 2)
                 sleeplog.info('Trend update: ' + str(GlobalStatus.WakefulnessTrending))
-                self.RecalculateSleepyTime()
 
             # If it's getting late, set a future time to "whine" in a cute, endearing way
             if self.NowItsLate():
@@ -1200,24 +1198,33 @@ class Script_Sleep(threading.Thread):
 
             time.sleep(66)
 
-    def RecalculateSleepyTime(self):
-        self.WakeHour = None
-        self.SleepHour = None
-        for i in range(0, 24):
-            if self.WakeHour == None and GlobalStatus.WakefulnessTrending[i - 1] > 0.1:
-                if GlobalStatus.WakefulnessTrending[i] / GlobalStatus.WakefulnessTrending[i - 1] > 1.5:
-                    self.WakeHour = i - 1
-                    continue
-            elif self.SleepHour == None and GlobalStatus.WakefulnessTrending[i] > 0.1:
-                ratio = GlobalStatus.WakefulnessTrending[i - 1] / GlobalStatus.WakefulnessTrending[i]
-                if GlobalStatus.WakefulnessTrending[i - 1] / GlobalStatus.WakefulnessTrending[i] > 1.5:
-                    self.SleepHour = i
-                    continue
-        sleeplog.debug(f'Wake hour: {self.WakeHour}  Sleep hour: {self.SleepHour}')
+    # This code shall be in a museum. 
+    # At one time I figured that I would automatically set the bedtime and wake up times according to the trend. But it never worked out quite right. 
+    # def RecalculateSleepyTime(self):
+    #     self.WakeHour = None
+    #     self.SleepHour = None
+    #     for i in range(0, 24):
+    #         if self.WakeHour == None and GlobalStatus.WakefulnessTrending[i - 1] > 0.1:
+    #             if GlobalStatus.WakefulnessTrending[i] / GlobalStatus.WakefulnessTrending[i - 1] > 1.5:
+    #                 self.WakeHour = i - 1
+    #                 continue
+    #         elif self.SleepHour == None and GlobalStatus.WakefulnessTrending[i] > 0.1:
+    #             ratio = GlobalStatus.WakefulnessTrending[i - 1] / GlobalStatus.WakefulnessTrending[i]
+    #             if GlobalStatus.WakefulnessTrending[i - 1] / GlobalStatus.WakefulnessTrending[i] > 1.5:
+    #                 self.SleepHour = i
+    #                 continue
+    #     sleeplog.debug(f'Wake hour: {self.WakeHour}  Sleep hour: {self.SleepHour}')
+# WakefulnessTrending = [0.16, 0.15, 0.14, 0.15, 0.14, 0.14, 0.2, 0.31, 0.42, 0.64, 0.69, 0.7, 0.7, 0.7, 0.71, 0.71, 0.7, 0.69, 0.67, 0.62, 0.53, 0.41, 0.33, 0.24]
+
+# for rot in range(0, 12):
+#     WakefulnessTrending = WakefulnessTrending[rot:] + WakefulnessTrending[:rot]
+#     ToSum = WakefulnessTrending[7:16]
+#     print('{0} {1} {2}'.format(rot, sum(ToSum), ToSum))
+#     # 7890123456
 
     # Logic and stuff for going to bed
     def NowItsLate(self):
-        return self.AnnounceTiredTime == False and self.LocalTime.tm_hour >= self.SleepHour
+        return self.AnnounceTiredTime == False and self.LocalTime.tm_hour >= self.SleepHour and self.LocalTime.tm_hour < self.SleepHour + 1
     def SetTimeToWhine(self):
         self.AnnounceTiredTime = RandomMinutesLater(15, 30)
         sleeplog.info('set time to announce we are tired to %s minutes', (self.AnnounceTiredTime - time.time()) / 60)
@@ -1233,12 +1240,14 @@ class Script_Sleep(threading.Thread):
     def JustFellAsleep(self):
         if GlobalStatus.Wakefulness < self.MinWakefulnessToBeAwake and GlobalStatus.IAmSleeping == False:
             GlobalStatus.IAmSleeping = True
+            Thread_Breath.BreathChange('breathe_sleeping')
             return True
         else:
             return False
     def JustWokeUp(self):
         if GlobalStatus.Wakefulness > self.MinWakefulnessToBeAwake and GlobalStatus.IAmSleeping == True:
             GlobalStatus.IAmSleeping = False
+            Thread_Breath.BreathChange('breathe_normal')
             return True
         else:
             return False
