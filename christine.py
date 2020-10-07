@@ -604,8 +604,8 @@ class Breath(threading.Thread):
                     else:
                         soundlog.debug('Sound delayed due to DontSpeakUntil block')
                         self.DelayedSound = self.CurrentSound
-                        self.CurrentSound = self.ChooseNewBreath()
                         self.DelayedSound['delayer'] = 0
+                        self.ChooseNewBreath()
                         self.Play()
 
     def ChooseNewBreath(self):
@@ -1373,7 +1373,7 @@ class Script_I_Love_Yous(threading.Thread):
                 GlobalStatus.ChanceToSpeak = 0.0
                 Thread_Breath.QueueSound(Sound=CollectionOfLovings.GetRandomSound())
             soundlog.info('ChanceToSpeak = %.2f', GlobalStatus.ChanceToSpeak)
-            GlobalStatus.ChanceToSpeak -= 0.02
+            GlobalStatus.ChanceToSpeak -= 0.01
 
             # Can't go past 0 or past 1
             GlobalStatus.ChanceToSpeak = float(np.clip(GlobalStatus.ChanceToSpeak, 0.0, 1.0))
