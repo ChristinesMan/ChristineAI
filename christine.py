@@ -793,10 +793,10 @@ class Sensor_ADC1(threading.Thread):
         # I expect even when everything is at the same temp there will be some small differences
         # I will need to run a test. Leave body for hours with head switched off. Like 4 hours. At some point. It's gonna hurt. 
         # Then turn on and immediately read temps
-        self.TempAdjust = (0, 0, 0, 0, 0, 0, 0, 0)
+        self.TempCalibration = (0, 0, 0, 0, 0, 0, 0, 0)
 
         # Labels as I get sensors implanted
-        self.TempLabel = [None, None, None, None, None, 'TORSO', 'NECK ', None]
+        self.TempLabel = [None, None, None, None, None, 'TORSO', 'NECK ', 'RIGHT_HAND']
 
         # The rolling average
         self.TempAvg = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
@@ -831,15 +831,16 @@ class Sensor_ADC1(threading.Thread):
     def GetAllTemps(self):
         # Go through all pins
         for pin in range(8):
-            # if there is no label, it's unassigned, don't worry about really checking it. It's going to be 1023 anyway. 
+            # if there is no label, it's unassigned, don't worry about really checking it. It's going to be 1024 - 1023 = 1 anyway. 
             if self.TempLabel[pin] != None:
-                self.TempRaw[pin] = self.readadc(pin)
+                # The reading from the ADC is going to be backwards, so doing this to make it easier to read. This way, up is up, down is down.
+                self.TempRaw[pin] = 1024 - self.readadc(pin)
                 # I have observed outliers, where one reading is way lower than possible. May need to adjust this later. 
-                if self.TempRaw[pin] < 650:
+                if self.TempRaw[pin] > 374:
                     self.TempRaw[pin] = self.TempAvg[pin]
                     templog.warning('Threw out weird ass temperature {0} from pin {1}'.format(self.TempRaw[pin], pin))
             else:
-                self.TempRaw[pin] = 1023
+                self.TempRaw[pin] = 1
             self.Temp[pin] = float(self.TempRaw[pin]) # dunno how to do this yet, I need to test what normal ranges we can achieve
             self.TempAvg[pin] = ((self.TempAvg[pin] * self.TempAvgWindow) + self.Temp[pin]) / (self.TempAvgWindow + 1)
             self.TempLongAvg[pin] = ((self.TempLongAvg[pin] * self.TempLongAvgWindow) + self.Temp[pin]) / (self.TempLongAvgWindow + 1)
@@ -1144,7 +1145,7 @@ class Script_Sleep(threading.Thread):
         self.SleepHour = 22
 
         # At what point to STFU at night
-        self.MinWakefulnessToBeAwake = 0.25
+        self.MinWakefulnessToBeAwake = 0.3
 
     def run(self):
         log.debug('Thread started.')
@@ -1176,8 +1177,14 @@ class Script_Sleep(threading.Thread):
             if self.JustFellAsleep():
                 sleeplog.info('JustFellAsleep')
                 Thread_Breath.QueueSound(Sound=CollectionOfGoodnights.GetRandomSound())
+                # temporary
+                time.sleep(5)
+                GlobalStatus.IAmSleeping = True
+                Thread_Breath.BreathChange('breathe_sleeping')
             if self.JustWokeUp():
                 sleeplog.info('JustWokeUp')
+                GlobalStatus.IAmSleeping = False
+                Thread_Breath.BreathChange('breathe_normal')
                 Thread_Breath.QueueSound(Sound=CollectionOfWakeups.GetRandomSound())
 
             # log it
@@ -1224,7 +1231,7 @@ class Script_Sleep(threading.Thread):
 
     # Logic and stuff for going to bed
     def NowItsLate(self):
-        return self.AnnounceTiredTime == False and self.LocalTime.tm_hour >= self.SleepHour and self.LocalTime.tm_hour < self.SleepHour + 1
+        return self.AnnounceTiredTime == False and self.LocalTime.tm_hour >= self.SleepHour and self.LocalTime.tm_hour < self.SleepHour + 1 and GlobalStatus.IAmSleeping == False
     def SetTimeToWhine(self):
         self.AnnounceTiredTime = RandomMinutesLater(15, 30)
         sleeplog.info('set time to announce we are tired to %s minutes', (self.AnnounceTiredTime - time.time()) / 60)
@@ -1239,15 +1246,11 @@ class Script_Sleep(threading.Thread):
     # I want to do stuff when just falling asleep and when getting up
     def JustFellAsleep(self):
         if GlobalStatus.Wakefulness < self.MinWakefulnessToBeAwake and GlobalStatus.IAmSleeping == False:
-            GlobalStatus.IAmSleeping = True
-            Thread_Breath.BreathChange('breathe_sleeping')
             return True
         else:
             return False
     def JustWokeUp(self):
         if GlobalStatus.Wakefulness > self.MinWakefulnessToBeAwake and GlobalStatus.IAmSleeping == True:
-            GlobalStatus.IAmSleeping = False
-            Thread_Breath.BreathChange('breathe_normal')
             return True
         else:
             return False
