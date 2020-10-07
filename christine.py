@@ -568,57 +568,60 @@ class Breath(threading.Thread):
                 #     self.CurrentSound['has_started'] = True
                 #     soundlog.debug(f'Playing this: {self.CurrentSound}')
                 #     self.Play()
-                if IncomingMessage['priority'] >= self.CurrentSound['priority']:
+                if self.CurrentSound == None or IncomingMessage['priority'] >= self.CurrentSound['priority']:
                     if GlobalStatus.IAmSleeping == False or IncomingMessage['playsleeping']:
                         if self.DelayedSound == None or IncomingMessage['priority'] > self.DelayedSound['priority']:
                             soundlog.debug(f'Threw away: {self.DelayedSound}  Incoming: {IncomingMessage}')
                             self.DelayedSound = None
                             self.CurrentSound = IncomingMessage
-                            if IncomingMessage['cutsound'] == True:
+                            if self.CurrentSound['cutsound'] == True:
                                 soundlog.debug('Playing immediately')
-                                self.CurrentSound['has_started'] = True
                                 self.Play()
 
             # This will block here until the shuttlecraft sends a true/false which is whether the sound is still playing. 
             # The shuttlecraft will send this every 0.1s, which will setup the approapriate delay
             if self.PipeToShuttlecraft.recv() == False:
-                if self.DelayedSound != None and time.time() > GlobalStatus.DontSpeakUntil:
+
+                # if we're here, it means there's no sound actively playing
+                # If there's a sound that couldn't play when it came in, and it can be played now, put it into CurrentSound
+                if self.DelayedSound != None and (time.time() > GlobalStatus.DontSpeakUntil or self.DelayedSound['ignorespeaking'] == True):
                     self.CurrentSound = self.DelayedSound
                     self.DelayedSound = None
                     soundlog.debug(f'Copied delayed to current: {self.CurrentSound}')
-                if self.CurrentSound['has_started'] == False:
-                    soundlog.debug('sound has not started and delayer=%s', self.CurrentSound['delayer'])
-                    if self.CurrentSound['delayer'] > 0:
-                        self.CurrentSound['delayer'] -= 1  # Breaths are the main thing that uses the delayer, a random delay from 0.5s to 2s. Other stuff can theoretically use it, too
-                    else:
-                        soundlog.debug('starting sound')
-                        # If the sound is not a breath but it's not time to speak, save the sound for later and queue up another breath
-                        if self.CurrentSound['ignorespeaking'] == False and time.time() < GlobalStatus.DontSpeakUntil:
-                            soundlog.debug('Sound delayed due to DontSpeakUntil block')
-                            self.DelayedSound = self.CurrentSound
-                            self.CurrentSound = self.ChooseNewBreath()
-                            self.DelayedSound['delayer'] = 0
-                            soundlog.debug(f'CurrentSound: {self.CurrentSound}')
-                        else:
-                            self.CurrentSound['has_started'] = True
-                            soundlog.debug(f'CurrentSound: {self.CurrentSound}')
-                            self.Play()
-                else:
-                    soundlog.debug('choosing a new breath')
-                    self.CurrentSound = self.ChooseNewBreath()
-                    soundlog.debug('chose %s', self.CurrentSound['sound'])
 
-            # time.sleep(0.1)
+                # if there's no other sound that wanted to play, just breathe
+                if self.CurrentSound == None:
+                    self.ChooseNewBreath()
+                    soundlog.debug('Chose breath: %s', self.CurrentSound['sound'])
+
+                # Breaths are the main thing that uses the delayer, a random delay from 0.5s to 2s. Other stuff can theoretically use it, too
+                if self.CurrentSound['delayer'] > 0:
+                    self.CurrentSound['delayer'] -= 1
+                else:
+                    # If the sound is not a breath but it's not time to speak, save the sound for later and queue up another breath
+                    if self.CurrentSound['ignorespeaking'] == True or time.time() > GlobalStatus.DontSpeakUntil:
+                        self.Play()
+                    else:
+                        soundlog.debug('Sound delayed due to DontSpeakUntil block')
+                        self.DelayedSound = self.CurrentSound
+                        self.CurrentSound = self.ChooseNewBreath()
+                        self.DelayedSound['delayer'] = 0
+                        self.Play()
 
     def ChooseNewBreath(self):
-        return {'request': Msg.Say, 'sound': SelectSound(type = self.BreathStyle, randomrow = True), 'cutsound': False, 'priority': 1, 'playsleeping': True, 'ignorespeaking': True, 'has_started': False, 'delayer': random.randint(5, 20)}
+        self.CurrentSound = {'request': Msg.Say, 'sound': SelectSound(type = self.BreathStyle, randomrow = True), 'cutsound': False, 'priority': 1, 'playsleeping': True, 'ignorespeaking': True, 'delayer': random.randint(5, 20)}
 
     def Play(self):
+        soundlog.debug(f'Playing: {self.CurrentSound}')
+
         # Some sounds have tempo variations. If so randomly choose one, otherwise it'll just be 0.wav
         if self.CurrentSound['sound'][Col.tempo_range.value] == 0.0:
             self.PipeToShuttlecraft.send('./sounds_processed/' + str(self.CurrentSound['sound'][Col.id.value]) + '/0.wav')
         else:
             self.PipeToShuttlecraft.send('./sounds_processed/' + str(self.CurrentSound['sound'][Col.id.value]) + '/' + random.choice(TempoMultipliers) + '.wav')
+
+        # While a sound is playing, most of the logic is going to just skip anyway. Setting this to None to signal there's nothing that needs to play
+        self.CurrentSound = None
 
     # Runs in a separate process for performance reasons. Sounds got crappy and this should solve it. 
     def Shuttlecraft(self, PipeToStarship):
@@ -658,8 +661,8 @@ class Breath(threading.Thread):
         self.BreathStyle = NewBreathType
 
     # Add a sound to the queue to be played
-    def QueueSound(self, Sound, CutAllSoundAndPlay = False, Priority = 5, PlayWhenSleeping = False, IgnoreSpeaking = False):
-        self.Queue_Breath.append({'sound': Sound, 'cutsound': CutAllSoundAndPlay, 'priority': Priority, 'playsleeping': PlayWhenSleeping, 'ignorespeaking': IgnoreSpeaking, 'has_started': False, 'delayer': 0})  
+    def QueueSound(self, Sound, CutAllSoundAndPlay = False, Priority = 5, PlayWhenSleeping = False, IgnoreSpeaking = False, Delay = 0):
+        self.Queue_Breath.append({'sound': Sound, 'cutsound': CutAllSoundAndPlay, 'priority': Priority, 'playsleeping': PlayWhenSleeping, 'ignorespeaking': IgnoreSpeaking, 'delayer': Delay})  
 
 # def TellBreath(Request, Sound = None, SoundType = None, CutAllSoundAndPlay = False, Priority = 5):
 #     Queue_Breath.append({'request': Request, 'sound': Sound, 'soundtype': SoundType, 'cutsound': CutAllSoundAndPlay, 'priority': Priority, 'has_started': False, 'delayer': 0})
