@@ -961,8 +961,8 @@ class Sensor_MPU(threading.Thread):
                 # if she gets hit, wake up
                 if self.JostledLevel > 0.13 and GlobalStatus.IAmSleeping == True:
                     sleeplog.info(f'Woke up by being jostled this much: {self.JostledLevel}')
-                    GlobalStatus.Wakefulness = 0.5
-                    Thread_Breath.QueueSound(Sound=CollectionOfWokeUpRudely.GetRandomSound())
+                    GlobalStatus.Wakefulness = 0.4
+                    Thread_Breath.QueueSound(Sound=CollectionOfWokeUpRudely.GetRandomSound(), PlayWhenSleeping=True, IgnoreSpeaking=True, CutAllSoundAndPlay=True)
 
                 # Update the boolean that tells if we're laying down. While laying down I recorded 4.37, 1.60. However, now it's 1.55, 2.7. wtf happened? The gyro has not moved. Maybe position difference. 
                 if abs(self.SmoothXTilt - 1.55) < 2 and abs(self.SmoothYTilt - 2.70) < 2:
@@ -1033,8 +1033,9 @@ class Sensor_Button(threading.Thread):
                 # Reset button register
                 bus.write_byte_data(0x69, 0x1a, 0x00)
                 # Put here what we actually want to do with a button, because I dunno yet
+                # The button will be used for saying hi to people
                 log.info('Button pressed')
-                Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'hey_baby'), CutAllSoundAndPlay=True)
+                Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'hey_baby'), IgnoreSpeaking=True, CutAllSoundAndPlay=True)
             time.sleep(0.5)
 
 # Poll the Pico for battery voltage every 60s
@@ -1179,16 +1180,14 @@ class Script_Sleep(threading.Thread):
             # I also want to detect when sleeping starts
             if self.JustFellAsleep():
                 sleeplog.info('JustFellAsleep')
-                Thread_Breath.QueueSound(Sound=CollectionOfGoodnights.GetRandomSound())
-                # temporary
-                time.sleep(5)
+                Thread_Breath.QueueSound(Sound=CollectionOfGoodnights.GetRandomSound(), PlayWhenSleeping=True, Priority=8)
                 GlobalStatus.IAmSleeping = True
                 Thread_Breath.BreathChange('breathe_sleeping')
             if self.JustWokeUp():
                 sleeplog.info('JustWokeUp')
                 GlobalStatus.IAmSleeping = False
                 Thread_Breath.BreathChange('breathe_normal')
-                Thread_Breath.QueueSound(Sound=CollectionOfWakeups.GetRandomSound())
+                Thread_Breath.QueueSound(Sound=CollectionOfWakeups.GetRandomSound(), PlayWhenSleeping=True, Priority=8)
 
             # log it
             sleeplog.debug('Arousal = %.2f  LightLevel = %.2f  TouchedLevel = %.2f  NoiseLevel = %.2f  JostledLevel = %.2f  Wakefulness = %.2f', self.Arousal, GlobalStatus.LightLevelPct, GlobalStatus.TouchedLevel, GlobalStatus.NoiseLevel, GlobalStatus.JostledLevel, GlobalStatus.Wakefulness)
@@ -1241,7 +1240,7 @@ class Script_Sleep(threading.Thread):
     def TimeToWhine(self):
         return self.AnnounceTiredTime != False and time.time() >= self.AnnounceTiredTime
     def Whine(self):
-        # Thread_Breath.QueueSound(Sound=CollectionOfTiredWifes.GetRandomSound())
+        Thread_Breath.QueueSound(Sound=CollectionOfTiredWifes.GetRandomSound(), Priority=7)
         self.AnnounceTiredTime = False
     def StartBreathingSleepy(self):
         Thread_Breath.BreathChange('breathe_sleepy')
@@ -1332,7 +1331,7 @@ class Script_Touch(threading.Thread):
         touchlog.info('Somebody kissed me!')
         GlobalStatus.DontSpeakUntil = time.time() + 2.0 + (random.random() * 3)
         soundlog.info('GotKissedSoundStop')
-        Thread_Breath.QueueSound(Sound=CollectionOfKisses.GetRandomSound(), CutAllSoundAndPlay=True, Priority=9) # Priority 9 means kill everything else whatever it is and play NOW! 
+        Thread_Breath.QueueSound(Sound=CollectionOfKisses.GetRandomSound(), IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=6)
         GlobalStatus.TouchedLevel += 0.1
         GlobalStatus.ChanceToSpeak += 0.1
 
@@ -1372,9 +1371,12 @@ class Script_I_Love_Yous(threading.Thread):
             if time.time() > self.NextMakeOutSoundsTime and GlobalStatus.ChanceToSpeak > random.random():
                 self.NextMakeOutSoundsTime = time.time() + 10 + int(120*random.random())
                 GlobalStatus.ChanceToSpeak = 0.0
-                Thread_Breath.QueueSound(Sound=CollectionOfLovings.GetRandomSound(), Priority=8)
+                Thread_Breath.QueueSound(Sound=CollectionOfLovings.GetRandomSound())
             soundlog.info('ChanceToSpeak = %.2f', GlobalStatus.ChanceToSpeak)
             GlobalStatus.ChanceToSpeak -= 0.02
+
+            # Can't go past 0 or past 1
+            GlobalStatus.ChanceToSpeak = float(np.clip(GlobalStatus.ChanceToSpeak, 0.0, 1.0))
 
             time.sleep(5)
 
@@ -1412,7 +1414,7 @@ class Hey_Honey(threading.Thread):
                         if Loudness_pct > 0.4 and GlobalStatus.IAmSleeping:
                             sleeplog.info(f'Woke up by a noise this loud: {Loudness_pct}')
                             GlobalStatus.Wakefulness = 0.3
-                            Thread_Breath.QueueSound(Sound=CollectionOfWokeUpRudely.GetRandomSound())
+                            Thread_Breath.QueueSound(Sound=CollectionOfWokeUpRudely.GetRandomSound(), PlayWhenSleeping=True, CutAllSoundAndPlay=True, Priority=8)
 
                         # update the noiselevel
                         if Loudness_pct > GlobalStatus.NoiseLevel:
@@ -1429,7 +1431,7 @@ class Hey_Honey(threading.Thread):
                         elif result['class'] == 'lover' and result['probability'] > 0.9 and GlobalStatus.IAmSleeping == False:
                             wernickelog.info('Heard Lover')
                             GlobalStatus.ChanceToSpeak += 0.05
-                            Thread_Breath.QueueSound(Sound=CollectionOfActiveListening.GetRandomSound(), Priority=8, CutAllSoundAndPlay=True)
+                            Thread_Breath.QueueSound(Sound=CollectionOfActiveListening.GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
 
 # returns the time that is a random number of minutes in the future, for scheduled events
 def RandomMinutesLater(min, max):
@@ -1755,7 +1757,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
         elif self.path == '/Honey_Say':
             self.send_response(200)
             self.send_header('Content-Type', 'text/plain')
-            Thread_Breath.QueueSound(Sound=SelectSound(sound_id = post_data), CutAllSoundAndPlay=True)
+            Thread_Breath.QueueSound(Sound=SelectSound(sound_id = post_data), PlayWhenSleeping=True, IgnoreSpeaking=True, CutAllSoundAndPlay=True)
             log.info('Honey Say Request via web: %s', post_data)
             self.wfile.write(b'done')
         elif self.path == '/BaseVolChange':
@@ -1767,7 +1769,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
             log.info('Base Volume Change via web: %s (new volume %s)', SoundId, NewVolume)
             UpdateSound(sound_id = SoundId, base_volume_adjust = NewVolume)
             ReprocessSound(s_id = SoundId)
-            Thread_Breath.QueueSound(Sound=SelectSound(sound_id = SoundId), CutAllSoundAndPlay=True)
+            Thread_Breath.QueueSound(Sound=SelectSound(sound_id = SoundId), PlayWhenSleeping=True, IgnoreSpeaking=True, CutAllSoundAndPlay=True)
             self.wfile.write(b'done')
         elif self.path == '/AmbientVolChange':
             self.send_response(200)
