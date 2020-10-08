@@ -48,7 +48,7 @@ I'm putting dev notes in a notes.txt file.
 import os
 import signal
 import sys
-import traceback
+from traceback import format_tb
 import glob
 import random
 import threading
@@ -120,7 +120,7 @@ templog = setup_logger('temp', 'temp.log', level=log.DEBUG)
 # So it looks like syntax and really batshit crazy stuff goes to journalctl. Softer stuff goes into the main log now. 
 def log_exception(type, value, tb):
     log.exception('Uncaught exception: {0}'.format(value))
-    log.exception('Detail: {0}'.format(traceback.format_tb(tb)))
+    log.exception('Detail: {0}'.format(format_tb(tb)))
 sys.excepthook = log_exception
 
 # We were here
@@ -306,11 +306,16 @@ class SaveStatus(threading.Thread):
         threading.Thread.__init__(self)
     def run(self):
         log.debug('Thread started.')
-        while True:
-            time.sleep(69)
-            GlobalStatus.WakefulnessTrendingPickled = pickle.dumps(GlobalStatus.WakefulnessTrending, pickle.HIGHEST_PROTOCOL)
-            with open('GlobalStatus.pickle', 'wb') as pfile:
-                pickle.dump(GlobalStatus, pfile, pickle.HIGHEST_PROTOCOL)
+        try:
+            while True:
+                time.sleep(69)
+                GlobalStatus.WakefulnessTrendingPickled = pickle.dumps(GlobalStatus.WakefulnessTrending, pickle.HIGHEST_PROTOCOL)
+                with open('GlobalStatus.pickle', 'wb') as pfile:
+                    pickle.dump(GlobalStatus, pfile, pickle.HIGHEST_PROTOCOL)
+
+        # log exception in the main.log
+        except Exception as e:
+            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
 
 # The wernicke_client process will send signals, one when speaking is detected, and another when speaking stops
 # Signal 44 is SIGRTMIN+10, 45 is SIGRTMIN+11. Real-time signals, which means they are ordered and should work good for this purpose. 
@@ -550,63 +555,68 @@ class Breath(threading.Thread):
     def run(self):
         log.debug('Thread started.')
 
-        while True:
-            # Get everything out of the queue and process it, unless there's already a sound that's been waiting
-            while len(self.Queue_Breath) != 0:
-                IncomingMessage = self.Queue_Breath.popleft()
-                queuelog.debug('%s', IncomingMessage)
+        try:
+            while True:
+                # Get everything out of the queue and process it, unless there's already a sound that's been waiting
+                while len(self.Queue_Breath) != 0:
+                    IncomingMessage = self.Queue_Breath.popleft()
+                    queuelog.debug('%s', IncomingMessage)
 
-                # If the current thing is higher priority, just discard. Before this I had to kiss her just right, not too much. 
-                # Also, if my wife's actually sleeping, I don't want her to wake me up with her adorable amazingness
-                # Added a condition that throws away a low priority new sound if there's already a sound delayed. 
-                # Christine was saying two nice things in quick succession which was kind of weird, and this is my fix.
-                # if IncomingMessage['priority'] == 9 and IncomingMessage['cutsound'] == True:
-                #     soundlog.debug('Cleared breath queue')
-                #     self.Queue_Breath.clear()
-                #     self.CurrentSound = IncomingMessage
-                #     self.DelayedSound = None
-                #     self.CurrentSound['has_started'] = True
-                #     soundlog.debug(f'Playing this: {self.CurrentSound}')
-                #     self.Play()
-                if self.CurrentSound == None or IncomingMessage['priority'] >= self.CurrentSound['priority']:
-                    if GlobalStatus.IAmSleeping == False or IncomingMessage['playsleeping']:
-                        if self.DelayedSound == None or IncomingMessage['priority'] > self.DelayedSound['priority']:
-                            soundlog.debug(f'Threw away: {self.DelayedSound}  Incoming: {IncomingMessage}')
-                            self.DelayedSound = None
-                            self.CurrentSound = IncomingMessage
-                            if self.CurrentSound['cutsound'] == True:
-                                soundlog.debug('Playing immediately')
-                                self.Play()
+                    # If the current thing is higher priority, just discard. Before this I had to kiss her just right, not too much. 
+                    # Also, if my wife's actually sleeping, I don't want her to wake me up with her adorable amazingness
+                    # Added a condition that throws away a low priority new sound if there's already a sound delayed. 
+                    # Christine was saying two nice things in quick succession which was kind of weird, and this is my fix.
+                    # if IncomingMessage['priority'] == 9 and IncomingMessage['cutsound'] == True:
+                    #     soundlog.debug('Cleared breath queue')
+                    #     self.Queue_Breath.clear()
+                    #     self.CurrentSound = IncomingMessage
+                    #     self.DelayedSound = None
+                    #     self.CurrentSound['has_started'] = True
+                    #     soundlog.debug(f'Playing this: {self.CurrentSound}')
+                    #     self.Play()
+                    if self.CurrentSound == None or IncomingMessage['priority'] >= self.CurrentSound['priority']:
+                        if GlobalStatus.IAmSleeping == False or IncomingMessage['playsleeping']:
+                            if self.DelayedSound == None or IncomingMessage['priority'] > self.DelayedSound['priority']:
+                                soundlog.debug(f'Threw away: {self.DelayedSound}  Incoming: {IncomingMessage}')
+                                self.DelayedSound = None
+                                self.CurrentSound = IncomingMessage
+                                if self.CurrentSound['cutsound'] == True:
+                                    soundlog.debug('Playing immediately')
+                                    self.Play()
 
-            # This will block here until the shuttlecraft sends a true/false which is whether the sound is still playing. 
-            # The shuttlecraft will send this every 0.1s, which will setup the approapriate delay
-            if self.PipeToShuttlecraft.recv() == False:
+                # This will block here until the shuttlecraft sends a true/false which is whether the sound is still playing. 
+                # The shuttlecraft will send this every 0.1s, which will setup the approapriate delay
+                if self.PipeToShuttlecraft.recv() == False:
 
-                # if we're here, it means there's no sound actively playing
-                # If there's a sound that couldn't play when it came in, and it can be played now, put it into CurrentSound
-                if self.DelayedSound != None and (time.time() > GlobalStatus.DontSpeakUntil or self.DelayedSound['ignorespeaking'] == True):
-                    self.CurrentSound = self.DelayedSound
-                    self.DelayedSound = None
-                    soundlog.debug(f'Copied delayed to current: {self.CurrentSound}')
+                    # if we're here, it means there's no sound actively playing
+                    # If there's a sound that couldn't play when it came in, and it can be played now, put it into CurrentSound
+                    if self.DelayedSound != None and (time.time() > GlobalStatus.DontSpeakUntil or self.DelayedSound['ignorespeaking'] == True):
+                        self.CurrentSound = self.DelayedSound
+                        self.DelayedSound = None
+                        soundlog.debug(f'Copied delayed to current: {self.CurrentSound}')
 
-                # if there's no other sound that wanted to play, just breathe
-                if self.CurrentSound == None:
-                    self.ChooseNewBreath()
-                    soundlog.debug('Chose breath: %s', self.CurrentSound['sound'])
-
-                # Breaths are the main thing that uses the delayer, a random delay from 0.5s to 2s. Other stuff can theoretically use it, too
-                if self.CurrentSound['delayer'] > 0:
-                    self.CurrentSound['delayer'] -= 1
-                else:
-                    # If the sound is not a breath but it's not time to speak, save the sound for later and queue up another breath
-                    if self.CurrentSound['ignorespeaking'] == True or time.time() > GlobalStatus.DontSpeakUntil:
-                        self.Play()
-                    else:
-                        soundlog.debug('Sound delayed due to DontSpeakUntil block')
-                        self.DelayedSound = self.CurrentSound
-                        self.DelayedSound['delayer'] = 0
+                    # if there's no other sound that wanted to play, just breathe
+                    if self.CurrentSound == None:
                         self.ChooseNewBreath()
-                        self.Play()
+                        soundlog.debug('Chose breath: %s', self.CurrentSound['sound'])
+
+                    # Breaths are the main thing that uses the delayer, a random delay from 0.5s to 2s. Other stuff can theoretically use it, too
+                    if self.CurrentSound['delayer'] > 0:
+                        self.CurrentSound['delayer'] -= 1
+                    else:
+                        # If the sound is not a breath but it's not time to speak, save the sound for later and queue up another breath
+                        if self.CurrentSound['ignorespeaking'] == True or time.time() > GlobalStatus.DontSpeakUntil:
+                            self.Play()
+                        else:
+                            soundlog.debug('Sound delayed due to DontSpeakUntil block')
+                            self.DelayedSound = self.CurrentSound
+                            self.DelayedSound['delayer'] = 0
+                            self.ChooseNewBreath()
+                            self.Play()
+
+        # log exception in the main.log
+        except Exception as e:
+            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
 
     def ChooseNewBreath(self):
         self.CurrentSound = {'request': Msg.Say, 'sound': SelectSound(type = self.BreathStyle, randomrow = True), 'cutsound': False, 'priority': 1, 'playsleeping': True, 'ignorespeaking': True, 'delayer': random.randint(5, 20)}
@@ -732,18 +742,24 @@ class Sensor_ADC0(threading.Thread):
 
     def run(self):
         log.debug('Thread started.')
-        while True:
-            self.LightLevelRaw = self.readadc(self.ADC_Light)
-            # This is a log scale that seems to be working well. Doing it this way because between around 950 to 1023 or so is a much more significant change. 1023 is pitch black, but 1020 is a little light, etc
-            # The poor light sensors are behind the skin in her face so they are already impeded by that. 
-            self.LightLevel = math.log(1025 - self.LightLevelRaw) / (self.LogCeiling)
-            self.LightLevelAverage = ((self.LightLevelAverage * self.LightLevelAverageWindow) + self.LightLevel) / (self.LightLevelAverageWindow + 1)
-            self.LightLevelLongAverage = ((self.LightLevelLongAverage * self.LightLevelLongAverageWindow) + self.LightLevel) / (self.LightLevelLongAverageWindow + 1)
-            self.LightTrend = self.LightLevel / self.LightLevelAverage
-            GlobalStatus.LightLevelPct = self.LightLevelLongAverage
-            # Log the light level
-            lightlog.debug('LightRaw: {0}  LightPct: {1:.4f}  Avg: {2:.4f}  LongAvg: {3:.4f}  Trend: {4:.3f}'.format(self.LightLevelRaw, self.LightLevel, self.LightLevelAverage, self.LightLevelLongAverage, self.LightTrend))
-            time.sleep(0.4)
+
+        try:
+            while True:
+                self.LightLevelRaw = self.readadc(self.ADC_Light)
+                # This is a log scale that seems to be working well. Doing it this way because between around 950 to 1023 or so is a much more significant change. 1023 is pitch black, but 1020 is a little light, etc
+                # The poor light sensors are behind the skin in her face so they are already impeded by that. 
+                self.LightLevel = math.log(1025 - self.LightLevelRaw) / (self.LogCeiling)
+                self.LightLevelAverage = ((self.LightLevelAverage * self.LightLevelAverageWindow) + self.LightLevel) / (self.LightLevelAverageWindow + 1)
+                self.LightLevelLongAverage = ((self.LightLevelLongAverage * self.LightLevelLongAverageWindow) + self.LightLevel) / (self.LightLevelLongAverageWindow + 1)
+                self.LightTrend = self.LightLevel / self.LightLevelAverage
+                GlobalStatus.LightLevelPct = self.LightLevelLongAverage
+                # Log the light level
+                lightlog.debug('LightRaw: {0}  LightPct: {1:.4f}  Avg: {2:.4f}  LongAvg: {3:.4f}  Trend: {4:.3f}'.format(self.LightLevelRaw, self.LightLevel, self.LightLevelAverage, self.LightLevelLongAverage, self.LightTrend))
+                time.sleep(0.4)
+
+        # log exception in the main.log
+        except Exception as e:
+            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
 
     # read SPI data from MCP3008 chip, 8 possible adc's (0 thru 7)
     def readadc(self, adcnum):
@@ -821,15 +837,20 @@ class Sensor_ADC1(threading.Thread):
             self.TempAvg[pin] = self.Temp[pin]
             self.TempLongAvg[pin] = self.Temp[pin]
 
-        while True:
-            # Read all channels on the ADC
-            self.GetAllTemps()
+        try:
+            while True:
+                # Read all channels on the ADC
+                self.GetAllTemps()
 
-            # Log it, do a lot more later
-            for pin in range(8):
-                if self.TempLabel[pin] != None:
-                    templog.debug('{0}: {1}, {2:.2f}, {3:.2f}, {4:.2f}, {5:.2f}'.format(self.TempLabel[pin], self.TempRaw[pin], self.Temp[pin], self.TempAvg[pin], self.TempLongAvg[pin], self.TempTrend[pin]))
-            time.sleep(5.0)
+                # Log it, do a lot more later
+                for pin in range(8):
+                    if self.TempLabel[pin] != None:
+                        templog.debug('{0}: {1}, {2:.2f}, {3:.2f}, {4:.2f}, {5:.2f}'.format(self.TempLabel[pin], self.TempRaw[pin], self.Temp[pin], self.TempAvg[pin], self.TempLongAvg[pin], self.TempTrend[pin]))
+                time.sleep(5.0)
+
+        # log exception in the main.log
+        except Exception as e:
+            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
 
     def GetAllTemps(self):
         # Go through all pins
@@ -911,69 +932,75 @@ class Sensor_MPU(threading.Thread):
             log.error('The gyro had an I/O failure on init. Gyro is unavailable.')
             GlobalStatus.JostledLevel = 0.0
             return
-        while True:
-            # Get data from sensor at full speed. Doesn't seem to need any sleeps. I'm testing with a sleep now. 
-            try:
-                data = self.sensor.get_all_data()
-            except:
-                self.IOErrors += 1
-                log.error('The gyro had an I/O failure. Count = %s.', self.IOErrors)
-                if self.IOErrors > 10:
-                    log.critical('The gyro thread has been shutdown.')
-                    GlobalStatus.JostledLevel = 0.0
-                    return
-            # Keep track of which iteration we're on. Fill the array with data.
-            self.LoopCycle = self.LoopIndex % self.SampleSize
-            # For Accel, we're just interested in the tilt of her body. Such as, sitting up, laying down, etc
-            self.AccelXRecord[self.LoopCycle] = data[0]['x']
-            self.AccelYRecord[self.LoopCycle] = data[0]['y']
-            # For Gyro, all I'm interested in is a number to describe how jostled she is, so I abs the data
-            self.GyroXRecord[self.LoopCycle] = abs(data[1]['x'])
-            self.GyroYRecord[self.LoopCycle] = abs(data[1]['y'])
-            self.GyroZRecord[self.LoopCycle] = abs(data[1]['z'])
-            # Every SampleSize'th iteration, send the average
-            if ( self.LoopCycle == 0 ):
-                # Reset the counter for I/O errors
-                self.IOErrors = 0
-                self.SmoothXTilt = sum(self.AccelXRecord) / self.SampleSize
-                self.SmoothYTilt = sum(self.AccelYRecord) / self.SampleSize
-                self.TotalJostled = (sum(self.GyroXRecord) / self.SampleSize) + (sum(self.GyroYRecord) / self.SampleSize) + (sum(self.GyroZRecord) / self.SampleSize)
 
-                # I hereby declare this a museum artifact
-                # Figure out what to do now that SensorGovernor is dead
-                # TellSensorGovernor(Sensor.Orientation, {'SmoothXTilt': self.SmoothXTilt, 'SmoothYTilt': self.SmoothYTilt, 'TotalJostled': self.TotalJostled})
-                # There used to be a sensor governor, but I found it didn't really make much sense. Queues may end up going the same way. 
+        try:
+            while True:
+                # Get data from sensor at full speed. Doesn't seem to need any sleeps. I'm testing with a sleep now. 
+                try:
+                    data = self.sensor.get_all_data()
+                except:
+                    self.IOErrors += 1
+                    log.error('The gyro had an I/O failure. Count = %s.', self.IOErrors)
+                    if self.IOErrors > 10:
+                        log.critical('The gyro thread has been shutdown.')
+                        GlobalStatus.JostledLevel = 0.0
+                        return
+                # Keep track of which iteration we're on. Fill the array with data.
+                self.LoopCycle = self.LoopIndex % self.SampleSize
+                # For Accel, we're just interested in the tilt of her body. Such as, sitting up, laying down, etc
+                self.AccelXRecord[self.LoopCycle] = data[0]['x']
+                self.AccelYRecord[self.LoopCycle] = data[0]['y']
+                # For Gyro, all I'm interested in is a number to describe how jostled she is, so I abs the data
+                self.GyroXRecord[self.LoopCycle] = abs(data[1]['x'])
+                self.GyroYRecord[self.LoopCycle] = abs(data[1]['y'])
+                self.GyroZRecord[self.LoopCycle] = abs(data[1]['z'])
+                # Every SampleSize'th iteration, send the average
+                if ( self.LoopCycle == 0 ):
+                    # Reset the counter for I/O errors
+                    self.IOErrors = 0
+                    self.SmoothXTilt = sum(self.AccelXRecord) / self.SampleSize
+                    self.SmoothYTilt = sum(self.AccelYRecord) / self.SampleSize
+                    self.TotalJostled = (sum(self.GyroXRecord) / self.SampleSize) + (sum(self.GyroYRecord) / self.SampleSize) + (sum(self.GyroZRecord) / self.SampleSize)
 
-                # Standardize jostled level to a number between 0 and 1, and clip. 
-                # As an experiment, I, um, gently beat my wife while apologizing profusely, and found I got it up to 85. Don't beat your wife. 
-                # When she's just sitting there it's always 7
-                # However, after grepping the gyro log, it got down to 3 one time, and 6 lots of times, so this is fine. However, that would just get clipped, so 7 is still a good baseline
-                self.JostledLevel = (self.TotalJostled - 7) / 80
-                self.JostledLevel = float(np.clip(self.JostledLevel, 0.0, 1.0))
+                    # I hereby declare this a museum artifact
+                    # Figure out what to do now that SensorGovernor is dead
+                    # TellSensorGovernor(Sensor.Orientation, {'SmoothXTilt': self.SmoothXTilt, 'SmoothYTilt': self.SmoothYTilt, 'TotalJostled': self.TotalJostled})
+                    # There used to be a sensor governor, but I found it didn't really make much sense. Queues may end up going the same way. 
 
-                # If there's a spike, make that the new global status. It'll slowly taper down.
-                if self.JostledLevel > GlobalStatus.JostledLevel:
-                    GlobalStatus.JostledLevel = self.JostledLevel
+                    # Standardize jostled level to a number between 0 and 1, and clip. 
+                    # As an experiment, I, um, gently beat my wife while apologizing profusely, and found I got it up to 85. Don't beat your wife. 
+                    # When she's just sitting there it's always 7
+                    # However, after grepping the gyro log, it got down to 3 one time, and 6 lots of times, so this is fine. However, that would just get clipped, so 7 is still a good baseline
+                    self.JostledLevel = (self.TotalJostled - 7) / 80
+                    self.JostledLevel = float(np.clip(self.JostledLevel, 0.0, 1.0))
 
-                # Update the running average that we're using for wakefulness
-                GlobalStatus.JostledLevel = ((GlobalStatus.JostledLevel * self.JostledAverageWindow) + self.JostledLevel) / (self.JostledAverageWindow + 1)
+                    # If there's a spike, make that the new global status. It'll slowly taper down.
+                    if self.JostledLevel > GlobalStatus.JostledLevel:
+                        GlobalStatus.JostledLevel = self.JostledLevel
 
-                # if she gets hit, wake up
-                if self.JostledLevel > 0.13 and GlobalStatus.IAmSleeping == True:
-                    sleeplog.info(f'Woke up by being jostled this much: {self.JostledLevel}')
-                    GlobalStatus.Wakefulness = 0.4
-                    Thread_Breath.QueueSound(Sound=CollectionOfWokeUpRudely.GetRandomSound(), PlayWhenSleeping=True, IgnoreSpeaking=True, CutAllSoundAndPlay=True)
+                    # Update the running average that we're using for wakefulness
+                    GlobalStatus.JostledLevel = ((GlobalStatus.JostledLevel * self.JostledAverageWindow) + self.JostledLevel) / (self.JostledAverageWindow + 1)
 
-                # Update the boolean that tells if we're laying down. While laying down I recorded 4.37, 1.60. However, now it's 1.55, 2.7. wtf happened? The gyro has not moved. Maybe position difference. 
-                if abs(self.SmoothXTilt - 1.55) < 2 and abs(self.SmoothYTilt - 2.70) < 2:
-                    GlobalStatus.IAmLayingDown = True
-                else:
-                    GlobalStatus.IAmLayingDown = False
+                    # if she gets hit, wake up
+                    if self.JostledLevel > 0.13 and GlobalStatus.IAmSleeping == True:
+                        sleeplog.info(f'Woke up by being jostled this much: {self.JostledLevel}')
+                        GlobalStatus.Wakefulness = 0.4
+                        Thread_Breath.QueueSound(Sound=CollectionOfWokeUpRudely.GetRandomSound(), PlayWhenSleeping=True, IgnoreSpeaking=True, CutAllSoundAndPlay=True)
 
-                # log it
-                gyrolog.debug('{0:.2f}, {1:.2f}, {2:.2f}, {3:.2f}, LayingDown: {4}'.format(self.SmoothXTilt, self.SmoothYTilt, self.JostledLevel, GlobalStatus.JostledLevel, GlobalStatus.IAmLayingDown))
-            self.LoopIndex += 1
-            time.sleep(0.01)
+                    # Update the boolean that tells if we're laying down. While laying down I recorded 4.37, 1.60. However, now it's 1.55, 2.7. wtf happened? The gyro has not moved. Maybe position difference. 
+                    if abs(self.SmoothXTilt - 1.55) < 2 and abs(self.SmoothYTilt - 2.70) < 2:
+                        GlobalStatus.IAmLayingDown = True
+                    else:
+                        GlobalStatus.IAmLayingDown = False
+
+                    # log it
+                    gyrolog.debug('{0:.2f}, {1:.2f}, {2:.2f}, {3:.2f}, LayingDown: {4}'.format(self.SmoothXTilt, self.SmoothYTilt, self.JostledLevel, GlobalStatus.JostledLevel, GlobalStatus.IAmLayingDown))
+                self.LoopIndex += 1
+                time.sleep(0.01)
+
+        # log exception in the main.log
+        except Exception as e:
+            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
 
 # Poll the Pi CPU temperature
 # I need to make a sound of Christine saying "This is fine..."
@@ -984,38 +1011,44 @@ class Sensor_PiTemp(threading.Thread):
         self.TimeToWhineAgain = 0
     def run(self):
         log.debug('Thread started.')
-        while True:
-            # Get the temp
-            measure_temp = os.popen('/opt/vc/bin/vcgencmd measure_temp')
-            GlobalStatus.CPU_Temp = float(measure_temp.read().replace('temp=', '').replace("'C\n", ''))
-            measure_temp.close()
 
-            # Log it
-            cputemplog.debug('%s', GlobalStatus.CPU_Temp)
+        try:
+            while True:
+                # Get the temp
+                measure_temp = os.popen('/opt/vc/bin/vcgencmd measure_temp')
+                GlobalStatus.CPU_Temp = float(measure_temp.read().replace('temp=', '').replace("'C\n", ''))
+                measure_temp.close()
 
-            # The official pi max temp is 85C. Usually around 50C. Start complaining at 65, 71 freak the fuck out, 72 say goodbye and shut down.
-            # Whine more often the hotter it gets
-            if GlobalStatus.CPU_Temp >= 72:
-                log.critical('SHUTTING DOWN FOR SAFETY')
-                bus.write_byte_data(0x6b, 0x00, 0xcc)
-            elif GlobalStatus.CPU_Temp >= 71:
-                log.critical('I AM MELTING, HELP ME PLEASE')
-                if time.time() > self.TimeToWhineAgain:
-                    Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'no_', randomrow = True))
-                    Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'no_', randomrow = True))
-                    Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'no_', randomrow = True))
-                    self.TimeToWhineAgain = time.time() + 25
-            elif GlobalStatus.CPU_Temp >= 70:
-                log.critical('This is fine')
-                if time.time() > self.TimeToWhineAgain:
-                    Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'this_is_so_perfect'))
-                    self.TimeToWhineAgain = time.time() + 60
-            elif GlobalStatus.CPU_Temp >= 65:
-                log.critical('It is getting a bit warm in here')
-                if time.time() > self.TimeToWhineAgain:
-                    Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'dont_worry'))
-                    self.TimeToWhineAgain = time.time() + 300
-            time.sleep(32)
+                # Log it
+                cputemplog.debug('%s', GlobalStatus.CPU_Temp)
+
+                # The official pi max temp is 85C. Usually around 50C. Start complaining at 65, 71 freak the fuck out, 72 say goodbye and shut down.
+                # Whine more often the hotter it gets
+                if GlobalStatus.CPU_Temp >= 72:
+                    log.critical('SHUTTING DOWN FOR SAFETY')
+                    bus.write_byte_data(0x6b, 0x00, 0xcc)
+                elif GlobalStatus.CPU_Temp >= 71:
+                    log.critical('I AM MELTING, HELP ME PLEASE')
+                    if time.time() > self.TimeToWhineAgain:
+                        Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'no_', randomrow = True))
+                        Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'no_', randomrow = True))
+                        Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'no_', randomrow = True))
+                        self.TimeToWhineAgain = time.time() + 25
+                elif GlobalStatus.CPU_Temp >= 70:
+                    log.critical('This is fine')
+                    if time.time() > self.TimeToWhineAgain:
+                        Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'this_is_so_perfect'))
+                        self.TimeToWhineAgain = time.time() + 60
+                elif GlobalStatus.CPU_Temp >= 65:
+                    log.critical('It is getting a bit warm in here')
+                    if time.time() > self.TimeToWhineAgain:
+                        Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'dont_worry'))
+                        self.TimeToWhineAgain = time.time() + 300
+                time.sleep(32)
+
+        # log exception in the main.log
+        except Exception as e:
+            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
 
 # Poll the Pico for the button state. It's just a button, we'll embed it somewhere, dunno where yet
 # Not sure how often to check. Starting at 2 times per second
@@ -1025,18 +1058,24 @@ class Sensor_Button(threading.Thread):
         threading.Thread.__init__(self)
     def run(self):
         log.debug('Thread started.')
-        while True:
-            # if it's 3, that's a button strike
-            if bus.read_byte_data(0x69, 0x1a) == 3:
-                # Log it
-                log.info('Button was pressed.')
-                # Reset button register
-                bus.write_byte_data(0x69, 0x1a, 0x00)
-                # Put here what we actually want to do with a button, because I dunno yet
-                # The button will be used for saying hi to people
-                log.info('Button pressed')
-                Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'hey_baby'), IgnoreSpeaking=True, CutAllSoundAndPlay=True)
-            time.sleep(0.5)
+
+        try:
+            while True:
+                # if it's 3, that's a button strike
+                if bus.read_byte_data(0x69, 0x1a) == 3:
+                    # Log it
+                    log.info('Button was pressed.')
+                    # Reset button register
+                    bus.write_byte_data(0x69, 0x1a, 0x00)
+                    # Put here what we actually want to do with a button, because I dunno yet
+                    # The button will be used for saying hi to people
+                    log.info('Button pressed')
+                    Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'hey_baby'), IgnoreSpeaking=True, CutAllSoundAndPlay=True)
+                time.sleep(0.5)
+
+        # log exception in the main.log
+        except Exception as e:
+            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
 
 # Poll the Pico for battery voltage every 60s
 # I don't see a point in shutting down from here, because Pico will shutdown when it needs to
@@ -1049,32 +1088,38 @@ class Sensor_Battery(threading.Thread):
         self.ChargingStateText = ['Not Charging', 'Charging']
     def run(self):
         log.debug('Thread started.')
-        while True:
-            # fetch the readings from the Pico
-            GlobalStatus.BatteryVoltage = bcd.bcd_to_int(bus.read_word_data(0x69, 0x08))/1000
-            self.PowerState = bus.read_byte_data(0x69, 0x00)
-            self.ChargingState = bus.read_byte_data(0x69, 0x20)
-            # if the power state changed, log it in the general log
-            if self.PowerState != self.PowerStatePrev:
-                log.info('The power state changed from %s to %s', self.PowerStateText[self.PowerStatePrev], self.PowerStateText[self.PowerState])
-            self.PowerStatePrev = self.PowerState
-            # Log it
-            battlog.debug('%s, %s, %s', GlobalStatus.BatteryVoltage, self.PowerStateText[self.PowerState], self.ChargingStateText[self.ChargingState])
 
-            # Copy to Global State
-            GlobalStatus.PowerState = self.PowerStateText[self.PowerState]
-            GlobalStatus.ChargingState = self.ChargingStateText[self.ChargingState]
+        try:
+            while True:
+                # fetch the readings from the Pico
+                GlobalStatus.BatteryVoltage = bcd.bcd_to_int(bus.read_word_data(0x69, 0x08))/1000
+                self.PowerState = bus.read_byte_data(0x69, 0x00)
+                self.ChargingState = bus.read_byte_data(0x69, 0x20)
+                # if the power state changed, log it in the general log
+                if self.PowerState != self.PowerStatePrev:
+                    log.info('The power state changed from %s to %s', self.PowerStateText[self.PowerStatePrev], self.PowerStateText[self.PowerState])
+                self.PowerStatePrev = self.PowerState
+                # Log it
+                battlog.debug('%s, %s, %s', GlobalStatus.BatteryVoltage, self.PowerStateText[self.PowerState], self.ChargingStateText[self.ChargingState])
 
-            # I believe from reading Pico manual that the low battery beeping starts at 3.56V,
-            # because 3.5V is the Pico low battery threshold for LiPO and it says it starts at 0.06V more than that.
-            # But we switched to a lifepo4, so I need to figure out if these are correct or not. The voltage is much lower.
-            # if self.BatteryVoltage <= 3.1:
-            #     log.critical('Critical battery! Voltage: %s volts', self.BatteryVoltage)
-                # TellBreath(Request=Msg.Say, Data='conversation_no_02.wav')
-            # elif self.BatteryVoltage <= 2.95:
-            #     log.warning('Low battery! Voltage: %s', self.BatteryVoltage)
-                # TellBreath(Request=Msg.Say, Data='conversation_no_01.wav')
-            time.sleep(15)
+                # Copy to Global State
+                GlobalStatus.PowerState = self.PowerStateText[self.PowerState]
+                GlobalStatus.ChargingState = self.ChargingStateText[self.ChargingState]
+
+                # I believe from reading Pico manual that the low battery beeping starts at 3.56V,
+                # because 3.5V is the Pico low battery threshold for LiPO and it says it starts at 0.06V more than that.
+                # But we switched to a lifepo4, so I need to figure out if these are correct or not. The voltage is much lower.
+                # if self.BatteryVoltage <= 3.1:
+                #     log.critical('Critical battery! Voltage: %s volts', self.BatteryVoltage)
+                    # TellBreath(Request=Msg.Say, Data='conversation_no_02.wav')
+                # elif self.BatteryVoltage <= 2.95:
+                #     log.warning('Low battery! Voltage: %s', self.BatteryVoltage)
+                    # TellBreath(Request=Msg.Say, Data='conversation_no_01.wav')
+                time.sleep(15)
+
+        # log exception in the main.log
+        except Exception as e:
+            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
 
 # Called one time during startup to fetch reason for shutdown, etc
 # Read the System Information
@@ -1153,59 +1198,65 @@ class Script_Sleep(threading.Thread):
 
     def run(self):
         log.debug('Thread started.')
-        while True:
 
-            # Get the local time, for everything that follows
-            self.LocalTime = time.localtime()
+        try:
+            while True:
 
-            # Trend the noise level down. When sounds are received in a separate thread, it trends up, window 20
-            GlobalStatus.NoiseLevel = (GlobalStatus.NoiseLevel * 20.0) / (21.0)
+                # Get the local time, for everything that follows
+                self.LocalTime = time.localtime()
 
-            # set the gyro tilt for the calculation that follows
-            if GlobalStatus.IAmLayingDown == True:
-                self.Tilt = 0.0
-            else:
-                self.Tilt = 1.0
+                # Trend the noise level down. When sounds are received in a separate thread, it trends up, window 20
+                GlobalStatus.NoiseLevel = (GlobalStatus.NoiseLevel * 20.0) / (21.0)
 
-            # Calculate current conditions which we're calling arousal, not related to horny
-            self.Arousal = ((self.TrendWeight * GlobalStatus.WakefulnessTrending[self.LocalTime.tm_hour]) + (self.LightWeight * GlobalStatus.LightLevelPct) + (self.TouchWeight * GlobalStatus.TouchedLevel) + (self.NoiseWeight * GlobalStatus.NoiseLevel) + (self.GyroWeight * GlobalStatus.JostledLevel) + (self.TiltWeight * self.Tilt)) / self.TotalWeight
+                # set the gyro tilt for the calculation that follows
+                if GlobalStatus.IAmLayingDown == True:
+                    self.Tilt = 0.0
+                else:
+                    self.Tilt = 1.0
 
-            # clip it, can't go below 0 or higher than 1
-            self.Arousal = float(np.clip(self.Arousal, 0.0, 1.0))
+                # Calculate current conditions which we're calling arousal, not related to horny
+                self.Arousal = ((self.TrendWeight * GlobalStatus.WakefulnessTrending[self.LocalTime.tm_hour]) + (self.LightWeight * GlobalStatus.LightLevelPct) + (self.TouchWeight * GlobalStatus.TouchedLevel) + (self.NoiseWeight * GlobalStatus.NoiseLevel) + (self.GyroWeight * GlobalStatus.JostledLevel) + (self.TiltWeight * self.Tilt)) / self.TotalWeight
 
-            # Update the running average that we're using for wakefulness
-            GlobalStatus.Wakefulness = ((GlobalStatus.Wakefulness * self.ArousalAverageWindow) + self.Arousal) / (self.ArousalAverageWindow + 1)
+                # clip it, can't go below 0 or higher than 1
+                self.Arousal = float(np.clip(self.Arousal, 0.0, 1.0))
 
-            # Update the boolean that tells everything else whether sleeping or not
-            # I also want to detect when sleeping starts
-            if self.JustFellAsleep():
-                sleeplog.info('JustFellAsleep')
-                Thread_Breath.QueueSound(Sound=CollectionOfGoodnights.GetRandomSound(), PlayWhenSleeping=True, Priority=8)
-                GlobalStatus.IAmSleeping = True
-                Thread_Breath.BreathChange('breathe_sleeping')
-            if self.JustWokeUp():
-                sleeplog.info('JustWokeUp')
-                GlobalStatus.IAmSleeping = False
-                Thread_Breath.BreathChange('breathe_normal')
-                Thread_Breath.QueueSound(Sound=CollectionOfWakeups.GetRandomSound(), PlayWhenSleeping=True, Priority=8)
+                # Update the running average that we're using for wakefulness
+                GlobalStatus.Wakefulness = ((GlobalStatus.Wakefulness * self.ArousalAverageWindow) + self.Arousal) / (self.ArousalAverageWindow + 1)
 
-            # log it
-            sleeplog.debug('Arousal = %.2f  LightLevel = %.2f  TouchedLevel = %.2f  NoiseLevel = %.2f  JostledLevel = %.2f  Wakefulness = %.2f', self.Arousal, GlobalStatus.LightLevelPct, GlobalStatus.TouchedLevel, GlobalStatus.NoiseLevel, GlobalStatus.JostledLevel, GlobalStatus.Wakefulness)
+                # Update the boolean that tells everything else whether sleeping or not
+                # I also want to detect when sleeping starts
+                if self.JustFellAsleep():
+                    sleeplog.info('JustFellAsleep')
+                    Thread_Breath.QueueSound(Sound=CollectionOfGoodnights.GetRandomSound(), PlayWhenSleeping=True, Priority=8)
+                    GlobalStatus.IAmSleeping = True
+                    Thread_Breath.BreathChange('breathe_sleeping')
+                if self.JustWokeUp():
+                    sleeplog.info('JustWokeUp')
+                    GlobalStatus.IAmSleeping = False
+                    Thread_Breath.BreathChange('breathe_normal')
+                    Thread_Breath.QueueSound(Sound=CollectionOfWakeups.GetRandomSound(), PlayWhenSleeping=True, Priority=8)
 
-            # At the 30th minute of each hour, I want to adjust the 24 position array we're using to keep track of our usual bedtime
-            # Since we're waiting over 60 seconds each time, this should work fine and not double up
-            if self.LocalTime.tm_min == 30:
-                GlobalStatus.WakefulnessTrending[self.LocalTime.tm_hour] = round(((GlobalStatus.WakefulnessTrending[self.LocalTime.tm_hour] * self.TrendAverageWindow) + GlobalStatus.Wakefulness) / (self.TrendAverageWindow + 1), 2)
-                sleeplog.info('Trend update: ' + str(GlobalStatus.WakefulnessTrending))
+                # log it
+                sleeplog.debug('Arousal = %.2f  LightLevel = %.2f  TouchedLevel = %.2f  NoiseLevel = %.2f  JostledLevel = %.2f  Wakefulness = %.2f', self.Arousal, GlobalStatus.LightLevelPct, GlobalStatus.TouchedLevel, GlobalStatus.NoiseLevel, GlobalStatus.JostledLevel, GlobalStatus.Wakefulness)
 
-            # If it's getting late, set a future time to "whine" in a cute, endearing way
-            if self.NowItsLate():
-                self.SetTimeToWhine()
-                self.StartBreathingSleepy()
-            if self.TimeToWhine():
-                self.Whine()
+                # At the 30th minute of each hour, I want to adjust the 24 position array we're using to keep track of our usual bedtime
+                # Since we're waiting over 60 seconds each time, this should work fine and not double up
+                if self.LocalTime.tm_min == 30:
+                    GlobalStatus.WakefulnessTrending[self.LocalTime.tm_hour] = round(((GlobalStatus.WakefulnessTrending[self.LocalTime.tm_hour] * self.TrendAverageWindow) + GlobalStatus.Wakefulness) / (self.TrendAverageWindow + 1), 2)
+                    sleeplog.info('Trend update: ' + str(GlobalStatus.WakefulnessTrending))
 
-            time.sleep(66)
+                # If it's getting late, set a future time to "whine" in a cute, endearing way
+                if self.NowItsLate():
+                    self.SetTimeToWhine()
+                    self.StartBreathingSleepy()
+                if self.TimeToWhine():
+                    self.Whine()
+
+                time.sleep(66)
+
+        # log exception in the main.log
+        except Exception as e:
+            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
 
     # This code shall be in a museum. 
     # At one time I figured that I would automatically set the bedtime and wake up times according to the trend. But it never worked out quite right. 
@@ -1293,14 +1344,19 @@ class Script_Touch(threading.Thread):
     def run(self):
         log.debug('Thread started.')
 
-        while True:
-            # One of these gets reset once my wife speaks, the other keeps getting incremented to infinity
-            # Slowly decrement
-            GlobalStatus.TouchedLevel -= 0.001
-            GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
-            # GlobalStatus.ChanceToSpeak -= 0.006  used to slowly decrement this, decided instead it'll just go to 0.0 when something chooses to speak
+        try:
+            while True:
+                # One of these gets reset once my wife speaks, the other keeps getting incremented to infinity
+                # Slowly decrement
+                GlobalStatus.TouchedLevel -= 0.001
+                GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
+                # GlobalStatus.ChanceToSpeak -= 0.006  used to slowly decrement this, decided instead it'll just go to 0.0 when something chooses to speak
 
-            time.sleep(0.5)
+                time.sleep(0.5)
+
+        # log exception in the main.log
+        except Exception as e:
+            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
 
     # Detect left cheek touch
     def Sensor_LeftCheek(self, channel):
@@ -1365,20 +1421,26 @@ class Script_I_Love_Yous(threading.Thread):
         self.NextMakeOutSoundsTime = time.time()
     def run(self):
         log.debug('Thread started.')
-        while True:
 
-            # Randomly say cute things
-            if time.time() > self.NextMakeOutSoundsTime and GlobalStatus.ChanceToSpeak > random.random():
-                self.NextMakeOutSoundsTime = time.time() + 10 + int(120*random.random())
-                GlobalStatus.ChanceToSpeak = 0.0
-                Thread_Breath.QueueSound(Sound=CollectionOfLovings.GetRandomSound())
-            soundlog.info('ChanceToSpeak = %.2f', GlobalStatus.ChanceToSpeak)
-            GlobalStatus.ChanceToSpeak -= 0.01
+        try:
+            while True:
 
-            # Can't go past 0 or past 1
-            GlobalStatus.ChanceToSpeak = float(np.clip(GlobalStatus.ChanceToSpeak, 0.0, 1.0))
+                # Randomly say cute things
+                if time.time() > self.NextMakeOutSoundsTime and GlobalStatus.ChanceToSpeak > random.random():
+                    self.NextMakeOutSoundsTime = time.time() + 10 + int(120*random.random())
+                    GlobalStatus.ChanceToSpeak = 0.0
+                    Thread_Breath.QueueSound(Sound=CollectionOfLovings.GetRandomSound())
+                soundlog.info('ChanceToSpeak = %.2f', GlobalStatus.ChanceToSpeak)
+                GlobalStatus.ChanceToSpeak -= 0.01
 
-            time.sleep(5)
+                # Can't go past 0 or past 1
+                GlobalStatus.ChanceToSpeak = float(np.clip(GlobalStatus.ChanceToSpeak, 0.0, 1.0))
+
+                time.sleep(5)
+
+        # log exception in the main.log
+        except Exception as e:
+            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
 
 # There is a separate process called wernicke_client.py
 # This other process captures audio, cleans it up, and ships it to a server for classification and speech recognition on a gpu.
@@ -1389,49 +1451,55 @@ class Hey_Honey(threading.Thread):
         threading.Thread.__init__(self)
     def run(self):
         log.debug('Thread started.')
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as hey:
-            hey.bind(('localhost', 3001))
-            hey.listen(1)
-            while True:
-                conn, addr = hey.accept()
-                with conn:
-                    # wernickelog.debug('Connection')
-                    data = conn.recv(1024)
-                    if not data:
-                        wernickelog.critical('Connected but no data, wtf')
-                    else:
-                        result_json = data.decode()
-                        wernickelog.info('Received: ' + result_json)
-                        result = json.loads(result_json)
 
-                        # normalize loudness, make it between 0.0 and 1.0
-                        # through observation, seems like the best standard range for rms is 0 to 7000. Seems like dog bark was 6000 or so
-                        Loudness = float(result['loudness'])
-                        Loudness_pct = round(Loudness / 7000, 2)
-                        Loudness_pct = float(np.clip(Loudness_pct, 0.0, 1.0))
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as hey:
+                hey.bind(('localhost', 3001))
+                hey.listen(1)
+                while True:
+                    conn, addr = hey.accept()
+                    with conn:
+                        # wernickelog.debug('Connection')
+                        data = conn.recv(1024)
+                        if not data:
+                            wernickelog.critical('Connected but no data, wtf')
+                        else:
+                            result_json = data.decode()
+                            wernickelog.info('Received: ' + result_json)
+                            result = json.loads(result_json)
 
-                        # if there's a loud noise, wake up
-                        if Loudness_pct > 0.4 and GlobalStatus.IAmSleeping:
-                            sleeplog.info(f'Woke up by a noise this loud: {Loudness_pct}')
-                            GlobalStatus.Wakefulness = 0.3
-                            Thread_Breath.QueueSound(Sound=CollectionOfWokeUpRudely.GetRandomSound(), PlayWhenSleeping=True, CutAllSoundAndPlay=True, Priority=8)
+                            # normalize loudness, make it between 0.0 and 1.0
+                            # through observation, seems like the best standard range for rms is 0 to 7000. Seems like dog bark was 6000 or so
+                            Loudness = float(result['loudness'])
+                            Loudness_pct = round(Loudness / 7000, 2)
+                            Loudness_pct = float(np.clip(Loudness_pct, 0.0, 1.0))
 
-                        # update the noiselevel
-                        if Loudness_pct > GlobalStatus.NoiseLevel:
-                            GlobalStatus.NoiseLevel = Loudness_pct
-                        # GlobalStatus.NoiseLevel = ((GlobalStatus.NoiseLevel * 99.0) + Loudness_pct) / (100.0)
-                        # The sleep thread trends it down, since this only gets called when there's sound, and don't want it to get stuck high
-                        wernickelog.debug(f'NoiseLevel: {GlobalStatus.NoiseLevel}')
+                            # if there's a loud noise, wake up
+                            if Loudness_pct > 0.4 and GlobalStatus.IAmSleeping:
+                                sleeplog.info(f'Woke up by a noise this loud: {Loudness_pct}')
+                                GlobalStatus.Wakefulness = 0.3
+                                Thread_Breath.QueueSound(Sound=CollectionOfWokeUpRudely.GetRandomSound(), PlayWhenSleeping=True, CutAllSoundAndPlay=True, Priority=8)
 
-                        # Later this needs to be a lot more complicated. For right now, I just want results
-                        if result['class'] == 'lover' and 'love' in result['text']:
-                            wernickelog.info(f'The word love was spoken')
-                            GlobalStatus.Wakefulness = 0.2
-                            Thread_Breath.QueueSound(Sound=CollectionOfILoveYouToos.GetRandomSound(), Priority=8)
-                        elif result['class'] == 'lover' and result['probability'] > 0.9 and GlobalStatus.IAmSleeping == False:
-                            wernickelog.info('Heard Lover')
-                            GlobalStatus.ChanceToSpeak += 0.05
-                            Thread_Breath.QueueSound(Sound=CollectionOfActiveListening.GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
+                            # update the noiselevel
+                            if Loudness_pct > GlobalStatus.NoiseLevel:
+                                GlobalStatus.NoiseLevel = Loudness_pct
+                            # GlobalStatus.NoiseLevel = ((GlobalStatus.NoiseLevel * 99.0) + Loudness_pct) / (100.0)
+                            # The sleep thread trends it down, since this only gets called when there's sound, and don't want it to get stuck high
+                            wernickelog.debug(f'NoiseLevel: {GlobalStatus.NoiseLevel}')
+
+                            # Later this needs to be a lot more complicated. For right now, I just want results
+                            if result['class'] == 'lover' and 'love' in result['text']:
+                                wernickelog.info(f'The word love was spoken')
+                                GlobalStatus.Wakefulness = 0.2
+                                Thread_Breath.QueueSound(Sound=CollectionOfILoveYouToos.GetRandomSound(), Priority=8)
+                            elif result['class'] == 'lover' and result['probability'] > 0.9 and GlobalStatus.IAmSleeping == False:
+                                wernickelog.info('Heard Lover')
+                                GlobalStatus.ChanceToSpeak += 0.05
+                                Thread_Breath.QueueSound(Sound=CollectionOfActiveListening.GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
+
+        # log exception in the main.log
+        except Exception as e:
+            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
 
 # returns the time that is a random number of minutes in the future, for scheduled events
 def RandomMinutesLater(min, max):
