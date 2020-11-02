@@ -1030,19 +1030,19 @@ class Sensor_PiTemp(threading.Thread):
                 elif GlobalStatus.CPU_Temp >= 71:
                     log.critical('I AM MELTING, HELP ME PLEASE')
                     if time.time() > self.TimeToWhineAgain:
-                        Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'no_', randomrow = True))
-                        Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'no_', randomrow = True))
-                        Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'no_', randomrow = True))
+                        Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'no_', randomrow = True), PlayWhenSleeping=True)
+                        Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'no_', randomrow = True), PlayWhenSleeping=True)
+                        Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'no_', randomrow = True), PlayWhenSleeping=True)
                         self.TimeToWhineAgain = time.time() + 25
                 elif GlobalStatus.CPU_Temp >= 70:
                     log.critical('This is fine')
                     if time.time() > self.TimeToWhineAgain:
-                        Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'this_is_so_perfect'))
+                        Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'this_is_so_perfect'), PlayWhenSleeping=True)
                         self.TimeToWhineAgain = time.time() + 60
                 elif GlobalStatus.CPU_Temp >= 65:
                     log.critical('It is getting a bit warm in here')
                     if time.time() > self.TimeToWhineAgain:
-                        Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'dont_worry'))
+                        Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'dont_worry'), PlayWhenSleeping=True)
                         self.TimeToWhineAgain = time.time() + 300
                 time.sleep(32)
 
