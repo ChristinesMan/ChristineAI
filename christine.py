@@ -981,10 +981,10 @@ class Sensor_MPU(threading.Thread):
                     # Update the running average that we're using for wakefulness
                     GlobalStatus.JostledLevel = ((GlobalStatus.JostledLevel * self.JostledAverageWindow) + self.JostledLevel) / (self.JostledAverageWindow + 1)
 
-                    # if she gets hit, wake up
-                    if self.JostledLevel > 0.13 and GlobalStatus.IAmSleeping == True:
+                    # if she gets hit, wake up a bit
+                    if self.JostledLevel > 0.1 and GlobalStatus.IAmSleeping == True:
                         sleeplog.info(f'Woke up by being jostled this much: {self.JostledLevel}')
-                        GlobalStatus.Wakefulness = 0.4
+                        GlobalStatus.Wakefulness += 0.1
                         Thread_Breath.QueueSound(Sound=CollectionOfWokeUpRudely.GetRandomSound(), PlayWhenSleeping=True, IgnoreSpeaking=True, CutAllSoundAndPlay=True)
 
                     # Update the boolean that tells if we're laying down. While laying down I recorded 4.37, 1.60. However, now it's 1.55, 2.7. wtf happened? The gyro has not moved. Maybe position difference. 
@@ -1179,10 +1179,10 @@ class Script_Sleep(threading.Thread):
 
         # Weights
         self.TrendWeight = 5
-        self.LightWeight = 5
+        self.LightWeight = 7
         self.TouchWeight = 2
         self.NoiseWeight = 3
-        self.GyroWeight = 5
+        self.GyroWeight = 7
         self.TiltWeight = 5
         self.TotalWeight = self.TrendWeight + self.LightWeight + self.TouchWeight + self.NoiseWeight + self.GyroWeight + self.TiltWeight
 
@@ -1227,11 +1227,13 @@ class Script_Sleep(threading.Thread):
                 # I also want to detect when sleeping starts
                 if self.JustFellAsleep():
                     sleeplog.info('JustFellAsleep')
+                    GlobalStatus.Wakefulness -= 0.05 # try to prevent wobble
                     Thread_Breath.QueueSound(Sound=CollectionOfGoodnights.GetRandomSound(), PlayWhenSleeping=True, Priority=8)
                     GlobalStatus.IAmSleeping = True
                     Thread_Breath.BreathChange('breathe_sleeping')
                 if self.JustWokeUp():
                     sleeplog.info('JustWokeUp')
+                    GlobalStatus.Wakefulness += 0.05 # try to prevent wobble
                     GlobalStatus.IAmSleeping = False
                     Thread_Breath.BreathChange('breathe_normal')
                     Thread_Breath.QueueSound(Sound=CollectionOfWakeups.GetRandomSound(), PlayWhenSleeping=True, Priority=8)
