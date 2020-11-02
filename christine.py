@@ -290,6 +290,10 @@ class Status:
     PowerState = 'Cable powered'
     ChargingState = 'Not Charging'
 
+    # An adhoc party thing, might go away later
+    StarTrekMode = False
+    ShushPleaseHoney = False
+
 # Either unpickle, or initialize with defaults
 try:
     with open('GlobalStatus.pickle', 'rb') as pfile:
@@ -506,6 +510,10 @@ CollectionOfCuddles =            SoundCollection('cuddling')
 CollectionOfWTFAsshole =         SoundCollection('annoyed')
 CollectionOfWokeUpRudely =       SoundCollection('gotwokeup')
 CollectionOfILoveYouToos =       SoundCollection('iloveyoutoo')
+
+# Quick halloween Ad-hoc
+CollectionOfStarTrekListening =  SoundCollection('startreklistening')
+CollectionOfStarTrekConversate = SoundCollection('startrekconversate')
 
 # Quick and corona infested sound randomizer, shit code
 # Save some of the shit code in a museum
@@ -1428,10 +1436,13 @@ class Script_I_Love_Yous(threading.Thread):
             while True:
 
                 # Randomly say cute things
-                if time.time() > self.NextMakeOutSoundsTime and GlobalStatus.ChanceToSpeak > random.random():
+                if GlobalStatus.ShushPleaseHoney == False and time.time() > self.NextMakeOutSoundsTime and GlobalStatus.ChanceToSpeak > random.random():
                     self.NextMakeOutSoundsTime = time.time() + 10 + int(120*random.random())
                     GlobalStatus.ChanceToSpeak = 0.0
-                    Thread_Breath.QueueSound(Sound=CollectionOfLovings.GetRandomSound())
+                    if GlobalStatus.StarTrekMode == True:
+                        Thread_Breath.QueueSound(Sound=CollectionOfStarTrekConversate.GetRandomSound())
+                    else:
+                        Thread_Breath.QueueSound(Sound=CollectionOfLovings.GetRandomSound())
                 soundlog.info('ChanceToSpeak = %.2f', GlobalStatus.ChanceToSpeak)
                 GlobalStatus.ChanceToSpeak -= 0.01
 
@@ -1497,7 +1508,10 @@ class Hey_Honey(threading.Thread):
                             elif result['class'] == 'lover' and result['probability'] > 0.9 and GlobalStatus.IAmSleeping == False:
                                 wernickelog.info('Heard Lover')
                                 GlobalStatus.ChanceToSpeak += 0.05
-                                Thread_Breath.QueueSound(Sound=CollectionOfActiveListening.GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
+                                if GlobalStatus.StarTrekMode == True:
+                                    Thread_Breath.QueueSound(Sound=CollectionOfStarTrekListening.GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
+                                else:
+                                    Thread_Breath.QueueSound(Sound=CollectionOfActiveListening.GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
 
         # log exception in the main.log
         except Exception as e:
@@ -1679,8 +1693,11 @@ def html():
           document.getElementById("Wakefulness").innerHTML = (status.Wakefulness * 100).toPrecision(2) + '%';
           document.getElementById("TouchedLevel").innerHTML = (status.TouchedLevel * 100).toPrecision(2) + '%';
           document.getElementById("NoiseLevel").innerHTML = (status.NoiseLevel * 100).toPrecision(2) + '%';
+          document.getElementById("ChanceToSpeak").innerHTML = (status.ChanceToSpeak * 100).toPrecision(2) + '%';
           document.getElementById("JostledLevel").innerHTML = (status.JostledLevel * 100).toPrecision(2) + '%';
           document.getElementById("IAmLayingDown").innerHTML = status.IAmLayingDown;
+          document.getElementById("ShushPleaseHoney").innerHTML = status.ShushPleaseHoney;
+          document.getElementById("StarTrekMode").innerHTML = status.StarTrekMode;
           document.getElementById("BatteryVoltage").innerHTML = status.BatteryVoltage;
           document.getElementById("PowerState").innerHTML = status.PowerState;
           document.getElementById("ChargingState").innerHTML = status.ChargingState;
@@ -1703,8 +1720,13 @@ Light Level: <span id="LightLevelPct"></span><br/>
 Wakefulness: <span id="Wakefulness"></span><br/>
 Touch: <span id="TouchedLevel"></span><br/>
 Noise: <span id="NoiseLevel"></span><br/>
+ChanceToSpeak: <span id="ChanceToSpeak"></span><br/>
 Jostled: <span id="JostledLevel"></span><br/>
 Laying down: <span id="IAmLayingDown"></span><br/>
+<br/>
+StarTrekMode: <span id="StarTrekMode"></span><br/>
+ShushPleaseHoney: <span id="ShushPleaseHoney"></span><br/>
+<br/>
 Battery Voltage: <span id="BatteryVoltage"></span><br/>
 Power State: <span id="PowerState"></span><br/>
 Charging State: <span id="ChargingState"></span><br/>
@@ -1714,6 +1736,11 @@ Charging State: <span id="ChargingState"></span><br/>
 <a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/Breath_Change', 'breathe_sleepy');">Sleepy</a><br/>
 <a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/Breath_Change', 'breathe_sleeping');">Sleeping</a><br/>
 <a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/Breath_Change', 'breathe_sex');">Sex</a><br/>
+<h5>Special lol</h5>
+<a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/StarTrek', 'on');">StarTrek Mode On</a><br/>
+<a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/StarTrek', 'off');">StarTrek Mode Off</a><br/>
+<a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/ShushPleaseHoney', 'on');">Shush Mode On</a><br/>
+<a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/ShushPleaseHoney', 'off');">Shush Mode Off</a><br/>
 """
     for TypeName in SoundType.keys():
         html_out += "<h5>Honey say: " + TypeName + "</h5>\n"
@@ -1823,6 +1850,26 @@ class WebServerHandler(BaseHTTPRequestHandler):
             self.send_header('Content-Type', 'text/plain')
             Thread_Breath.BreathChange(post_data)
             log.info('Breath style change via web: %s', post_data)
+            self.wfile.write(b'done')
+        elif self.path == '/StarTrek':
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            if post_data == 'on':
+                log.info('Star Trek Mode On via web')
+                GlobalStatus.StarTrekMode = True
+            elif post_data == 'off':
+                log.info('Star Trek Mode Off via web')
+                GlobalStatus.StarTrekMode = False
+            self.wfile.write(b'done')
+        elif self.path == '/ShushPleaseHoney':
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            if post_data == 'on':
+                log.info('Shushed On via web')
+                GlobalStatus.ShushPleaseHoney = True
+            elif post_data == 'off':
+                log.info('Shushed Off via web')
+                GlobalStatus.ShushPleaseHoney = False
             self.wfile.write(b'done')
         elif self.path == '/Honey_Say':
             self.send_response(200)
