@@ -412,14 +412,14 @@ class SoundsDB():
             DBCursor.execute('UPDATE sounds SET tempo_range = ' + tempo_range + ' WHERE id = ' + str(sound_id))
         self.DBConn.commit()
 
-    def Reprocess(self, s_id):
+    def Reprocess(self, sound_id):
         """
             Reprocess one sound.
             This is mostly borrowed from the preprocess.py on the desktop that preprocesses all sounds
         """
 
         # First go get the sound from the db
-        TheSound = self.Select(sound_id = s_id)
+        TheSound = self.Select(sound_id = sound_id)
 
         # Get all the db row stuff into nice neat variables
         SoundId = str(TheSound['id'])
@@ -1687,8 +1687,8 @@ class WebServerHandler(BaseHTTPRequestHandler):
             SoundId = post_data_split[0]
             NewVolume = post_data_split[1]
             log.info('Base Volume Change via web: %s (new volume %s)', SoundId, NewVolume)
-            UpdateSound(sound_id = SoundId, base_volume_adjust = NewVolume)
-            ReprocessSound(s_id = SoundId)
+            Sounds.Update(sound_id = SoundId, base_volume_adjust = NewVolume)
+            Sounds.Reprocess(sound_id = SoundId)
             Thread_Breath.QueueSound(Sound=Sounds.Select(sound_id = SoundId), PlayWhenSleeping=True, IgnoreSpeaking=True, CutAllSoundAndPlay=True)
             self.wfile.write(b'done')
         elif self.path == '/AmbientVolChange':
@@ -1698,7 +1698,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
             SoundId = post_data_split[0]
             NewVolume = post_data_split[1]
             log.info('Ambient Volume Change via web: %s (new volume %s)', SoundId, NewVolume)
-            UpdateSound(sound_id = SoundId, ambience_volume_adjust = NewVolume)
+            Sounds.Update(sound_id = SoundId, ambience_volume_adjust = NewVolume)
             self.wfile.write(b'done')
         elif self.path == '/IntensityChange':
             self.send_response(200)
@@ -1707,7 +1707,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
             SoundId = post_data_split[0]
             NewIntensity = post_data_split[1]
             log.info('Intensity change via web: %s (new intensity %s)', SoundId, NewIntensity)
-            UpdateSound(sound_id = SoundId, intensity = NewIntensity)
+            Sounds.Update(sound_id = SoundId, intensity = NewIntensity)
             self.wfile.write(b'done')
         elif self.path == '/CutenessChange':
             self.send_response(200)
@@ -1716,7 +1716,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
             SoundId = post_data_split[0]
             NewCuteness = post_data_split[1]
             log.info('Cuteness change via web: %s (new cuteness %s)', SoundId, NewCuteness)
-            UpdateSound(sound_id = SoundId, cuteness = NewCuteness)
+            Sounds.Update(sound_id = SoundId, cuteness = NewCuteness)
             self.wfile.write(b'done')
         elif self.path == '/TempoRangeChange':
             self.send_response(200)
@@ -1725,7 +1725,8 @@ class WebServerHandler(BaseHTTPRequestHandler):
             SoundId = post_data_split[0]
             NewTempoRange = post_data_split[1]
             log.info('Tempo Range change via web: %s (new intensity %s)', SoundId, NewTempoRange)
-            UpdateSound(sound_id = SoundId, tempo_range = NewTempoRange)
+            Sounds.Update(sound_id = SoundId, tempo_range = NewTempoRange)
+            Sounds.Reprocess(sound_id = SoundId)
             self.wfile.write(b'done')
         elif self.path == '/Status_Update':
             self.send_response(200)
@@ -1834,6 +1835,23 @@ class WebServerHandler(BaseHTTPRequestHandler):
           font-size: 15px;
         }
 
+        .loadingspinner {
+          pointer-events: none;
+          width: 2.5em;
+          height: 2.5em;
+          border: 0.4em solid transparent;
+          border-color: #eee;
+          border-top-color: #3E67EC;
+          border-radius: 50%;
+          animation: loadingspin 1s linear infinite;
+        }
+
+        @keyframes loadingspin {
+          100% {
+            transform: rotate(360deg)
+          }
+        }
+
       </style>
 
       <script type="text/javascript">
@@ -1894,6 +1912,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
             }
           };
           xhttp.open("POST", "/Sound_Detail", true);
+          xhttp.overrideMimeType('text/html')
           xhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
           xhttp.send(sound_id);
         }
@@ -1936,7 +1955,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
             SoundId = str(Row['id'])
             SoundName = str(Row['name'])
             html_out += f"    <button class=\"btn\" onClick=\"ButtonHit('/Honey_Say', '{SoundId}'); return false;\"><i class=\"fa fa-play-circle-o\" aria-hidden=\"true\"></i></button><a href=\"javascript:void(0);\" class=\"collapsible\">{SoundName}</a><br/>\n"
-            html_out += f"    <div class=\"sound_detail\" sound_id=\"{SoundId}\"></div>\n"
+            html_out += f"    <div class=\"sound_detail\" sound_id=\"{SoundId}\"><div class=\"loadingspinner\"></div></div>\n"
             
         html_out += """
       <script type="text/javascript">
