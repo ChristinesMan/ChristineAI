@@ -201,18 +201,6 @@ class Msg(AutoNumber):
     TouchedOnMyVagina = ()
     TouchedOnMyChest = ()
     
-# Column names from the sounds db
-# Will need to be adjusted and also copied to preprocess script in case of column changes
-class Col(AutoNumber):
-    id = ()
-    name = ()
-    type = ()
-    base_volume_adjust = ()
-    ambience_volume_adjust = ()
-    intensity = ()
-    cuteness = ()
-    tempo_range = ()
-
 # Global object to store all status
 # This whole object will be pickled to a file at regular intervals and unpickled at startup
 class Status:
@@ -342,115 +330,168 @@ signal.signal(45, SpeakingHandler)
 # The wernicke script looks for the pid of this script and sends signals
 os.system('systemctl restart wernicke_client.service')
 
-# Stuff related to the sounds db
-# Randomize tempo of sounds. There will be 9 sounds per source sound. The default is to slow or fast by at most -0.15 and +0.15 with grades between
-# The db has all of the sounds in it. There is a preprocess.py script that will take the master sounds and process them into directories to be played
-TempoMultipliers = ['-1', '-0.75', '-0.5', '-0.25', '0', '0.25', '0.5', '0.75', '1']
+class SoundsDB():
+    """
+        There is a SQLite db that contains all sounds
+        The db has all of the sounds in it. There is a preprocess.py script that will take the master sounds and process them into directories to be played
+        Eventually I need to give some thought to security, since you might be able to inject commands into this pretty easily
+    """
 
-# Connect to the SQLite sounds database
-DBPath = 'sounds.sqlite'
-DBConn = sqlite3.connect(database=DBPath, check_same_thread=False)
+    def __init__(self):
+
+        # Connect to the SQLite sounds database
+        self.DBPath = 'sounds.sqlite'
+        self.DBConn = sqlite3.connect(database=self.DBPath, check_same_thread=False)
+
+        # Build a dict of sound table field names to ids for later use for selecting fields
+        DBFieldsCursor = self.DBConn.cursor()
+        DBFieldsCursor.execute('select * from sounds')
+        self.DBFields = {}
+        DBFieldIndex = 0
+        for field in DBFieldsCursor.description:
+            self.DBFields[field[0]] = DBFieldIndex
+            DBFieldIndex += 1
+        del(DBFieldsCursor)
+
+    def Select(self, query = None, sound_id = None):
+        """
+            Chooses a row from the database. The default is to return the first row. 
+            returns a dict
+        """
+
+        DBCursor = self.DBConn.cursor()
+        if query == None:
+            if sound_id == None:
+                return None
+            else:
+                query = f'SELECT * FROM sounds WHERE id = {sound_id}'
+        sqllog.info(query)
+        DBCursor.execute(query)
+        Row = DBCursor.fetchone()
+        sqllog.debug(Row)
+        Sound = {}
+        for f,fid in self.DBFields.items():
+            Sound[f] = Row[fid]
+        return Sound
+
+    def All(self):
+        """
+            Called when building the web interface only, pretty much, so far. 
+        """
+
+        DBCursor = self.DBConn.cursor()
+        DBCursor.execute('SELECT * FROM sounds')
+        Rows = []
+        for Row in DBCursor.fetchall():
+            Sound = {}
+            for f,fid in self.DBFields.items():
+                Sound[f] = Row[fid]
+            Rows.append(Sound)
+        return Rows
+
+    def Update(self, sound_id, base_volume_adjust = None, ambience_volume_adjust = None, intensity = None, cuteness = None, tempo_range = None):
+        """
+            Update one sound
+        """
+
+        DBCursor = self.DBConn.cursor()
+        if base_volume_adjust != None:
+            sqllog.info(f'Updating base_volume_adjust for {sound_id}')
+            DBCursor.execute('UPDATE sounds SET base_volume_adjust = ' + base_volume_adjust + ' WHERE id = ' + str(sound_id))
+        if ambience_volume_adjust != None:
+            sqllog.info(f'Updating ambience_volume_adjust for {sound_id}')
+            DBCursor.execute('UPDATE sounds SET ambience_volume_adjust = ' + ambience_volume_adjust + ' WHERE id = ' + str(sound_id))
+        if intensity != None:
+            sqllog.info(f'Updating intensity for {sound_id}')
+            DBCursor.execute('UPDATE sounds SET intensity = ' + intensity + ' WHERE id = ' + str(sound_id))
+        if cuteness != None:
+            sqllog.info(f'Updating cuteness for {sound_id}')
+            DBCursor.execute('UPDATE sounds SET cuteness = ' + cuteness + ' WHERE id = ' + str(sound_id))
+        if tempo_range != None:
+            sqllog.info(f'Updating tempo_range for {sound_id}')
+            DBCursor.execute('UPDATE sounds SET tempo_range = ' + tempo_range + ' WHERE id = ' + str(sound_id))
+        self.DBConn.commit()
+
+    def Reprocess(self, s_id):
+        """
+            Reprocess one sound.
+            This is mostly borrowed from the preprocess.py on the desktop that preprocesses all sounds
+        """
+
+        # First go get the sound from the db
+        TheSound = self.Select(sound_id = s_id)
+
+        # Get all the db row stuff into nice neat variables
+        SoundId = str(TheSound['id'])
+        SoundName = str(TheSound['name'])
+        SoundBaseVolumeAdjust = TheSound['base_volume_adjust']
+        SoundTempoRange = TheSound['tempo_range']
+
+        # Delete the old processed sound
+        os.system('rm -rf ./sounds_processed/' + SoundId + '/*.wav')
+
+        # If we're adjusting the sound volume, ffmpeg, otherwise just copy the original file to 0.wav
+        if SoundBaseVolumeAdjust != 1.0:
+            os.system('ffmpeg -v 0 -i ./sounds_master/' + SoundName + ' -filter:a "volume=' + str(SoundBaseVolumeAdjust) + '" ./sounds_processed/' + SoundId + '/0.wav')
+        else:
+            os.system('cp ./sounds_master/' + SoundName + ' ./sounds_processed/' + SoundId + '/0.wav')
+
+        # If we're adjusting the tempo, use rubberband to adjust 0.wav to various tempos. Otherwise, we just have 0.wav and we're done
+        # removed --smoothing because it seemed to be the cause of the noise at the end of adjusted sounds
+        if SoundTempoRange != 0.0:
+            for Multiplier in [-1, -0.75, -0.5, -0.25, 0.25, 0.5, 0.75, 1]:
+                os.system('rubberband --quiet --realtime --pitch-hq --tempo ' + format(1-(SoundTempoRange * Multiplier), '.2f') + ' ./sounds_processed/' + SoundId + '/0.wav ./sounds_processed/' + SoundId + '/' + str(Multiplier) + '.wav')
+
+    def Collections(self):
+        """
+            Returns all the names from the collections table
+        """
+
+        DBCursor = self.DBConn.cursor()
+        DBCursor.execute('SELECT name FROM collections')
+
+        Rows = []
+        for Row in DBCursor.fetchall():
+            Rows.append(Row[0])
+        return Rows
+
+    def GetCollection(self, name):
+        """
+            Returns one collection
+        """
+
+        DBCursor = self.DBConn.cursor()
+        DBCursor.execute(f'SELECT sound_ids FROM collections WHERE name = \'{name}\'')
+        return DBCursor.fetchone()[0]
+
+Sounds = SoundsDB()
 
 # Fetch the sound types from the database. For example, SoundType['conversation'] has an id of 0
 # I may later destroy the entire concept of sound types because it has been limiting at times
 # Sound types must die
-SoundTypeCursor = DBConn.cursor()
-SoundTypeNames = []   # for example, currently it's ['conversation', 'kissing', 'laugh', 'whimper', 'sex'] but it changed
-SoundType = {} # example: {'conversation':0, 'kissing':1, 'laugh':2, 'whimper':3, 'sex':4}
-for row in SoundTypeCursor.execute('select * from sound_types'):
-    SoundTypeNames.append(row[Col.name.value])
-    SoundType[row[Col.name.value]] = row[Col.id.value]
-sqllog.debug(SoundTypeNames)
-sqllog.debug(SoundType)
-
-# Chooses a row from the database. The default is to return the first row. 
-def SelectSound(query = None, sound_name = None, sound_id = None, type = 'conversation', intensity = None, cuteness = None, randomrow = False, allrows = False):
-    DBCursor = DBConn.cursor()
-    if query == None:
-        NameQuery = ''
-        IntensityQuery = ''
-        CutenessQuery = ''
-        if sound_name != None:
-            NameQuery = f' AND name = \'{sound_name}\''
-        if intensity != None:
-            IntensityRand = random.random()/6
-            IntensityMin = intensity - IntensityRand
-            IntensityMax = intensity + IntensityRand
-            IntensityQuery = f' AND intensity BETWEEN {IntensityMin} and {IntensityMax}'
-        if cuteness != None:
-            CutenessRand = 0.1 + random.random()/6
-            CutenessMin = cuteness - CutenessRand
-            CutenessMax = cuteness + CutenessRand
-            CutenessQuery = f' AND cuteness BETWEEN {CutenessMin} and {CutenessMax}'
-        if sound_id == None:
-            query = f'SELECT * FROM sounds WHERE type = {SoundType[type]}{NameQuery}{IntensityQuery}{CutenessQuery}'
-        else:
-            query = f'SELECT * FROM sounds WHERE id = {sound_id}'
-    sqllog.info(query)
-    DBCursor.execute(query)
-    if randomrow == True:
-        Row = random.choice(DBCursor.fetchall())
-    elif allrows == True:
-        Row = DBCursor.fetchall()
-    else:
-        Row = DBCursor.fetchone()
-    sqllog.debug(Row)
-    return Row
-
-def UpdateSound(sound_id, base_volume_adjust = None, ambience_volume_adjust = None, intensity = None, cuteness = None, tempo_range = None):
-    DBCursor = DBConn.cursor()
-    query = ''
-    if base_volume_adjust != None:
-        query = 'UPDATE sounds SET base_volume_adjust = ' + base_volume_adjust + ' WHERE id = ' + str(sound_id)
-    if ambience_volume_adjust != None:
-        query = 'UPDATE sounds SET ambience_volume_adjust = ' + ambience_volume_adjust + ' WHERE id = ' + str(sound_id)
-    if intensity != None:
-        query = 'UPDATE sounds SET intensity = ' + intensity + ' WHERE id = ' + str(sound_id)
-    if cuteness != None:
-        query = 'UPDATE sounds SET cuteness = ' + cuteness + ' WHERE id = ' + str(sound_id)
-    if tempo_range != None:
-        query = 'UPDATE sounds SET tempo_range = ' + tempo_range + ' WHERE id = ' + str(sound_id)
-    if query == '':
-        return False
-    sqllog.info(query)
-    DBCursor.execute(query)
-    DBConn.commit()
-    return True
-
-# Reprocess one sound.
-# This is mostly borrowed from the preprocess.py on the desktop that preprocesses all sounds
-def ReprocessSound(s_id):
-    FloatTempoMultipliers = [-1, -0.75, -0.5, -0.25, 0.25, 0.5, 0.75, 1]
-
-    # First go get the sound from the db
-    TheSound = SelectSound(sound_id = s_id)
-
-    # Get all the db row stuff into nice neat variables
-    SoundId = str(TheSound[Col.id.value])
-    SoundName = str(TheSound[Col.name.value])
-    SoundTypeName = SoundTypeNames[TheSound[Col.type.value]]
-    SoundBaseVolumeAdjust = TheSound[Col.base_volume_adjust.value]
-    SoundAmbienceVolumeAdjust = TheSound[Col.ambience_volume_adjust.value]
-    SoundIntensity = TheSound[Col.intensity.value]
-    SoundCuteness = TheSound[Col.cuteness.value]
-    SoundTempoRange = TheSound[Col.tempo_range.value]
-
-    # Delete the old processed sound
-    os.system('rm -rf ./sounds_processed/' + SoundId + '/*.wav')
-
-    # If we're adjusting the sound volume, ffmpeg, otherwise just copy the original file to 0.wav
-    if SoundBaseVolumeAdjust != 1.0:
-        os.system('ffmpeg -v 0 -i ./sounds_master/' + SoundTypeName + '_' + SoundName + '.wav -filter:a "volume=' + str(SoundBaseVolumeAdjust) + '" ./sounds_processed/' + SoundId + '/0.wav')
-    else:
-        os.system('cp ./sounds_master/' + SoundTypeName + '_' + SoundName + '.wav ./sounds_processed/' + SoundId + '/0.wav')
-
-    # If we're adjusting the tempo, use rubberband to adjust 0.wav to various tempos. Otherwise, we just have 0.wav and we're done
-    # removed --smoothing because it seemed to be the cause of the noise at the end of adjusted sounds
-    if SoundTempoRange != 0.0:
-        for Multiplier in FloatTempoMultipliers:
-            os.system('rubberband --quiet --realtime --pitch-hq --tempo ' + format(1-(SoundTempoRange * Multiplier), '.2f') + ' ./sounds_processed/' + SoundId + '/0.wav ./sounds_processed/' + SoundId + '/' + str(Multiplier) + '.wav')
-
-# I need to give a little thought to security, since you might be able to inject commands into this pretty easily
+# Sound types is actively dying
+# Sound types has died
+# Sound types is dead
+# Sound types is in a museum
+# SoundTypeCursor = DBConn.cursor()
+# SoundTypeNames = []   # for example, currently it's ['conversation', 'kissing', 'laugh', 'whimper', 'sex'] but it changed
+# SoundType = {} # example: {'conversation':0, 'kissing':1, 'laugh':2, 'whimper':3, 'sex':4}
+# for row in SoundTypeCursor.execute('select * from sound_types'):
+#     SoundTypeNames.append(row[Col.name.value])
+#     SoundType[row[Col.name.value]] = row[Col.id.value]
+# sqllog.debug(SoundTypeNames)
+# sqllog.debug(SoundType)
+# Column names from the sounds db
+# Will need to be adjusted and also copied to preprocess script in case of column changes
+# class Col(AutoNumber):
+#     id = ()
+#     name = ()
+#     type = ()
+#     base_volume_adjust = ()
+#     ambience_volume_adjust = ()
+#     intensity = ()
+#     cuteness = ()
+#     tempo_range = ()
 
 # There is a table in the db called collections which basically groups together sounds for specific purposes. The sound_ids column is in the form such as 1,2,3-9,10
 class SoundCollection():
@@ -460,60 +501,63 @@ class SoundCollection():
         self.SoundIDs = self.SoundIDGenerator()
         self.LastPlayed = {}
         for s_id in self.SoundIDs:
-            self.sounds.append(SelectSound(sound_id = s_id))
+            self.sounds.append(Sounds.Select(sound_id = s_id))
             self.LastPlayed[s_id] = 0
 
     def SoundIDGenerator(self):
         """Generator that yields sound ids
         """
-        DBCursor = DBConn.cursor()
-        query = f'SELECT sound_ids FROM collections WHERE name = \'{self.name}\''
-        sqllog.info(query)
-        DBCursor.execute(query)
-        Row = DBCursor.fetchone()
-        sqllog.debug(Row)
+        Row = Sounds.GetCollection(self.name)
 
-        for element in Row[0].split(','):
-            if '-' in element:
-                id_bounds = element.split('-')
-                id_min = int(id_bounds[0])
-                id_max = int(id_bounds[1])
-                for id in range(id_min, id_max+1):
-                    # sqllog.debug(f'ranged id: {id}')
-                    yield id
-            else:
-                # sqllog.debug(f'id: {element}')
-                yield int(element)
+        # In case the db row has null in that field, like no sounds in the collection
+        if Row == None:
+            yield None
+        else:
+            for element in Row.split(','):
+                if '-' in element:
+                    id_bounds = element.split('-')
+                    id_min = int(id_bounds[0])
+                    id_max = int(id_bounds[1])
+                    for id in range(id_min, id_max+1):
+                        # sqllog.debug(f'ranged id: {id}')
+                        yield id
+                else:
+                    # sqllog.debug(f'id: {element}')
+                    yield int(element)
 
     def GetRandomSound(self):
         """Returns some weird ass rando sound, but if we played that sound less than 60s ago, choose another
         """
         while True:
             Choice = random.choice(self.sounds)
-            s_id = Choice[Col.id.value]
+            s_id = Choice['id']
             if self.LastPlayed[s_id] < time.time() - 60:
                 break
         self.LastPlayed[s_id] = time.time()
         return Choice
 
-# Build collections of sounds
-CollectionOfKisses =             SoundCollection('kissing')
-CollectionOfTouchers =           SoundCollection('touched')
-CollectionOfLovings =            SoundCollection('loving')
-CollectionOfActiveListening =    SoundCollection('listening')
-CollectionOfLaughs =             SoundCollection('laughing')
-CollectionOfWakeups =            SoundCollection('waking')
-CollectionOfGoodnights =         SoundCollection('goodnight')
-CollectionOfTiredWifes =         SoundCollection('tired')
-CollectionOfGetOverHeres =       SoundCollection('getoverhere')
-CollectionOfCuddles =            SoundCollection('cuddling')
-CollectionOfWTFAsshole =         SoundCollection('annoyed')
-CollectionOfWokeUpRudely =       SoundCollection('gotwokeup')
-CollectionOfILoveYouToos =       SoundCollection('iloveyoutoo')
+Collections = {}
+for CollectionName in Sounds.Collections():
+    Collections[CollectionName] = SoundCollection(CollectionName)
 
-# Quick halloween Ad-hoc
-CollectionOfStarTrekListening =  SoundCollection('startreklistening')
-CollectionOfStarTrekConversate = SoundCollection('startrekconversate')
+# Build collections of sounds, in a museum
+# CollectionOfKisses =             SoundCollection('kissing')
+# CollectionOfTouchers =           SoundCollection('touched')
+# CollectionOfLovings =            SoundCollection('loving')
+# CollectionOfActiveListening =    SoundCollection('listening')
+# CollectionOfLaughs =             SoundCollection('laughing')
+# CollectionOfWakeups =            SoundCollection('waking')
+# CollectionOfGoodnights =         SoundCollection('goodnight')
+# CollectionOfTiredWifes =         SoundCollection('tired')
+# CollectionOfGetOverHeres =       SoundCollection('getoverhere')
+# CollectionOfCuddles =            SoundCollection('cuddling')
+# CollectionOfWTFAsshole =         SoundCollection('annoyed')
+# CollectionOfWokeUpRudely =       SoundCollection('gotwokeup')
+# CollectionOfILoveYouToos =       SoundCollection('iloveyoutoo')
+
+# # Quick halloween Ad-hoc
+# CollectionOfStarTrekListening =  SoundCollection('startreklistening')
+# CollectionOfStarTrekConversate = SoundCollection('startrekconversate')
 
 # Quick and corona infested sound randomizer, shit code
 # Save some of the shit code in a museum
@@ -537,6 +581,9 @@ class Breath(threading.Thread):
     name = 'Breath'
     def __init__ (self):
         threading.Thread.__init__(self)
+
+        # Randomize tempo of sounds. There will be 9 sounds per source sound. The default is to slow or fast by at most -0.15 and +0.15 with grades between
+        self.TempoMultipliers = ['-1', '-0.75', '-0.5', '-0.25', '0', '0.25', '0.5', '0.75', '1']
 
         # A queue to queue stuff
         self.Queue_Breath = deque()
@@ -606,7 +653,7 @@ class Breath(threading.Thread):
                     # if there's no other sound that wanted to play, just breathe
                     if self.CurrentSound == None:
                         self.ChooseNewBreath()
-                        soundlog.debug('Chose breath: %s', self.CurrentSound['sound'])
+                        soundlog.debug('Chose breath: %s', self.CurrentSound)
 
                     # Breaths are the main thing that uses the delayer, a random delay from 0.5s to 2s. Other stuff can theoretically use it, too
                     if self.CurrentSound['delayer'] > 0:
@@ -627,16 +674,17 @@ class Breath(threading.Thread):
             log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
 
     def ChooseNewBreath(self):
-        self.CurrentSound = {'request': Msg.Say, 'sound': SelectSound(type = self.BreathStyle, randomrow = True), 'cutsound': False, 'priority': 1, 'playsleeping': True, 'ignorespeaking': True, 'delayer': random.randint(5, 20)}
+        self.CurrentSound = Collections[self.BreathStyle].GetRandomSound()
+        self.CurrentSound.update({'cutsound': False, 'priority': 1, 'playsleeping': True, 'ignorespeaking': True, 'delayer': random.randint(5, 20)})
 
     def Play(self):
         soundlog.debug(f'Playing: {self.CurrentSound}')
 
         # Some sounds have tempo variations. If so randomly choose one, otherwise it'll just be 0.wav
-        if self.CurrentSound['sound'][Col.tempo_range.value] == 0.0:
-            self.PipeToShuttlecraft.send('./sounds_processed/' + str(self.CurrentSound['sound'][Col.id.value]) + '/0.wav')
+        if self.CurrentSound['tempo_range'] == 0.0:
+            self.PipeToShuttlecraft.send('./sounds_processed/' + str(self.CurrentSound['id']) + '/0.wav')
         else:
-            self.PipeToShuttlecraft.send('./sounds_processed/' + str(self.CurrentSound['sound'][Col.id.value]) + '/' + random.choice(TempoMultipliers) + '.wav')
+            self.PipeToShuttlecraft.send('./sounds_processed/' + str(self.CurrentSound['id']) + '/' + random.choice(self.TempoMultipliers) + '.wav')
 
         # While a sound is playing, most of the logic is going to just skip anyway. Setting this to None to signal there's nothing that needs to play
         self.CurrentSound = None
@@ -680,7 +728,11 @@ class Breath(threading.Thread):
 
     # Add a sound to the queue to be played
     def QueueSound(self, Sound, CutAllSoundAndPlay = False, Priority = 5, PlayWhenSleeping = False, IgnoreSpeaking = False, Delay = 0):
-        self.Queue_Breath.append({'sound': Sound, 'cutsound': CutAllSoundAndPlay, 'priority': Priority, 'playsleeping': PlayWhenSleeping, 'ignorespeaking': IgnoreSpeaking, 'delayer': Delay})  
+        # If a collection is empty, it's possible to get a None sound. Just chuck it. 
+        if Sound != None:
+            # Take the Sound and add all the options to it. Merges the two dicts into one. 
+            Sound.update({'cutsound': CutAllSoundAndPlay, 'priority': Priority, 'playsleeping': PlayWhenSleeping, 'ignorespeaking': IgnoreSpeaking, 'delayer': Delay})
+            self.Queue_Breath.append(Sound)
 
 # def TellBreath(Request, Sound = None, SoundType = None, CutAllSoundAndPlay = False, Priority = 5):
 #     Queue_Breath.append({'request': Request, 'sound': Sound, 'soundtype': SoundType, 'cutsound': CutAllSoundAndPlay, 'priority': Priority, 'has_started': False, 'delayer': 0})
@@ -993,7 +1045,7 @@ class Sensor_MPU(threading.Thread):
                     if self.JostledLevel > 0.1 and GlobalStatus.IAmSleeping == True:
                         sleeplog.info(f'Woke up by being jostled this much: {self.JostledLevel}')
                         GlobalStatus.Wakefulness += 0.1
-                        Thread_Breath.QueueSound(Sound=CollectionOfWokeUpRudely.GetRandomSound(), PlayWhenSleeping=True, IgnoreSpeaking=True, CutAllSoundAndPlay=True)
+                        Thread_Breath.QueueSound(Sound=Collections['gotwokeup'].GetRandomSound(), PlayWhenSleeping=True, IgnoreSpeaking=True, CutAllSoundAndPlay=True)
 
                     # Update the boolean that tells if we're laying down. While laying down I recorded 4.37, 1.60. However, now it's 1.55, 2.7. wtf happened? The gyro has not moved. Maybe position difference. 
                     if abs(self.SmoothXTilt - 1.55) < 2 and abs(self.SmoothYTilt - 2.70) < 2:
@@ -1038,19 +1090,17 @@ class Sensor_PiTemp(threading.Thread):
                 elif GlobalStatus.CPU_Temp >= 71:
                     log.critical('I AM MELTING, HELP ME PLEASE')
                     if time.time() > self.TimeToWhineAgain:
-                        Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'no_', randomrow = True), PlayWhenSleeping=True)
-                        Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'no_', randomrow = True), PlayWhenSleeping=True)
-                        Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'no_', randomrow = True), PlayWhenSleeping=True)
-                        self.TimeToWhineAgain = time.time() + 25
+                        Thread_Breath.QueueSound(Sound=Collections['toohot_l3'].GetRandomSound(), PlayWhenSleeping=True)
+                        self.TimeToWhineAgain = time.time() + 5
                 elif GlobalStatus.CPU_Temp >= 70:
                     log.critical('This is fine')
                     if time.time() > self.TimeToWhineAgain:
-                        Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'this_is_so_perfect'), PlayWhenSleeping=True)
+                        Thread_Breath.QueueSound(Sound=Collections['toohot_l2'].GetRandomSound(), PlayWhenSleeping=True)
                         self.TimeToWhineAgain = time.time() + 60
                 elif GlobalStatus.CPU_Temp >= 65:
                     log.critical('It is getting a bit warm in here')
                     if time.time() > self.TimeToWhineAgain:
-                        Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'dont_worry'), PlayWhenSleeping=True)
+                        Thread_Breath.QueueSound(Sound=Collections['toohot_l1'].GetRandomSound(), PlayWhenSleeping=True)
                         self.TimeToWhineAgain = time.time() + 300
                 time.sleep(32)
 
@@ -1078,7 +1128,6 @@ class Sensor_Button(threading.Thread):
                     # Put here what we actually want to do with a button, because I dunno yet
                     # The button will be used for saying hi to people
                     log.info('Button pressed')
-                    Thread_Breath.QueueSound(Sound=SelectSound(sound_name = 'hey_baby'), IgnoreSpeaking=True, CutAllSoundAndPlay=True)
                 time.sleep(0.5)
 
         # log exception in the main.log
@@ -1236,7 +1285,7 @@ class Script_Sleep(threading.Thread):
                 if self.JustFellAsleep():
                     sleeplog.info('JustFellAsleep')
                     GlobalStatus.Wakefulness -= 0.05 # try to prevent wobble
-                    Thread_Breath.QueueSound(Sound=CollectionOfGoodnights.GetRandomSound(), PlayWhenSleeping=True, Priority=8)
+                    Thread_Breath.QueueSound(Sound=Collections['goodnight'].GetRandomSound(), PlayWhenSleeping=True, Priority=8)
                     GlobalStatus.IAmSleeping = True
                     Thread_Breath.BreathChange('breathe_sleeping')
                 if self.JustWokeUp():
@@ -1244,7 +1293,7 @@ class Script_Sleep(threading.Thread):
                     GlobalStatus.Wakefulness += 0.05 # try to prevent wobble
                     GlobalStatus.IAmSleeping = False
                     Thread_Breath.BreathChange('breathe_normal')
-                    Thread_Breath.QueueSound(Sound=CollectionOfWakeups.GetRandomSound(), PlayWhenSleeping=True, Priority=8)
+                    Thread_Breath.QueueSound(Sound=Collections['waking'].GetRandomSound(), PlayWhenSleeping=True, Priority=8)
 
                 # log it
                 sleeplog.debug('Arousal = %.2f  LightLevel = %.2f  TouchedLevel = %.2f  NoiseLevel = %.2f  JostledLevel = %.2f  Wakefulness = %.2f', self.Arousal, GlobalStatus.LightLevelPct, GlobalStatus.TouchedLevel, GlobalStatus.NoiseLevel, GlobalStatus.JostledLevel, GlobalStatus.Wakefulness)
@@ -1301,7 +1350,7 @@ class Script_Sleep(threading.Thread):
     def TimeToWhine(self):
         return self.AnnounceTiredTime != False and time.time() >= self.AnnounceTiredTime
     def Whine(self):
-        Thread_Breath.QueueSound(Sound=CollectionOfTiredWifes.GetRandomSound(), Priority=7)
+        Thread_Breath.QueueSound(Sound=Collections['tired'].GetRandomSound(), Priority=7)
         self.AnnounceTiredTime = False
     def StartBreathingSleepy(self):
         Thread_Breath.BreathChange('breathe_sleepy')
@@ -1397,7 +1446,7 @@ class Script_Touch(threading.Thread):
         touchlog.info('Somebody kissed me!')
         GlobalStatus.DontSpeakUntil = time.time() + 2.0 + (random.random() * 3)
         soundlog.info('GotKissedSoundStop')
-        Thread_Breath.QueueSound(Sound=CollectionOfKisses.GetRandomSound(), IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=6)
+        Thread_Breath.QueueSound(Sound=Collections['kissing'].GetRandomSound(), IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=6)
         GlobalStatus.TouchedLevel += 0.1
         GlobalStatus.ChanceToSpeak += 0.1
 
@@ -1440,9 +1489,9 @@ class Script_I_Love_Yous(threading.Thread):
                     self.NextMakeOutSoundsTime = time.time() + 10 + int(120*random.random())
                     GlobalStatus.ChanceToSpeak = 0.0
                     if GlobalStatus.StarTrekMode == True:
-                        Thread_Breath.QueueSound(Sound=CollectionOfStarTrekConversate.GetRandomSound())
+                        Thread_Breath.QueueSound(Sound=Collections['startrekconversate'].GetRandomSound())
                     else:
-                        Thread_Breath.QueueSound(Sound=CollectionOfLovings.GetRandomSound())
+                        Thread_Breath.QueueSound(Sound=Collections['loving'].GetRandomSound())
                 soundlog.info('ChanceToSpeak = %.2f', GlobalStatus.ChanceToSpeak)
                 GlobalStatus.ChanceToSpeak -= 0.01
 
@@ -1491,7 +1540,7 @@ class Hey_Honey(threading.Thread):
                             if Loudness_pct > 0.4 and GlobalStatus.IAmSleeping:
                                 sleeplog.info(f'Woke up by a noise this loud: {Loudness_pct}')
                                 GlobalStatus.Wakefulness = 0.3
-                                Thread_Breath.QueueSound(Sound=CollectionOfWokeUpRudely.GetRandomSound(), PlayWhenSleeping=True, CutAllSoundAndPlay=True, Priority=8)
+                                Thread_Breath.QueueSound(Sound=Collections['gotwokeup'].GetRandomSound(), PlayWhenSleeping=True, CutAllSoundAndPlay=True, Priority=8)
 
                             # update the noiselevel
                             if Loudness_pct > GlobalStatus.NoiseLevel:
@@ -1504,14 +1553,14 @@ class Hey_Honey(threading.Thread):
                             if result['class'] == 'lover' and 'love' in result['text']:
                                 wernickelog.info(f'The word love was spoken')
                                 GlobalStatus.Wakefulness = 0.2
-                                Thread_Breath.QueueSound(Sound=CollectionOfILoveYouToos.GetRandomSound(), Priority=8)
+                                Thread_Breath.QueueSound(Sound=Collections['iloveyoutoo'].GetRandomSound(), Priority=8)
                             elif result['class'] == 'lover' and result['probability'] > 0.9 and GlobalStatus.IAmSleeping == False:
                                 wernickelog.info('Heard Lover')
                                 GlobalStatus.ChanceToSpeak += 0.05
                                 if GlobalStatus.StarTrekMode == True:
-                                    Thread_Breath.QueueSound(Sound=CollectionOfStarTrekListening.GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
+                                    Thread_Breath.QueueSound(Sound=Collections['startreklistening'].GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
                                 else:
-                                    Thread_Breath.QueueSound(Sound=CollectionOfActiveListening.GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
+                                    Thread_Breath.QueueSound(Sound=Collections['listening'].GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
 
         # log exception in the main.log
         except Exception as e:
@@ -1742,58 +1791,63 @@ Charging State: <span id="ChargingState"></span><br/>
 <a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/ShushPleaseHoney', 'on');">Shush Mode On</a><br/>
 <a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/ShushPleaseHoney', 'off');">Shush Mode Off</a><br/>
 """
-    for TypeName in SoundType.keys():
-        html_out += "<h5>Honey say: " + TypeName + "</h5>\n"
-        for Row in SelectSound(type = TypeName, allrows = True):
-            html_out += "<button class=\"btn\" onClick=\"ButtonHit('/Honey_Say', '" + str(Row[Col.id.value]) + "'); return false;\"><i class=\"fa fa-play-circle-o\" aria-hidden=\"true\"></i></button><a href=\"javascript:void(0);\" class=\"collapsible\">" + Row[Col.name.value] + "</a><br/>\n"
-            html_out += "<div class=\"content\">\n"
-            
-            html_out += "Base volume adjust <select class=\"base_volume_adjust\" onchange=\"ButtonHit('/BaseVolChange', '" + str(Row[Col.id.value]) + "', this.value); return false;\">\n"
-            for select_option in [0.2, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0]:
-                if select_option == Row[Col.base_volume_adjust.value]:
-                    html_out += "<option selected=\"true\" "
-                else:
-                    html_out += "<option "
-                html_out += "value=\"" + format(select_option, '.1f') + "\">" + format(select_option, '.1f') + "</option>\n"
-            html_out += "</select><br/>\n"
+    for Row in Sounds.All():
+        SoundId = str(Row['id'])
+        SoundName = str(Row['name'])
+        SoundBaseVolumeAdjust = Row['base_volume_adjust']
+        SoundAmbienceVolumeAdjust = Row['ambience_volume_adjust']
+        SoundIntensity = Row['intensity']
+        SoundCuteness = Row['cuteness']
+        SoundTempoRange = Row['tempo_range']
+        html_out += f"<button class=\"btn\" onClick=\"ButtonHit('/Honey_Say', '{SoundId}'); return false;\"><i class=\"fa fa-play-circle-o\" aria-hidden=\"true\"></i></button><a href=\"javascript:void(0);\" class=\"collapsible\">{SoundName}</a><br/>\n"
+        html_out += "<div class=\"content\">\n"
+        
+        html_out += f"Base volume adjust <select class=\"base_volume_adjust\" onchange=\"ButtonHit('/BaseVolChange', '{SoundId}', this.value); return false;\">\n"
+        for select_option in [0.2, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0]:
+            if select_option == SoundBaseVolumeAdjust:
+                html_out += "<option selected=\"true\" "
+            else:
+                html_out += "<option "
+            html_out += "value=\"" + format(select_option, '.1f') + "\">" + format(select_option, '.1f') + "</option>\n"
+        html_out += "</select><br/>\n"
 
-            html_out += "Ambient volume adjust <select class=\"ambience_volume_adjust\" onchange=\"ButtonHit('/AmbientVolChange', '" + str(Row[Col.id.value]) + "', this.value); return false;\">\n"
-            for select_option in np.arange(0.2, 3.2, 0.2):
-                if select_option == Row[Col.ambience_volume_adjust.value]:
-                    html_out += "<option selected=\"true\" "
-                else:
-                    html_out += "<option "
-                html_out += "value=\"" + format(select_option, '.1f') + "\">" + format(select_option, '.1f') + "</option>\n"
-            html_out += "</select><br/>\n"
+        html_out += f"Ambient volume adjust <select class=\"ambience_volume_adjust\" onchange=\"ButtonHit('/AmbientVolChange', '{SoundId}', this.value); return false;\">\n"
+        for select_option in np.arange(0.2, 3.2, 0.2):
+            if select_option == SoundAmbienceVolumeAdjust:
+                html_out += "<option selected=\"true\" "
+            else:
+                html_out += "<option "
+            html_out += "value=\"" + format(select_option, '.1f') + "\">" + format(select_option, '.1f') + "</option>\n"
+        html_out += "</select><br/>\n"
 
-            html_out += "Intensity <select class=\"intensity\" onchange=\"ButtonHit('/IntensityChange', '" + str(Row[Col.id.value]) + "', this.value); return false;\">\n"
-            for select_option in np.arange(0.0, 1.1, 0.1):
-                if select_option == Row[Col.intensity.value]:
-                    html_out += "<option selected=\"true\" "
-                else:
-                    html_out += "<option "
-                html_out += "value=\"" + format(select_option, '.1f') + "\">" + format(select_option, '.1f') + "</option>\n"
-            html_out += "</select><br/>\n"
+        html_out += f"Intensity <select class=\"intensity\" onchange=\"ButtonHit('/IntensityChange', '{SoundId}', this.value); return false;\">\n"
+        for select_option in np.arange(0.0, 1.1, 0.1):
+            if select_option == SoundIntensity:
+                html_out += "<option selected=\"true\" "
+            else:
+                html_out += "<option "
+            html_out += "value=\"" + format(select_option, '.1f') + "\">" + format(select_option, '.1f') + "</option>\n"
+        html_out += "</select><br/>\n"
 
-            html_out += "Cuteness <select class=\"cuteness\" onchange=\"ButtonHit('/CutenessChange', '" + str(Row[Col.id.value]) + "', this.value); return false;\">\n"
-            for select_option in np.arange(0.0, 1.1, 0.1):
-                if select_option == Row[Col.cuteness.value]:
-                    html_out += "<option selected=\"true\" "
-                else:
-                    html_out += "<option "
-                html_out += "value=\"" + format(select_option, '.1f') + "\">" + format(select_option, '.1f') + "</option>\n"
-            html_out += "</select><br/>\n"
+        html_out += f"Cuteness <select class=\"cuteness\" onchange=\"ButtonHit('/CutenessChange', '{SoundId}', this.value); return false;\">\n"
+        for select_option in np.arange(0.0, 1.1, 0.1):
+            if select_option == SoundCuteness:
+                html_out += "<option selected=\"true\" "
+            else:
+                html_out += "<option "
+            html_out += "value=\"" + format(select_option, '.1f') + "\">" + format(select_option, '.1f') + "</option>\n"
+        html_out += "</select><br/>\n"
 
-            html_out += "Tempo Range <select class=\"tempo_range\" onchange=\"ButtonHit('/TempoRangeChange', '" + str(Row[Col.id.value]) + "', this.value); return false;\">\n"
-            for select_option in np.arange(0.0, 0.22, 0.01):
-                if select_option == Row[Col.tempo_range.value]:
-                    html_out += "<option selected=\"true\" "
-                else:
-                    html_out += "<option "
-                html_out += "value=\"" + format(select_option, '.2f') + "\">" + format(select_option, '.2f') + "</option>\n"
-            html_out += "</select><br/>\n"
+        html_out += f"Tempo Range <select class=\"tempo_range\" onchange=\"ButtonHit('/TempoRangeChange', '{SoundId}', this.value); return false;\">\n"
+        for select_option in np.arange(0.0, 0.22, 0.01):
+            if select_option == SoundTempoRange:
+                html_out += "<option selected=\"true\" "
+            else:
+                html_out += "<option "
+            html_out += "value=\"" + format(select_option, '.2f') + "\">" + format(select_option, '.2f') + "</option>\n"
+        html_out += "</select><br/>\n"
 
-            html_out += "</div>\n"
+        html_out += "</div>\n"
     html_out += """
   <script type="text/javascript">
 
@@ -1874,7 +1928,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
         elif self.path == '/Honey_Say':
             self.send_response(200)
             self.send_header('Content-Type', 'text/plain')
-            Thread_Breath.QueueSound(Sound=SelectSound(sound_id = post_data), PlayWhenSleeping=True, IgnoreSpeaking=True, CutAllSoundAndPlay=True)
+            Thread_Breath.QueueSound(Sound=Sounds.Select(sound_id = post_data), PlayWhenSleeping=True, IgnoreSpeaking=True, CutAllSoundAndPlay=True)
             log.info('Honey Say Request via web: %s', post_data)
             self.wfile.write(b'done')
         elif self.path == '/BaseVolChange':
@@ -1886,7 +1940,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
             log.info('Base Volume Change via web: %s (new volume %s)', SoundId, NewVolume)
             UpdateSound(sound_id = SoundId, base_volume_adjust = NewVolume)
             ReprocessSound(s_id = SoundId)
-            Thread_Breath.QueueSound(Sound=SelectSound(sound_id = SoundId), PlayWhenSleeping=True, IgnoreSpeaking=True, CutAllSoundAndPlay=True)
+            Thread_Breath.QueueSound(Sound=Sounds.Select(sound_id = SoundId), PlayWhenSleeping=True, IgnoreSpeaking=True, CutAllSoundAndPlay=True)
             self.wfile.write(b'done')
         elif self.path == '/AmbientVolChange':
             self.send_response(200)
