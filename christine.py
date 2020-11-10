@@ -1622,257 +1622,6 @@ Thread_Hey_Honey.start()
 # End of startup stuff. Everything that runs is in handlers and threads.
 # Start the web service. I don't think this needs to be in a thread by itself. We'll see. 
 
-# The html of the status page
-def html():
-    html_out = """<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
-<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
-<head>
-  <title>Christine's Brain</title>
-  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-  <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
-
-  <style>
-
-    .pinkButton {
-      box-shadow:inset 0px 1px 0px 0px #fbafe3;
-      background-color:#ff5bb0;
-      border-radius:6px;
-      border:1px solid #ee1eb6;
-      display:inline-block;
-      cursor:pointer;
-      color:#ffffff;
-      font-family:Arial;
-      font-size:30px;
-      font-weight:bold;
-      padding:6px 24px;
-      text-decoration:none;
-      text-shadow:0px 1px 0px #c70067;
-    }
-    .pinkButton:hover {
-      background-color:#ef027c;
-    }
-    .pinkButton:active {
-      position:relative;
-      top:1px;
-    }
-
-    /* Style buttons */
-    .btn {
-      background-color:#ff5bb0;
-      color: white;
-      padding: 4px 4px;
-      font-size: 24px;
-      cursor: pointer;
-    }
-
-    /* The volume down button wasn't quite square */
-    .voldownbtn {
-      margin-left: 4px;
-      margin-right: 4px;
-    }
-
-    /* Darker background on mouse-over */
-    .btn:hover {
-      background-color:#ef027c;
-    }
-
-    /* Style the button that is used to open and close the collapsible content */
-    .collapsible {
-      background-color: #eee;
-      color: #444;
-      cursor: pointer;
-      padding: 8px;
-      width: 100%;
-      border: none;
-      text-align: left;
-      outline: none;
-      font-size: 15px;
-    }
-
-    /* Add a background color to the button if it is clicked on (add the .active class with JS), and when you move the mouse over it (hover) */
-    .active, .collapsible:hover {
-      background-color: #ccc;
-    }
-
-    /* Style the collapsible content. Note: hidden by default */
-    .content {
-      padding: 32px 32px;
-      display: none;
-      overflow: hidden;
-      //background-color: #f1f1f1;
-    }
-
-    .statusarea {
-      font-size: 15px;
-    }
-
-  </style>
-
-  <script type="text/javascript">
-
-    function ButtonHit(endpoint, id, val=null) {
-      //console.log('ButtonHit');
-      var xhttp = new XMLHttpRequest();
-      xhttp.onreadystatechange = function() {
-        //console.log('this.readyState = ' + this.readyState + '  this.status = ' + this.status);
-        if (this.readyState == 4 && this.status == 200) {
-          //console.log('ButtonHitDone');
-          //document.getElementById("demo").innerHTML = this.responseText;
-        }
-      };
-      xhttp.open("POST", endpoint, true);
-      xhttp.overrideMimeType('text/plain')
-      xhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
-      if ( val == null ) {
-          xhttp.send(id);
-      } else {
-          xhttp.send(id + "," + val);
-      }
-    }
-
-    function StatusUpdate() {
-      var xhttp = new XMLHttpRequest();
-      xhttp.onreadystatechange = function() {
-        console.log('StatusUpdate this.readyState = ' + this.readyState + '  this.status = ' + this.status);
-        if (this.readyState == 4 && this.status == 200) {
-          var status = JSON.parse(this.responseText);
-          document.getElementById("CPU_Temp").innerHTML = status.CPU_Temp + '&deg;C';
-          document.getElementById("LightLevelPct").innerHTML = (status.LightLevelPct * 100).toPrecision(2) + '%';
-          document.getElementById("Wakefulness").innerHTML = (status.Wakefulness * 100).toPrecision(2) + '%';
-          document.getElementById("TouchedLevel").innerHTML = (status.TouchedLevel * 100).toPrecision(2) + '%';
-          document.getElementById("NoiseLevel").innerHTML = (status.NoiseLevel * 100).toPrecision(2) + '%';
-          document.getElementById("ChanceToSpeak").innerHTML = (status.ChanceToSpeak * 100).toPrecision(2) + '%';
-          document.getElementById("JostledLevel").innerHTML = (status.JostledLevel * 100).toPrecision(2) + '%';
-          document.getElementById("IAmLayingDown").innerHTML = status.IAmLayingDown;
-          document.getElementById("ShushPleaseHoney").innerHTML = status.ShushPleaseHoney;
-          document.getElementById("StarTrekMode").innerHTML = status.StarTrekMode;
-          document.getElementById("BatteryVoltage").innerHTML = status.BatteryVoltage;
-          document.getElementById("PowerState").innerHTML = status.PowerState;
-          document.getElementById("ChargingState").innerHTML = status.ChargingState;
-          setTimeout(StatusUpdate, 1000);
-        }
-      };
-      xhttp.open("POST", "/Status_Update", true);
-      // xhttp.overrideMimeType('text/plain')
-      xhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
-      xhttp.send("LOVE");
-    }
-  </script>
-</head>
-
-<body>
-<h5>Status</h5>
-<span class="statusarea">
-CPU Temperature: <span id="CPU_Temp"></span><br/>
-Light Level: <span id="LightLevelPct"></span><br/>
-Wakefulness: <span id="Wakefulness"></span><br/>
-Touch: <span id="TouchedLevel"></span><br/>
-Noise: <span id="NoiseLevel"></span><br/>
-ChanceToSpeak: <span id="ChanceToSpeak"></span><br/>
-Jostled: <span id="JostledLevel"></span><br/>
-Laying down: <span id="IAmLayingDown"></span><br/>
-<br/>
-StarTrekMode: <span id="StarTrekMode"></span><br/>
-ShushPleaseHoney: <span id="ShushPleaseHoney"></span><br/>
-<br/>
-Battery Voltage: <span id="BatteryVoltage"></span><br/>
-Power State: <span id="PowerState"></span><br/>
-Charging State: <span id="ChargingState"></span><br/>
-</span>
-<h5>Breathing style</h5>
-<a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/Breath_Change', 'breathe_normal');">Normal</a><br/>
-<a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/Breath_Change', 'breathe_sleepy');">Sleepy</a><br/>
-<a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/Breath_Change', 'breathe_sleeping');">Sleeping</a><br/>
-<a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/Breath_Change', 'breathe_sex');">Sex</a><br/>
-<h5>Special lol</h5>
-<a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/StarTrek', 'on');">StarTrek Mode On</a><br/>
-<a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/StarTrek', 'off');">StarTrek Mode Off</a><br/>
-<a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/ShushPleaseHoney', 'on');">Shush Mode On</a><br/>
-<a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/ShushPleaseHoney', 'off');">Shush Mode Off</a><br/>
-"""
-    for Row in Sounds.All():
-        SoundId = str(Row['id'])
-        SoundName = str(Row['name'])
-        SoundBaseVolumeAdjust = Row['base_volume_adjust']
-        SoundAmbienceVolumeAdjust = Row['ambience_volume_adjust']
-        SoundIntensity = Row['intensity']
-        SoundCuteness = Row['cuteness']
-        SoundTempoRange = Row['tempo_range']
-        html_out += f"<button class=\"btn\" onClick=\"ButtonHit('/Honey_Say', '{SoundId}'); return false;\"><i class=\"fa fa-play-circle-o\" aria-hidden=\"true\"></i></button><a href=\"javascript:void(0);\" class=\"collapsible\">{SoundName}</a><br/>\n"
-        html_out += "<div class=\"content\">\n"
-        
-        html_out += f"Base volume adjust <select class=\"base_volume_adjust\" onchange=\"ButtonHit('/BaseVolChange', '{SoundId}', this.value); return false;\">\n"
-        for select_option in [0.2, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0]:
-            if select_option == SoundBaseVolumeAdjust:
-                html_out += "<option selected=\"true\" "
-            else:
-                html_out += "<option "
-            html_out += "value=\"" + format(select_option, '.1f') + "\">" + format(select_option, '.1f') + "</option>\n"
-        html_out += "</select><br/>\n"
-
-        html_out += f"Ambient volume adjust <select class=\"ambience_volume_adjust\" onchange=\"ButtonHit('/AmbientVolChange', '{SoundId}', this.value); return false;\">\n"
-        for select_option in np.arange(0.2, 3.2, 0.2):
-            if select_option == SoundAmbienceVolumeAdjust:
-                html_out += "<option selected=\"true\" "
-            else:
-                html_out += "<option "
-            html_out += "value=\"" + format(select_option, '.1f') + "\">" + format(select_option, '.1f') + "</option>\n"
-        html_out += "</select><br/>\n"
-
-        html_out += f"Intensity <select class=\"intensity\" onchange=\"ButtonHit('/IntensityChange', '{SoundId}', this.value); return false;\">\n"
-        for select_option in np.arange(0.0, 1.1, 0.1):
-            if select_option == SoundIntensity:
-                html_out += "<option selected=\"true\" "
-            else:
-                html_out += "<option "
-            html_out += "value=\"" + format(select_option, '.1f') + "\">" + format(select_option, '.1f') + "</option>\n"
-        html_out += "</select><br/>\n"
-
-        html_out += f"Cuteness <select class=\"cuteness\" onchange=\"ButtonHit('/CutenessChange', '{SoundId}', this.value); return false;\">\n"
-        for select_option in np.arange(0.0, 1.1, 0.1):
-            if select_option == SoundCuteness:
-                html_out += "<option selected=\"true\" "
-            else:
-                html_out += "<option "
-            html_out += "value=\"" + format(select_option, '.1f') + "\">" + format(select_option, '.1f') + "</option>\n"
-        html_out += "</select><br/>\n"
-
-        html_out += f"Tempo Range <select class=\"tempo_range\" onchange=\"ButtonHit('/TempoRangeChange', '{SoundId}', this.value); return false;\">\n"
-        for select_option in np.arange(0.0, 0.22, 0.01):
-            if select_option == SoundTempoRange:
-                html_out += "<option selected=\"true\" "
-            else:
-                html_out += "<option "
-            html_out += "value=\"" + format(select_option, '.2f') + "\">" + format(select_option, '.2f') + "</option>\n"
-        html_out += "</select><br/>\n"
-
-        html_out += "</div>\n"
-    html_out += """
-  <script type="text/javascript">
-
-    var coll = document.getElementsByClassName("collapsible");
-    var i;
-
-    for (i = 0; i < coll.length; i++) {
-      coll[i].addEventListener("click", function() {
-        this.classList.toggle("active");
-        var content = this.nextElementSibling.nextElementSibling;
-        if (content.style.display === "block") {
-          content.style.display = "none";
-        } else {
-          content.style.display = "block";
-        }
-      });
-    }
-
-    StatusUpdate();
-  </script>
-</body>
-</html>
-"""
-    return html_out
-
 class WebServerHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         weblog.debug("incoming get: %s", self.path)
@@ -1880,7 +1629,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-Type', 'text/plain')
             self.send_header('Cache-Control', 'no-store')
-            self.wfile.write(bytes(html(), "utf-8"))
+            self.wfile.write(bytes(self.html_main(), "utf-8"))
         # elif self.path == '/vol_up.png':
         #     self.send_response(200)
         #     self.send_header('Content-Type', 'image/png')  leaving this here as a good example of serving a static file
@@ -1983,6 +1732,11 @@ class WebServerHandler(BaseHTTPRequestHandler):
             self.send_header('Content-Type', 'application/json')
             # log.debug(jsonpickle.encode(GlobalStatus))
             self.wfile.write(jsonpickle.encode(GlobalStatus).encode())
+        elif self.path == '/Sound_Detail':
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/html')
+            self.send_header('Cache-Control', 'no-store')
+            self.wfile.write(bytes(self.html_sound_detail(post_data), "utf-8"))
         elif self.path == '/Wernicke':
             self.send_response(200)
             self.send_header('Content-Type', 'text/plain')
@@ -1993,6 +1747,285 @@ class WebServerHandler(BaseHTTPRequestHandler):
             self.send_header('Content-Type', 'text/plain')
             self.wfile.write(b'fuck')
             weblog.error('Invalid request to %s: %s', self.path, post_data)
+
+    def html_main(self):
+        """
+            Builds the html for the main page
+        """
+        html_out = """<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+    <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+      <title>Christine's Brain</title>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+      <link rel="icon" href="data:,">
+      <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+
+      <style>
+
+        .pinkButton {
+          box-shadow:inset 0px 1px 0px 0px #fbafe3;
+          background-color:#ff5bb0;
+          border-radius:6px;
+          border:1px solid #ee1eb6;
+          display:inline-block;
+          cursor:pointer;
+          color:#ffffff;
+          font-family:Arial;
+          font-size:30px;
+          font-weight:bold;
+          padding:6px 24px;
+          text-decoration:none;
+          text-shadow:0px 1px 0px #c70067;
+        }
+        .pinkButton:hover {
+          background-color:#ef027c;
+        }
+        .pinkButton:active {
+          position:relative;
+          top:1px;
+        }
+
+        /* Style buttons */
+        .btn {
+          background-color:#ff5bb0;
+          color: white;
+          padding: 4px 4px;
+          font-size: 24px;
+          cursor: pointer;
+        }
+
+        /* The volume down button wasn't quite square */
+        .voldownbtn {
+          margin-left: 4px;
+          margin-right: 4px;
+        }
+
+        /* Darker background on mouse-over */
+        .btn:hover {
+          background-color:#ef027c;
+        }
+
+        /* Style the button that is used to open and close the collapsible content */
+        .collapsible {
+          background-color: #eee;
+          color: #444;
+          cursor: pointer;
+          padding: 8px;
+          width: 100%;
+          border: none;
+          text-align: left;
+          outline: none;
+          font-size: 15px;
+        }
+
+        /* Add a background color to the button if it is clicked on (add the .active class with JS), and when you move the mouse over it (hover) */
+        .active, .collapsible:hover {
+          background-color: #ccc;
+        }
+
+        /* Style the collapsible content. Note: hidden by default */
+        .sound_detail {
+          padding: 32px 32px;
+          display: none;
+          overflow: hidden;
+        }
+
+        .statusarea {
+          font-size: 15px;
+        }
+
+      </style>
+
+      <script type="text/javascript">
+
+        function ButtonHit(endpoint, id, val=null) {
+          //console.log('ButtonHit');
+          var xhttp = new XMLHttpRequest();
+          xhttp.onreadystatechange = function() {
+            //console.log('this.readyState = ' + this.readyState + '  this.status = ' + this.status);
+            if (this.readyState == 4 && this.status == 200) {
+              //console.log('ButtonHitDone');
+              //document.getElementById("demo").innerHTML = this.responseText;
+            }
+          };
+          xhttp.open("POST", endpoint, true);
+          xhttp.overrideMimeType('text/plain')
+          xhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+          if ( val == null ) {
+              xhttp.send(id);
+          } else {
+              xhttp.send(id + "," + val);
+          }
+        }
+
+        function StatusUpdate() {
+          var xhttp = new XMLHttpRequest();
+          xhttp.onreadystatechange = function() {
+            //console.log('StatusUpdate this.readyState = ' + this.readyState + '  this.status = ' + this.status);
+            if (this.readyState == 4 && this.status == 200) {
+              var status = JSON.parse(this.responseText);
+              document.getElementById("CPU_Temp").innerHTML = status.CPU_Temp + '&deg;C';
+              document.getElementById("LightLevelPct").innerHTML = (status.LightLevelPct * 100).toPrecision(2) + '%';
+              document.getElementById("Wakefulness").innerHTML = (status.Wakefulness * 100).toPrecision(2) + '%';
+              document.getElementById("TouchedLevel").innerHTML = (status.TouchedLevel * 100).toPrecision(2) + '%';
+              document.getElementById("NoiseLevel").innerHTML = (status.NoiseLevel * 100).toPrecision(2) + '%';
+              document.getElementById("ChanceToSpeak").innerHTML = (status.ChanceToSpeak * 100).toPrecision(2) + '%';
+              document.getElementById("JostledLevel").innerHTML = (status.JostledLevel * 100).toPrecision(2) + '%';
+              document.getElementById("IAmLayingDown").innerHTML = status.IAmLayingDown;
+              document.getElementById("ShushPleaseHoney").innerHTML = status.ShushPleaseHoney;
+              document.getElementById("StarTrekMode").innerHTML = status.StarTrekMode;
+              document.getElementById("BatteryVoltage").innerHTML = status.BatteryVoltage;
+              document.getElementById("PowerState").innerHTML = status.PowerState;
+              document.getElementById("ChargingState").innerHTML = status.ChargingState;
+              setTimeout(StatusUpdate, 1000);
+            }
+          };
+          xhttp.open("POST", "/Status_Update", true);
+          xhttp.overrideMimeType('application/json')
+          xhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+          xhttp.send("LOVE");
+        }
+
+        function FetchSoundDetail(sound_id, detail_div) {
+          var xhttp = new XMLHttpRequest();
+          xhttp.onreadystatechange = function() {
+            if (this.readyState == 4 && this.status == 200) {
+              detail_div.innerHTML = this.responseText;
+            }
+          };
+          xhttp.open("POST", "/Sound_Detail", true);
+          xhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+          xhttp.send(sound_id);
+        }
+
+      </script>
+    </head>
+
+    <body>
+    <h1>Status</h1>
+    <span class="statusarea">
+    CPU Temperature: <span id="CPU_Temp"></span><br/>
+    Light Level: <span id="LightLevelPct"></span><br/>
+    Wakefulness: <span id="Wakefulness"></span><br/>
+    Touch: <span id="TouchedLevel"></span><br/>
+    Noise: <span id="NoiseLevel"></span><br/>
+    ChanceToSpeak: <span id="ChanceToSpeak"></span><br/>
+    Jostled: <span id="JostledLevel"></span><br/>
+    Laying down: <span id="IAmLayingDown"></span><br/>
+    <br/>
+    StarTrekMode: <span id="StarTrekMode"></span><br/>
+    ShushPleaseHoney: <span id="ShushPleaseHoney"></span><br/>
+    <br/>
+    Battery Voltage: <span id="BatteryVoltage"></span><br/>
+    Power State: <span id="PowerState"></span><br/>
+    Charging State: <span id="ChargingState"></span><br/>
+    </span>
+    <h1>Breathing style</h1>
+    <a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/Breath_Change', 'breathe_normal');">Normal</a><br/>
+    <a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/Breath_Change', 'breathe_sleepy');">Sleepy</a><br/>
+    <a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/Breath_Change', 'breathe_sleeping');">Sleeping</a><br/>
+    <a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/Breath_Change', 'breathe_sex');">Sex</a><br/>
+    <h1>Special lol</h1>
+    <a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/StarTrek', 'on');">StarTrek Mode On</a><br/>
+    <a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/StarTrek', 'off');">StarTrek Mode Off</a><br/>
+    <a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/ShushPleaseHoney', 'on');">Shush Mode On</a><br/>
+    <a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/ShushPleaseHoney', 'off');">Shush Mode Off</a><br/>
+    <h1>Sounds</h1>
+    """
+        for Row in Sounds.All():
+            SoundId = str(Row['id'])
+            SoundName = str(Row['name'])
+            html_out += f"    <button class=\"btn\" onClick=\"ButtonHit('/Honey_Say', '{SoundId}'); return false;\"><i class=\"fa fa-play-circle-o\" aria-hidden=\"true\"></i></button><a href=\"javascript:void(0);\" class=\"collapsible\">{SoundName}</a><br/>\n"
+            html_out += f"    <div class=\"sound_detail\" sound_id=\"{SoundId}\"></div>\n"
+            
+        html_out += """
+      <script type="text/javascript">
+
+        var coll = document.getElementsByClassName("collapsible");
+        var i;
+
+        for (i = 0; i < coll.length; i++) {
+          coll[i].addEventListener("click", function() {
+            this.classList.toggle("active");
+            var sound_detail_div = this.nextElementSibling.nextElementSibling;
+            FetchSoundDetail(sound_detail_div.attributes['sound_id'].value, sound_detail_div);
+            if (sound_detail_div.style.display === "block") {
+              sound_detail_div.style.display = "none";
+            } else {
+              sound_detail_div.style.display = "block";
+            }
+          });
+        }
+
+        StatusUpdate();
+      </script>
+    </body>
+    </html>
+    """
+        return html_out
+
+    def html_sound_detail(self, s_id):
+
+        """
+            Builds the html for a specific sound's detail section when user opens it. 
+            The way it used to be, that section was built for all sounds in the main html, which was slower, way more dom, etc
+        """
+
+        Row = Sounds.Select(sound_id = s_id)
+        SoundId = str(Row['id'])
+        SoundName = str(Row['name'])
+        SoundBaseVolumeAdjust = Row['base_volume_adjust']
+        SoundAmbienceVolumeAdjust = Row['ambience_volume_adjust']
+        SoundIntensity = Row['intensity']
+        SoundCuteness = Row['cuteness']
+        SoundTempoRange = Row['tempo_range']
+
+        html_out = f"Base volume adjust <select class=\"base_volume_adjust\" onchange=\"ButtonHit('/BaseVolChange', '{SoundId}', this.value); return false;\">\n"
+        for select_option in [0.2, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0]:
+            if select_option == SoundBaseVolumeAdjust:
+                html_out += "<option selected=\"true\" "
+            else:
+                html_out += "<option "
+            html_out += "value=\"" + format(select_option, '.1f') + "\">" + format(select_option, '.1f') + "</option>\n"
+        html_out += "</select><br/>\n"
+
+        html_out += f"Ambient volume adjust <select class=\"ambience_volume_adjust\" onchange=\"ButtonHit('/AmbientVolChange', '{SoundId}', this.value); return false;\">\n"
+        for select_option in np.arange(0.2, 3.2, 0.2):
+            if select_option == SoundAmbienceVolumeAdjust:
+                html_out += "<option selected=\"true\" "
+            else:
+                html_out += "<option "
+            html_out += "value=\"" + format(select_option, '.1f') + "\">" + format(select_option, '.1f') + "</option>\n"
+        html_out += "</select><br/>\n"
+
+        html_out += f"Intensity <select class=\"intensity\" onchange=\"ButtonHit('/IntensityChange', '{SoundId}', this.value); return false;\">\n"
+        for select_option in np.arange(0.0, 1.1, 0.1):
+            if select_option == SoundIntensity:
+                html_out += "<option selected=\"true\" "
+            else:
+                html_out += "<option "
+            html_out += "value=\"" + format(select_option, '.1f') + "\">" + format(select_option, '.1f') + "</option>\n"
+        html_out += "</select><br/>\n"
+
+        html_out += f"Cuteness <select class=\"cuteness\" onchange=\"ButtonHit('/CutenessChange', '{SoundId}', this.value); return false;\">\n"
+        for select_option in np.arange(0.0, 1.1, 0.1):
+            if select_option == SoundCuteness:
+                html_out += "<option selected=\"true\" "
+            else:
+                html_out += "<option "
+            html_out += "value=\"" + format(select_option, '.1f') + "\">" + format(select_option, '.1f') + "</option>\n"
+        html_out += "</select><br/>\n"
+
+        html_out += f"Tempo Range <select class=\"tempo_range\" onchange=\"ButtonHit('/TempoRangeChange', '{SoundId}', this.value); return false;\">\n"
+        for select_option in np.arange(0.0, 0.22, 0.01):
+            if select_option == SoundTempoRange:
+                html_out += "<option selected=\"true\" "
+            else:
+                html_out += "<option "
+            html_out += "value=\"" + format(select_option, '.2f') + "\">" + format(select_option, '.2f') + "</option>\n"
+        html_out += "</select><br/>\n"
+
+        return html_out
 
 TheWebServer = HTTPServer(("", 80), WebServerHandler)
 TheWebServer.serve_forever()
