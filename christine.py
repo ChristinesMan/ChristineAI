@@ -455,14 +455,157 @@ class SoundsDB():
             Rows.append(Row[0])
         return Rows
 
-    def GetCollection(self, name):
+    def CollectionsForSound(self, sound_id):
         """
-            Returns one collection
+            Returns all the collection names indicating which ones a specific sound is in. Used to build web page with checkboxes.
+        """
+
+        sound_id = int(sound_id)
+
+        DBCursor = self.DBConn.cursor()
+        DBCursor.execute('SELECT name,sound_ids FROM collections')
+
+        Rows = []
+        for Row in DBCursor.fetchall():
+
+            RowInCollection = False
+
+            if Row[1] != None and Row[1] != 'None':
+                for element in Row[1].split(','):
+                    if '-' in element:
+                        id_bounds = element.split('-')
+                        id_min = int(id_bounds[0])
+                        id_max = int(id_bounds[1])
+                        if sound_id <= id_max and sound_id >= id_min:
+                            RowInCollection = True
+                            break
+                    else:
+                        if sound_id == int(element):
+                            RowInCollection = True
+                            break
+            Rows.append((Row[0], RowInCollection))
+        return Rows
+
+    def CollectionUpdate(self, sound_id, collection_name, state):
+        """
+            Updates one collection for one sound
+        """
+
+        log.info(f'sound_id {sound_id} name {collection_name} state {state}')
+
+        # Unpack the "9-99,999" format into a list of individual sounds ids, unless the collection was null
+        CollectionIDs = []
+
+        # Get the sound ids for the collection name. Might be None if there were no sounds assigned to it
+        Collection = self.GetCollection(collection_name)
+        # log.info(Collection)
+
+        if Collection != None and Collection != 'None':
+            for element in Collection.split(','):
+                if '-' in element:
+                    id_bounds = element.split('-')
+                    id_min = int(id_bounds[0])
+                    id_max = int(id_bounds[1])
+                    for CollectionID in range(id_min, id_max + 1):
+                        CollectionIDs.append(CollectionID)
+                else:
+                    CollectionIDs.append(int(element))
+
+        # Now that we have it in a flat list form, do whatever, add or delete, sort the list so that it's in integer order again
+        if state == True:
+            CollectionIDs.append(sound_id)
+        else:
+            try:
+                CollectionIDs.remove(sound_id)
+            except ValueError:
+                pass
+        CollectionIDs.sort()
+
+        # temp
+        # log.info(CollectionIDs)
+
+        # Unless we just emptied the list, pack it back up into a "9-99,999" format and hack off the ending ,
+        if len(CollectionIDs) > 0:
+            RangesPacked = ''
+            CollectionIDPrev = None
+            CollectionIDRangeMin = None
+            CollectionIDRangeMax = None
+            for CollectionID in CollectionIDs:
+                if CollectionIDPrev == None:
+                    CollectionIDPrev = CollectionID
+                    continue
+                if CollectionID == CollectionIDPrev:
+                    continue
+                if CollectionID - CollectionIDPrev == 1:
+                    if CollectionIDRangeMin == None:
+                        CollectionIDRangeMin = CollectionIDPrev
+                    CollectionIDRangeMax = CollectionID
+                    CollectionIDPrev = CollectionID
+                    continue
+                if CollectionID - CollectionIDPrev > 1:
+                    if CollectionIDRangeMin != None:
+                        RangesPacked += f'{CollectionIDRangeMin}-{CollectionIDRangeMax},'
+                        CollectionIDRangeMin = None
+                        CollectionIDRangeMax = None
+                    else:
+                        RangesPacked += f'{CollectionIDPrev},'
+                    CollectionIDPrev = CollectionID
+                    continue
+            if CollectionIDRangeMax != None:
+                RangesPacked += f'{CollectionIDRangeMin}-{CollectionIDRangeMax},'
+            else:
+                RangesPacked += f'{CollectionIDPrev},'
+            RangesPacked = RangesPacked[:-1]
+        else:
+            RangesPacked = None
+
+        # log.info(RangesPacked)
+        # Write the change to db
+        self.SetCollection(collection_name = collection_name, sound_ids = RangesPacked)
+
+    def GetCollection(self, collection_name):
+        """
+            Returns one collection by name
         """
 
         DBCursor = self.DBConn.cursor()
-        DBCursor.execute(f'SELECT sound_ids FROM collections WHERE name = \'{name}\'')
+        DBCursor.execute(f'SELECT sound_ids FROM collections WHERE name = \'{collection_name}\'')
         return DBCursor.fetchone()[0]
+
+    def SetCollection(self, collection_name, sound_ids):
+        """
+            Sets one collection
+        """
+
+        # I want that field to either be NULL or a string with stuff there
+        if sound_ids == None or sound_ids == 'None':
+            sound_ids = 'NULL'
+        else:
+            sound_ids = f'\'{sound_ids}\''
+
+        DBCursor = self.DBConn.cursor()
+        DBCursor.execute(f'UPDATE collections SET sound_ids = {sound_ids} WHERE name = \'{collection_name}\'')
+        self.DBConn.commit()
+
+    def NewCollection(self, collection_name):
+        """
+            Adds a new collection. Tests for existence first.
+        """
+
+        DBCursor = self.DBConn.cursor()
+        DBCursor.execute(f'SELECT sound_ids FROM collections WHERE name = \'{collection_name}\'')
+        if DBCursor.fetchone() == None:
+            DBCursor.execute(f'INSERT INTO collections VALUES (NULL, \'{collection_name}\', NULL)')
+            self.DBConn.commit()
+
+    def DelCollection(self, collection_name):
+        """
+            Delete a collection by name
+        """
+
+        DBCursor = self.DBConn.cursor()
+        DBCursor.execute(f'DELETE FROM collections WHERE name = \'{collection_name}\'')
+        self.DBConn.commit()
 
 Sounds = SoundsDB()
 
@@ -510,7 +653,7 @@ class SoundCollection():
         Row = Sounds.GetCollection(self.name)
 
         # In case the db row has null in that field, like no sounds in the collection
-        if Row == None:
+        if Row == None or Row == 'None':
             yield None
         else:
             for element in Row.split(','):
@@ -1738,6 +1881,19 @@ class WebServerHandler(BaseHTTPRequestHandler):
             self.send_header('Content-Type', 'text/html')
             self.send_header('Cache-Control', 'no-store')
             self.wfile.write(bytes(self.html_sound_detail(post_data), "utf-8"))
+        elif self.path == '/CollectionUpdate':
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            post_data_split = post_data.split(',')
+            SoundId = post_data_split[0]
+            NewCollectionName = post_data_split[1]
+            if post_data_split[2] == 'true':
+                NewCollectionState = True
+            else:
+                NewCollectionState = False
+            log.info('Sound ID: %s Collection name: %s State: %s', SoundId, NewCollectionName, NewCollectionState)
+            Sounds.CollectionUpdate(sound_id = int(SoundId), collection_name = NewCollectionName, state = NewCollectionState)
+            self.wfile.write(b'done')
         elif self.path == '/Wernicke':
             self.send_response(200)
             self.send_header('Content-Type', 'text/plain')
@@ -1917,6 +2073,19 @@ class WebServerHandler(BaseHTTPRequestHandler):
           xhttp.send(sound_id);
         }
 
+        function CheckboxHit(endpoint, id, val1=null, val2=null) {
+          var xhttp = new XMLHttpRequest();
+          xhttp.onreadystatechange = function() {
+            if (this.readyState == 4 && this.status == 200) {
+              //console.log('ButtonHitDone');
+            }
+          };
+          xhttp.open("POST", endpoint, true);
+          xhttp.overrideMimeType('text/plain')
+          xhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+          xhttp.send(id + "," + val1 + "," + val2);
+        }
+
       </script>
     </head>
 
@@ -1967,11 +2136,11 @@ class WebServerHandler(BaseHTTPRequestHandler):
           coll[i].addEventListener("click", function() {
             this.classList.toggle("active");
             var sound_detail_div = this.nextElementSibling.nextElementSibling;
-            FetchSoundDetail(sound_detail_div.attributes['sound_id'].value, sound_detail_div);
             if (sound_detail_div.style.display === "block") {
               sound_detail_div.style.display = "none";
             } else {
               sound_detail_div.style.display = "block";
+              FetchSoundDetail(sound_detail_div.attributes['sound_id'].value, sound_detail_div);
             }
           });
         }
@@ -2043,6 +2212,13 @@ class WebServerHandler(BaseHTTPRequestHandler):
                 html_out += "<option "
             html_out += "value=\"" + format(select_option, '.2f') + "\">" + format(select_option, '.2f') + "</option>\n"
         html_out += "</select><br/>\n"
+
+        html_out += "<h5>Collections</h5>\n"
+        for collection,ischecked in Sounds.CollectionsForSound(SoundId):
+            if ischecked:
+                html_out += f"<input type=\"checkbox\" class=\"collection_checkbox\" onchange=\"CheckboxHit('/CollectionUpdate', '{SoundId}', '{collection}', this.checked); return false;\" checked=\"checked\"/>{collection}<br/>\n"
+            else:
+                html_out += f"<input type=\"checkbox\" class=\"collection_checkbox\" onchange=\"CheckboxHit('/CollectionUpdate', '{SoundId}', '{collection}', this.checked); return false;\"/>{collection}<br/>\n"
 
         return html_out
 
