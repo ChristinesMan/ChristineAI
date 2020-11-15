@@ -103,17 +103,16 @@ def setup_logger(name, log_file, level=log.INFO, format='%(asctime)s - %(message
     return logger
 
 # Lots of separate log files
-gyrolog = setup_logger('gyro', 'gyro.log', level=log.DEBUG)
+gyrolog = setup_logger('gyro', 'gyro.log', level=log.INFO)
 lightlog = setup_logger('light', 'light.log', level=log.INFO)
-cputemplog = setup_logger('cputemp', 'cputemp.log', level=log.INFO)
+cputemplog = setup_logger('cputemp', 'cputemp.log', level=log.DEBUG)
 battlog = setup_logger('batt', 'battery.log', level=log.DEBUG)
 soundlog = setup_logger('sound', 'sound.log', level=log.DEBUG)
-queuelog = setup_logger('queue', 'queue.log', level=log.DEBUG)
 sqllog = setup_logger('sql', 'sql.log', level=log.INFO)
 weblog = setup_logger('web', 'web.log', level=log.INFO)
-touchlog = setup_logger('touch', 'touch.log', level=log.DEBUG)
+touchlog = setup_logger('touch', 'touch.log', level=log.INFO)
 sleeplog = setup_logger('sleep', 'sleep.log', level=log.DEBUG)
-wernickelog = setup_logger('wernicke', 'wernicke.log', level=log.DEBUG)
+wernickelog = setup_logger('wernicke', 'wernicke.log', level=log.INFO)
 templog = setup_logger('temp', 'temp.log', level=log.DEBUG)
 
 # I want to log exceptions to the main log. Because it appears that redirecting stderr from the service is not capturing all the errors
@@ -316,11 +315,11 @@ class SaveStatus(threading.Thread):
 def SpeakingHandler(signum, frame):
     if signum == 45:
         GlobalStatus.DontSpeakUntil = time.time() + 60
-        soundlog.info('HeardSoundStart')
+        soundlog.debug('HeardSoundStart')
     elif signum == 44:
         # when sound stops, wait a minimum of 1s and up to 3s randomly
         GlobalStatus.DontSpeakUntil = time.time() + 1.0 + (random.random() * 2)
-        soundlog.info('HeardSoundStop')
+        soundlog.debug('HeardSoundStop')
 
 # Setup signals
 signal.signal(44, SpeakingHandler)
@@ -735,9 +734,10 @@ class Breath(threading.Thread):
         self.BreathStyle = 'breathe_normal'
 
         # Setup an audio channel
-        # self.SoundChannel = pygame.mixer.Channel(0)
+        # self.SoundChannel = pygame.mixer.Channel(0) (pygame SEGV'd and got chucked)
         # Status, what we're doing right meow. Such as inhaling, exhaling, playing sound. This is the saved incoming message. Initial value is to just choose a random breath.
-        self.CurrentSound = self.ChooseNewBreath()
+        self.CurrentSound = None
+        self.ChooseNewBreath()
 
         # Sometimes a sound gets delayed because there is an incoming sound or I'm speaking. 
         # If that happens, I want to save that sound for the moment it's safe to speak, then, out with it, honey, say what you need to say, I LOOOOOOOVE YOOOOOO!!! Sorry, go ahead. 
@@ -746,6 +746,8 @@ class Breath(threading.Thread):
 
         # setup the separate process with pipe that we're going to be fucking
         # lol I put the most insane things in code omg, but this will help keep it straight!
+        # The enterprise sent out a shuttlecraft with Data at the helm. The shuttlecraft is a subprocess. 
+        # This was done because sound got really choppy because too much was going on in the enterprise
         self.PipeToShuttlecraft, self.PipeToStarship = Pipe()
         self.ShuttlecraftProcess = Process(target = self.Shuttlecraft, args = (self.PipeToStarship,))
         self.ShuttlecraftProcess.start()
@@ -758,33 +760,35 @@ class Breath(threading.Thread):
                 # Get everything out of the queue and process it, unless there's already a sound that's been waiting
                 while len(self.Queue_Breath) != 0:
                     IncomingMessage = self.Queue_Breath.popleft()
-                    queuelog.debug('%s', IncomingMessage)
 
                     # If the current thing is higher priority, just discard. Before this I had to kiss her just right, not too much. 
                     # Also, if my wife's actually sleeping, I don't want her to wake me up with her adorable amazingness
                     # Added a condition that throws away a low priority new sound if there's already a sound delayed. 
                     # Christine was saying two nice things in quick succession which was kind of weird, and this is my fix.
-                    # if IncomingMessage['priority'] == 9 and IncomingMessage['cutsound'] == True:
-                    #     soundlog.debug('Cleared breath queue')
-                    #     self.Queue_Breath.clear()
-                    #     self.CurrentSound = IncomingMessage
-                    #     self.DelayedSound = None
-                    #     self.CurrentSound['has_started'] = True
-                    #     soundlog.debug(f'Playing this: {self.CurrentSound}')
-                    #     self.Play()
-                    if self.CurrentSound == None or IncomingMessage['priority'] >= self.CurrentSound['priority']:
+                    if IncomingMessage['priority'] >= self.CurrentSound['priority']:
                         if GlobalStatus.IAmSleeping == False or IncomingMessage['playsleeping']:
                             if self.DelayedSound == None or IncomingMessage['priority'] > self.DelayedSound['priority']:
-                                soundlog.debug(f'Threw away: {self.DelayedSound}  Incoming: {IncomingMessage}')
-                                self.DelayedSound = None
+                                soundlog.debug('Accepted: %s', IncomingMessage)
+                                if self.DelayedSound != None:
+                                    soundlog.debug(f'Threw away delayed sound: {self.DelayedSound}')
+                                    self.DelayedSound = None
                                 self.CurrentSound = IncomingMessage
                                 if self.CurrentSound['cutsound'] == True:
                                     soundlog.debug('Playing immediately')
                                     self.Play()
+                            else:
+                                soundlog.debug('Discarded (delayed sound): %s', IncomingMessage)
+                        else:
+                            soundlog.debug('Discarded (sleeping): %s', IncomingMessage)
+                    else:
+                        soundlog.debug('Discarded (priority): %s', IncomingMessage)
 
                 # This will block here until the shuttlecraft sends a true/false which is whether the sound is still playing. 
                 # The shuttlecraft will send this every 0.1s, which will setup the approapriate delay
+                # So all this logic here will only run when the shuttlecraft finishes playing the current sound
+                # If there's some urgent sound that must interrupt, that happens up there ^ and that is communicated to the shuttlecraft through the pipe
                 if self.PipeToShuttlecraft.recv() == False:
+                    soundlog.debug('No sound playing')
 
                     # if we're here, it means there's no sound actively playing
                     # If there's a sound that couldn't play when it came in, and it can be played now, put it into CurrentSound
@@ -794,9 +798,9 @@ class Breath(threading.Thread):
                         soundlog.debug(f'Copied delayed to current: {self.CurrentSound}')
 
                     # if there's no other sound that wanted to play, just breathe
-                    if self.CurrentSound == None:
+                    # if we're here, it means no sound is currently playing at this moment, and if is_playing True, that means the sound that was playing is done
+                    if self.CurrentSound['is_playing'] == True:
                         self.ChooseNewBreath()
-                        soundlog.debug('Chose breath: %s', self.CurrentSound)
 
                     # Breaths are the main thing that uses the delayer, a random delay from 0.5s to 2s. Other stuff can theoretically use it, too
                     if self.CurrentSound['delayer'] > 0:
@@ -818,7 +822,8 @@ class Breath(threading.Thread):
 
     def ChooseNewBreath(self):
         self.CurrentSound = Collections[self.BreathStyle].GetRandomSound()
-        self.CurrentSound.update({'cutsound': False, 'priority': 1, 'playsleeping': True, 'ignorespeaking': True, 'delayer': random.randint(5, 20)})
+        self.CurrentSound.update({'cutsound': False, 'priority': 1, 'playsleeping': True, 'ignorespeaking': True, 'delayer': random.randint(5, 20), 'is_playing': False})
+        soundlog.debug('Chose breath: %s', self.CurrentSound)
 
     def Play(self):
         soundlog.debug(f'Playing: {self.CurrentSound}')
@@ -829,8 +834,8 @@ class Breath(threading.Thread):
         else:
             self.PipeToShuttlecraft.send('./sounds_processed/' + str(self.CurrentSound['id']) + '/' + random.choice(self.TempoMultipliers) + '.wav')
 
-        # While a sound is playing, most of the logic is going to just skip anyway. Setting this to None to signal there's nothing that needs to play
-        self.CurrentSound = None
+        # let stuff know this sound is playing, not just waiting in line
+        self.CurrentSound['is_playing'] = True
 
     # Runs in a separate process for performance reasons. Sounds got crappy and this should solve it. 
     def Shuttlecraft(self, PipeToStarship):
@@ -874,7 +879,7 @@ class Breath(threading.Thread):
         # If a collection is empty, it's possible to get a None sound. Just chuck it. 
         if Sound != None:
             # Take the Sound and add all the options to it. Merges the two dicts into one. 
-            Sound.update({'cutsound': CutAllSoundAndPlay, 'priority': Priority, 'playsleeping': PlayWhenSleeping, 'ignorespeaking': IgnoreSpeaking, 'delayer': Delay})
+            Sound.update({'cutsound': CutAllSoundAndPlay, 'priority': Priority, 'playsleeping': PlayWhenSleeping, 'ignorespeaking': IgnoreSpeaking, 'delayer': Delay, 'is_playing': False})
             self.Queue_Breath.append(Sound)
 
 # def TellBreath(Request, Sound = None, SoundType = None, CutAllSoundAndPlay = False, Priority = 5):
