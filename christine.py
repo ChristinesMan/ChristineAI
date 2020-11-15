@@ -1134,6 +1134,7 @@ class Sensor_MPU(threading.Thread):
         except:
             log.error('The gyro had an I/O failure on init. Gyro is unavailable.')
             GlobalStatus.JostledLevel = 0.0
+            GlobalStatus.IAmLayingDown = False
             return
 
         try:
@@ -1147,6 +1148,7 @@ class Sensor_MPU(threading.Thread):
                     if self.IOErrors > 10:
                         log.critical('The gyro thread has been shutdown.')
                         GlobalStatus.JostledLevel = 0.0
+                        GlobalStatus.IAmLayingDown = False
                         return
                 # Keep track of which iteration we're on. Fill the array with data.
                 self.LoopCycle = self.LoopIndex % self.SampleSize
