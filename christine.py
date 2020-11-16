@@ -78,6 +78,7 @@ import jsonpickle
 import pickle
 import socket
 import json
+import cgi
 # Temporary to figure out memory
 # import resource
 # from guppy import hpy
@@ -108,8 +109,8 @@ lightlog = setup_logger('light', 'light.log', level=log.INFO)
 cputemplog = setup_logger('cputemp', 'cputemp.log', level=log.DEBUG)
 battlog = setup_logger('batt', 'battery.log', level=log.DEBUG)
 soundlog = setup_logger('sound', 'sound.log', level=log.DEBUG)
-sqllog = setup_logger('sql', 'sql.log', level=log.INFO)
-weblog = setup_logger('web', 'web.log', level=log.INFO)
+sqllog = setup_logger('sql', 'sql.log', level=log.DEBUG)
+weblog = setup_logger('web', 'web.log', level=log.DEBUG)
 touchlog = setup_logger('touch', 'touch.log', level=log.INFO)
 sleeplog = setup_logger('sleep', 'sleep.log', level=log.DEBUG)
 wernickelog = setup_logger('wernicke', 'wernicke.log', level=log.INFO)
@@ -352,64 +353,100 @@ class SoundsDB():
             DBFieldIndex += 1
         del(DBFieldsCursor)
 
-    def Select(self, query = None, sound_id = None):
+    def DoQuery(self, query):
         """
-            Chooses a row from the database. The default is to return the first row. 
-            returns a dict
+            Do a database query, return raw rows
         """
 
-        DBCursor = self.DBConn.cursor()
-        if query == None:
-            if sound_id == None:
-                return None
+        try:
+            DBCursor = self.DBConn.cursor()
+            DBCursor.execute(query)
+            if query[0:6] == 'SELECT':
+                Rows = DBCursor.fetchall()
+                sqllog.debug(f'{query} ({len(Rows)})')
+                if len(Rows) == 0:
+                    return None
+                else:
+                    return Rows
             else:
-                query = f'SELECT * FROM sounds WHERE id = {sound_id}'
-        sqllog.info(query)
-        DBCursor.execute(query)
-        Row = DBCursor.fetchone()
-        sqllog.debug(Row)
-        Sound = {}
-        for f,fid in self.DBFields.items():
-            Sound[f] = Row[fid]
-        return Sound
+                sqllog.debug(query)
+                self.DBConn.commit()
+                return None
+
+        # log exception in the main.log
+        except Exception as e:
+            log.error('Database error. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
+            return None
+
+    def GetSound(self, sound_id):
+        """
+            Returns a sound from the database as a dict.
+        """
+
+        Rows = self.DoQuery(f'SELECT * FROM sounds WHERE id = {sound_id}')
+        if Rows == None:
+            return None
+        else:
+            Sound = {}
+            for f,fid in self.DBFields.items():
+                Sound[f] = Rows[0][fid]
+            return Sound
 
     def All(self):
         """
-            Called when building the web interface only, pretty much, so far. 
+            Return a list of all sounds in the database. Called when building the web interface only, pretty much, so far. 
         """
 
-        DBCursor = self.DBConn.cursor()
-        DBCursor.execute('SELECT * FROM sounds')
-        Rows = []
-        for Row in DBCursor.fetchall():
+        Rows = self.DoQuery('SELECT * FROM sounds')
+        Sounds = []
+        for Row in Rows:
             Sound = {}
             for f,fid in self.DBFields.items():
                 Sound[f] = Row[fid]
-            Rows.append(Sound)
-        return Rows
+            Sounds.append(Sound)
+        return Sounds
 
     def Update(self, sound_id, base_volume_adjust = None, ambience_volume_adjust = None, intensity = None, cuteness = None, tempo_range = None):
         """
             Update one sound
         """
 
-        DBCursor = self.DBConn.cursor()
         if base_volume_adjust != None:
-            sqllog.info(f'Updating base_volume_adjust for {sound_id}')
-            DBCursor.execute('UPDATE sounds SET base_volume_adjust = ' + base_volume_adjust + ' WHERE id = ' + str(sound_id))
+            self.DoQuery(f'UPDATE sounds SET base_volume_adjust = {base_volume_adjust} WHERE id = {sound_id}')
         if ambience_volume_adjust != None:
-            sqllog.info(f'Updating ambience_volume_adjust for {sound_id}')
-            DBCursor.execute('UPDATE sounds SET ambience_volume_adjust = ' + ambience_volume_adjust + ' WHERE id = ' + str(sound_id))
+            self.DoQuery(f'UPDATE sounds SET ambience_volume_adjust = {ambience_volume_adjust} WHERE id = {sound_id}')
         if intensity != None:
-            sqllog.info(f'Updating intensity for {sound_id}')
-            DBCursor.execute('UPDATE sounds SET intensity = ' + intensity + ' WHERE id = ' + str(sound_id))
+            self.DoQuery(f'UPDATE sounds SET intensity = {intensity} WHERE id = {sound_id}')
         if cuteness != None:
-            sqllog.info(f'Updating cuteness for {sound_id}')
-            DBCursor.execute('UPDATE sounds SET cuteness = ' + cuteness + ' WHERE id = ' + str(sound_id))
+            self.DoQuery(f'UPDATE sounds SET cuteness = {cuteness} WHERE id = {sound_id}')
         if tempo_range != None:
-            sqllog.info(f'Updating tempo_range for {sound_id}')
-            DBCursor.execute('UPDATE sounds SET tempo_range = ' + tempo_range + ' WHERE id = ' + str(sound_id))
-        self.DBConn.commit()
+            self.DoQuery(f'UPDATE sounds SET tempo_range = {tempo_range} WHERE id = {sound_id}')
+
+    def NewSound(self, new_path):
+        """
+            Add a new sound to the database. Returns the new sound id. The new file will already be there.
+        """
+
+        self.DoQuery(f'INSERT INTO sounds (id,name) VALUES (NULL, \'{new_path}\')')
+        Rows = self.DoQuery(f'SELECT id FROM sounds WHERE name = \'{new_path}\'')
+        if Rows == None:
+            return None
+        else:
+            return Rows[0][0]
+
+    def DelSound(self, sound_id):
+        """
+            Delete a sound from the database and files
+        """
+
+        DeadSoundWalking = self.GetSound(sound_id = sound_id)
+        os.remove('./sounds_master/' + DeadSoundWalking['name'])
+        os.system(f'rm -rf ./sounds_processed/{sound_id}/')
+        self.DoQuery(f'DELETE FROM sounds WHERE id = {sound_id}')
+        Collections = self.CollectionsForSound(sound_id = sound_id)
+        for CollectionName,CollectionState in Collections:
+            if CollectionState == True:
+                self.CollectionUpdate(sound_id = sound_id, collection_name = CollectionName, state = False)
 
     def Reprocess(self, sound_id):
         """
@@ -418,7 +455,7 @@ class SoundsDB():
         """
 
         # First go get the sound from the db
-        TheSound = self.Select(sound_id = sound_id)
+        TheSound = self.GetSound(sound_id = sound_id)
 
         # Get all the db row stuff into nice neat variables
         SoundId = str(TheSound['id'])
@@ -429,30 +466,43 @@ class SoundsDB():
         # Delete the old processed sound
         os.system('rm -rf ./sounds_processed/' + SoundId + '/*.wav')
 
-        # If we're adjusting the sound volume, ffmpeg, otherwise just copy the original file to 0.wav
+        # Create the destination directory
+        os.makedirs('./sounds_processed/' + SoundId, exist_ok=True)
+
+        # If we're adjusting the sound volume, ffmpeg, otherwise just copy the original file to 0.wav, which is the file with original tempo
         if SoundBaseVolumeAdjust != 1.0:
-            os.system('ffmpeg -v 0 -i ./sounds_master/' + SoundName + ' -filter:a "volume=' + str(SoundBaseVolumeAdjust) + '" ./sounds_processed/' + SoundId + '/0.wav')
+            exitstatus = os.system('ffmpeg -v 0 -i ./sounds_master/' + SoundName + ' -filter:a "volume=' + str(SoundBaseVolumeAdjust) + '" ./sounds_processed/' + SoundId + '/tmp_0.wav')
+            log.info('Jacked up volume for ' + SoundName + ' (' + str(exitstatus) + ')')
         else:
-            os.system('cp ./sounds_master/' + SoundName + ' ./sounds_processed/' + SoundId + '/0.wav')
+            exitstatus = os.system('cp ./sounds_master/' + SoundName + ' ./sounds_processed/' + SoundId + '/tmp_0.wav')
+            log.info('Copied ' + SoundName + ' (' + str(exitstatus) + ')')
 
         # If we're adjusting the tempo, use rubberband to adjust 0.wav to various tempos. Otherwise, we just have 0.wav and we're done
         # removed --smoothing because it seemed to be the cause of the noise at the end of adjusted sounds
         if SoundTempoRange != 0.0:
             for Multiplier in [-1, -0.75, -0.5, -0.25, 0.25, 0.5, 0.75, 1]:
-                os.system('rubberband --quiet --realtime --pitch-hq --tempo ' + format(1-(SoundTempoRange * Multiplier), '.2f') + ' ./sounds_processed/' + SoundId + '/0.wav ./sounds_processed/' + SoundId + '/' + str(Multiplier) + '.wav')
+                exitstatus = os.system('rubberband --quiet --realtime --pitch-hq --tempo ' + format(1-(SoundTempoRange * Multiplier), '.2f') + ' ./sounds_processed/' + SoundId + '/tmp_0.wav ./sounds_processed/' + SoundId + '/tmp_' + str(Multiplier) + '.wav')
+                log.info('Rubberbanded ' + SoundId + ' to ' + str(Multiplier) + ' (' + str(exitstatus) + ')')
+
+                exitstatus = os.system('ffmpeg -v 0 -i ./sounds_processed/' + SoundId + '/tmp_' + str(Multiplier) + '.wav -ar 44100 ./sounds_processed/' + SoundId + '/' + str(Multiplier) + '.wav')
+                log.info('Downsampled ' + SoundId + ' tempo ' + str(Multiplier) + ' (' + str(exitstatus) + ')')
+
+        exitstatus = os.system('ffmpeg -v 0 -i ./sounds_processed/' + SoundId + '/tmp_0.wav -ar 44100 ./sounds_processed/' + SoundId + '/0.wav')
+        log.info('Downsampled ' + SoundId + ' tempo 0 (' + str(exitstatus) + ')')
+        exitstatus = os.system('rm -f ./sounds_processed/' + SoundId + '/tmp_*')
+        log.info('Removed tmp files for ' + SoundId + ' (' + str(exitstatus) + ')')
 
     def Collections(self):
         """
-            Returns all the names from the collections table
+            Returns all the names from the collections table as a list
         """
 
-        DBCursor = self.DBConn.cursor()
-        DBCursor.execute('SELECT name FROM collections')
+        Rows = self.DoQuery('SELECT name FROM collections')
 
-        Rows = []
-        for Row in DBCursor.fetchall():
-            Rows.append(Row[0])
-        return Rows
+        Collections = []
+        for Row in Rows:
+            Collections.append(Row[0])
+        return Collections
 
     def CollectionsForSound(self, sound_id):
         """
@@ -461,11 +511,10 @@ class SoundsDB():
 
         sound_id = int(sound_id)
 
-        DBCursor = self.DBConn.cursor()
-        DBCursor.execute('SELECT name,sound_ids FROM collections')
+        Rows = self.DoQuery('SELECT name,sound_ids FROM collections')
 
-        Rows = []
-        for Row in DBCursor.fetchall():
+        CollectionStates = []
+        for Row in Rows:
 
             RowInCollection = False
 
@@ -482,23 +531,21 @@ class SoundsDB():
                         if sound_id == int(element):
                             RowInCollection = True
                             break
-            Rows.append((Row[0], RowInCollection))
-        return Rows
+            CollectionStates.append((Row[0], RowInCollection))
+        return CollectionStates
 
     def CollectionUpdate(self, sound_id, collection_name, state):
         """
             Updates one collection for one sound
         """
 
-        log.info(f'sound_id {sound_id} name {collection_name} state {state}')
-
-        # Unpack the "9-99,999" format into a list of individual sounds ids, unless the collection was null
-        CollectionIDs = []
+        sound_id = int(sound_id)
 
         # Get the sound ids for the collection name. Might be None if there were no sounds assigned to it
         Collection = self.GetCollection(collection_name)
-        # log.info(Collection)
 
+        # Unpack the "9-99,999" format into a list of individual sound ids, unless the collection was null
+        CollectionIDs = []
         if Collection != None and Collection != 'None':
             for element in Collection.split(','):
                 if '-' in element:
@@ -510,7 +557,7 @@ class SoundsDB():
                 else:
                     CollectionIDs.append(int(element))
 
-        # Now that we have it in a flat list form, do whatever, add or delete, sort the list so that it's in integer order again
+        # Now that we have it in a flat list form, do whatever, add or delete, then sort the list so that it's in integer order again
         if state == True:
             CollectionIDs.append(sound_id)
         else:
@@ -520,12 +567,9 @@ class SoundsDB():
                 pass
         CollectionIDs.sort()
 
-        # temp
-        # log.info(CollectionIDs)
-
         # Unless we just emptied the list, pack it back up into a "9-99,999" format and hack off the ending ,
         if len(CollectionIDs) > 0:
-            RangesPacked = ''
+            Collection = ''
             CollectionIDPrev = None
             CollectionIDRangeMin = None
             CollectionIDRangeMax = None
@@ -543,33 +587,34 @@ class SoundsDB():
                     continue
                 if CollectionID - CollectionIDPrev > 1:
                     if CollectionIDRangeMin != None:
-                        RangesPacked += f'{CollectionIDRangeMin}-{CollectionIDRangeMax},'
+                        Collection += f'{CollectionIDRangeMin}-{CollectionIDRangeMax},'
                         CollectionIDRangeMin = None
                         CollectionIDRangeMax = None
                     else:
-                        RangesPacked += f'{CollectionIDPrev},'
+                        Collection += f'{CollectionIDPrev},'
                     CollectionIDPrev = CollectionID
                     continue
             if CollectionIDRangeMax != None:
-                RangesPacked += f'{CollectionIDRangeMin}-{CollectionIDRangeMax},'
+                Collection += f'{CollectionIDRangeMin}-{CollectionIDRangeMax},'
             else:
-                RangesPacked += f'{CollectionIDPrev},'
-            RangesPacked = RangesPacked[:-1]
+                Collection += f'{CollectionIDPrev},'
+            Collection = Collection[:-1]
         else:
-            RangesPacked = None
+            Collection = None
 
-        # log.info(RangesPacked)
         # Write the change to db
-        self.SetCollection(collection_name = collection_name, sound_ids = RangesPacked)
+        self.SetCollection(collection_name = collection_name, sound_ids = Collection)
 
     def GetCollection(self, collection_name):
         """
             Returns one collection by name
         """
 
-        DBCursor = self.DBConn.cursor()
-        DBCursor.execute(f'SELECT sound_ids FROM collections WHERE name = \'{collection_name}\'')
-        return DBCursor.fetchone()[0]
+        Rows = self.DoQuery(f'SELECT sound_ids FROM collections WHERE name = \'{collection_name}\'')
+        if Rows == None:
+            return None
+        else:
+            return Rows[0][0]
 
     def SetCollection(self, collection_name, sound_ids):
         """
@@ -582,29 +627,23 @@ class SoundsDB():
         else:
             sound_ids = f'\'{sound_ids}\''
 
-        DBCursor = self.DBConn.cursor()
-        DBCursor.execute(f'UPDATE collections SET sound_ids = {sound_ids} WHERE name = \'{collection_name}\'')
-        self.DBConn.commit()
+        self.DoQuery(f'UPDATE collections SET sound_ids = {sound_ids} WHERE name = \'{collection_name}\'')
 
     def NewCollection(self, collection_name):
         """
             Adds a new collection. Tests for existence first.
         """
 
-        DBCursor = self.DBConn.cursor()
-        DBCursor.execute(f'SELECT sound_ids FROM collections WHERE name = \'{collection_name}\'')
-        if DBCursor.fetchone() == None:
-            DBCursor.execute(f'INSERT INTO collections VALUES (NULL, \'{collection_name}\', NULL)')
-            self.DBConn.commit()
+        Rows = self.DoQuery(f'SELECT sound_ids FROM collections WHERE name = \'{collection_name}\'')
+        if Rows == None:
+            self.DoQuery(f'INSERT INTO collections VALUES (NULL, \'{collection_name}\', NULL)')
 
     def DelCollection(self, collection_name):
         """
             Delete a collection by name
         """
 
-        DBCursor = self.DBConn.cursor()
-        DBCursor.execute(f'DELETE FROM collections WHERE name = \'{collection_name}\'')
-        self.DBConn.commit()
+        self.DoQuery(f'DELETE FROM collections WHERE name = \'{collection_name}\'')
 
 Sounds = SoundsDB()
 
@@ -615,6 +654,7 @@ Sounds = SoundsDB()
 # Sound types has died
 # Sound types is dead
 # Sound types is in a museum
+# This is a museum
 # SoundTypeCursor = DBConn.cursor()
 # SoundTypeNames = []   # for example, currently it's ['conversation', 'kissing', 'laugh', 'whimper', 'sex'] but it changed
 # SoundType = {} # example: {'conversation':0, 'kissing':1, 'laugh':2, 'whimper':3, 'sex':4}
@@ -642,9 +682,15 @@ class SoundCollection():
         self.sounds = []
         self.SoundIDs = self.SoundIDGenerator()
         self.LastPlayed = {}
-        for s_id in self.SoundIDs:
-            self.sounds.append(Sounds.Select(sound_id = s_id))
-            self.LastPlayed[s_id] = 0
+        for sound_id in self.SoundIDs:
+            if sound_id != None:
+                Sound = Sounds.GetSound(sound_id = sound_id)
+                if Sound != None:
+                    self.sounds.append(Sound)
+                    self.LastPlayed[sound_id] = 0
+                else:
+                    log.warning(f'Removed derelict sound id {sound_id} from {name} collection')
+                    Sounds.CollectionUpdate(sound_id = sound_id, collection_name = name, state = False)
 
     def SoundIDGenerator(self):
         """Generator that yields sound ids
@@ -672,10 +718,10 @@ class SoundCollection():
         """
         while True:
             Choice = random.choice(self.sounds)
-            s_id = Choice['id']
-            if self.LastPlayed[s_id] < time.time() - 60:
+            sound_id = Choice['id']
+            if self.LastPlayed[sound_id] < time.time() - 60:
                 break
-        self.LastPlayed[s_id] = time.time()
+        self.LastPlayed[sound_id] = time.time()
         return Choice
 
 Collections = {}
@@ -1793,124 +1839,154 @@ class WebServerHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         weblog.info("incoming post: %s", self.path)
 
-        content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
-        post_data = self.rfile.read(content_length).decode('utf-8') # <--- Gets the data itself
-        weblog.debug("content_length: %s", content_length)
-        weblog.debug("post_data: %s", post_data)
+        try:
+            if self.path == '/New_Sound':
+                form = cgi.FieldStorage(fp = self.rfile, headers=self.headers, environ={'REQUEST_METHOD':'POST', 'CONTENT_TYPE':self.headers['Content-Type']})
+                folder = form['folder'].value
+                fileupload = form['fileAjax']
+                if fileupload.filename and folder != '':
+                    os.makedirs(f'sounds_master/{folder}/', exist_ok=True)
+                    newname = folder + '/' + os.path.basename(fileupload.filename)
+                    open('sounds_master/' + newname, 'wb').write(fileupload.file.read())
+                    new_sound_id = Sounds.NewSound(newname)
+                    Sounds.Reprocess(new_sound_id)
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/plain')
+                    self.send_header('Cache-Control', 'no-store')
+                    self.wfile.write(b'coolthxbai')
+                else:
+                    self.send_response(500)
+                    self.send_header('Content-Type', 'text/plain')
+                    self.send_header('Cache-Control', 'no-store')
+                    self.wfile.write(b'urfucked')
 
-        if self.path == '/Breath_Change':
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/plain')
-            Thread_Breath.BreathChange(post_data)
-            log.info('Breath style change via web: %s', post_data)
-            self.wfile.write(b'done')
-        elif self.path == '/StarTrek':
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/plain')
-            if post_data == 'on':
-                log.info('Star Trek Mode On via web')
-                GlobalStatus.StarTrekMode = True
-            elif post_data == 'off':
-                log.info('Star Trek Mode Off via web')
-                GlobalStatus.StarTrekMode = False
-            self.wfile.write(b'done')
-        elif self.path == '/ShushPleaseHoney':
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/plain')
-            if post_data == 'on':
-                log.info('Shushed On via web')
-                GlobalStatus.ShushPleaseHoney = True
-            elif post_data == 'off':
-                log.info('Shushed Off via web')
-                GlobalStatus.ShushPleaseHoney = False
-            self.wfile.write(b'done')
-        elif self.path == '/Honey_Say':
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/plain')
-            Thread_Breath.QueueSound(Sound=Sounds.Select(sound_id = post_data), PlayWhenSleeping=True, IgnoreSpeaking=True, CutAllSoundAndPlay=True)
-            log.info('Honey Say Request via web: %s', post_data)
-            self.wfile.write(b'done')
-        elif self.path == '/BaseVolChange':
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/plain')
-            post_data_split = post_data.split(',')
-            SoundId = post_data_split[0]
-            NewVolume = post_data_split[1]
-            log.info('Base Volume Change via web: %s (new volume %s)', SoundId, NewVolume)
-            Sounds.Update(sound_id = SoundId, base_volume_adjust = NewVolume)
-            Sounds.Reprocess(sound_id = SoundId)
-            Thread_Breath.QueueSound(Sound=Sounds.Select(sound_id = SoundId), PlayWhenSleeping=True, IgnoreSpeaking=True, CutAllSoundAndPlay=True)
-            self.wfile.write(b'done')
-        elif self.path == '/AmbientVolChange':
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/plain')
-            post_data_split = post_data.split(',')
-            SoundId = post_data_split[0]
-            NewVolume = post_data_split[1]
-            log.info('Ambient Volume Change via web: %s (new volume %s)', SoundId, NewVolume)
-            Sounds.Update(sound_id = SoundId, ambience_volume_adjust = NewVolume)
-            self.wfile.write(b'done')
-        elif self.path == '/IntensityChange':
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/plain')
-            post_data_split = post_data.split(',')
-            SoundId = post_data_split[0]
-            NewIntensity = post_data_split[1]
-            log.info('Intensity change via web: %s (new intensity %s)', SoundId, NewIntensity)
-            Sounds.Update(sound_id = SoundId, intensity = NewIntensity)
-            self.wfile.write(b'done')
-        elif self.path == '/CutenessChange':
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/plain')
-            post_data_split = post_data.split(',')
-            SoundId = post_data_split[0]
-            NewCuteness = post_data_split[1]
-            log.info('Cuteness change via web: %s (new cuteness %s)', SoundId, NewCuteness)
-            Sounds.Update(sound_id = SoundId, cuteness = NewCuteness)
-            self.wfile.write(b'done')
-        elif self.path == '/TempoRangeChange':
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/plain')
-            post_data_split = post_data.split(',')
-            SoundId = post_data_split[0]
-            NewTempoRange = post_data_split[1]
-            log.info('Tempo Range change via web: %s (new intensity %s)', SoundId, NewTempoRange)
-            Sounds.Update(sound_id = SoundId, tempo_range = NewTempoRange)
-            Sounds.Reprocess(sound_id = SoundId)
-            self.wfile.write(b'done')
-        elif self.path == '/Status_Update':
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            # log.debug(jsonpickle.encode(GlobalStatus))
-            self.wfile.write(jsonpickle.encode(GlobalStatus).encode())
-        elif self.path == '/Sound_Detail':
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/html')
-            self.send_header('Cache-Control', 'no-store')
-            self.wfile.write(bytes(self.html_sound_detail(post_data), "utf-8"))
-        elif self.path == '/CollectionUpdate':
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/plain')
-            post_data_split = post_data.split(',')
-            SoundId = post_data_split[0]
-            NewCollectionName = post_data_split[1]
-            if post_data_split[2] == 'true':
-                NewCollectionState = True
             else:
-                NewCollectionState = False
-            log.info('Sound ID: %s Collection name: %s State: %s', SoundId, NewCollectionName, NewCollectionState)
-            Sounds.CollectionUpdate(sound_id = int(SoundId), collection_name = NewCollectionName, state = NewCollectionState)
-            self.wfile.write(b'done')
-        elif self.path == '/Wernicke':
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/plain')
-            log.info('Heard: %s', post_data)
-            self.wfile.write(b'coolthxbai')
-        else:
-            self.send_response(404)
-            self.send_header('Content-Type', 'text/plain')
-            self.wfile.write(b'fuck')
-            weblog.error('Invalid request to %s: %s', self.path, post_data)
+                content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
+                post_data = self.rfile.read(content_length).decode('utf-8') # <--- Gets the data itself
+                weblog.debug("content_length: %s", content_length)
+                weblog.debug("post_data: %s", post_data)
+
+                if self.path == '/Breath_Change':
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/plain')
+                    Thread_Breath.BreathChange(post_data)
+                    log.info('Breath style change via web: %s', post_data)
+                    self.wfile.write(b'done')
+                elif self.path == '/StarTrek':
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/plain')
+                    if post_data == 'on':
+                        log.info('Star Trek Mode On via web')
+                        GlobalStatus.StarTrekMode = True
+                    elif post_data == 'off':
+                        log.info('Star Trek Mode Off via web')
+                        GlobalStatus.StarTrekMode = False
+                    self.wfile.write(b'done')
+                elif self.path == '/ShushPleaseHoney':
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/plain')
+                    if post_data == 'on':
+                        log.info('Shushed On via web')
+                        GlobalStatus.ShushPleaseHoney = True
+                    elif post_data == 'off':
+                        log.info('Shushed Off via web')
+                        GlobalStatus.ShushPleaseHoney = False
+                    self.wfile.write(b'done')
+                elif self.path == '/Honey_Say':
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/plain')
+                    Thread_Breath.QueueSound(Sound=Sounds.GetSound(sound_id = post_data), PlayWhenSleeping=True, IgnoreSpeaking=True, CutAllSoundAndPlay=True)
+                    log.info('Honey Say Request via web: %s', post_data)
+                    self.wfile.write(b'done')
+                elif self.path == '/Delete_Sound':
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/plain')
+                    Sounds.DelSound(sound_id = post_data)
+                    self.wfile.write(b'executed')
+                elif self.path == '/BaseVolChange':
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/plain')
+                    post_data_split = post_data.split(',')
+                    SoundId = post_data_split[0]
+                    NewVolume = post_data_split[1]
+                    log.info('Base Volume Change via web: %s (new volume %s)', SoundId, NewVolume)
+                    Sounds.Update(sound_id = SoundId, base_volume_adjust = NewVolume)
+                    Sounds.Reprocess(sound_id = SoundId)
+                    Thread_Breath.QueueSound(Sound=Sounds.GetSound(sound_id = SoundId), PlayWhenSleeping=True, IgnoreSpeaking=True, CutAllSoundAndPlay=True)
+                    self.wfile.write(b'done')
+                elif self.path == '/AmbientVolChange':
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/plain')
+                    post_data_split = post_data.split(',')
+                    SoundId = post_data_split[0]
+                    NewVolume = post_data_split[1]
+                    log.info('Ambient Volume Change via web: %s (new volume %s)', SoundId, NewVolume)
+                    Sounds.Update(sound_id = SoundId, ambience_volume_adjust = NewVolume)
+                    self.wfile.write(b'done')
+                elif self.path == '/IntensityChange':
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/plain')
+                    post_data_split = post_data.split(',')
+                    SoundId = post_data_split[0]
+                    NewIntensity = post_data_split[1]
+                    log.info('Intensity change via web: %s (new intensity %s)', SoundId, NewIntensity)
+                    Sounds.Update(sound_id = SoundId, intensity = NewIntensity)
+                    self.wfile.write(b'done')
+                elif self.path == '/CutenessChange':
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/plain')
+                    post_data_split = post_data.split(',')
+                    SoundId = post_data_split[0]
+                    NewCuteness = post_data_split[1]
+                    log.info('Cuteness change via web: %s (new cuteness %s)', SoundId, NewCuteness)
+                    Sounds.Update(sound_id = SoundId, cuteness = NewCuteness)
+                    self.wfile.write(b'done')
+                elif self.path == '/TempoRangeChange':
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/plain')
+                    post_data_split = post_data.split(',')
+                    SoundId = post_data_split[0]
+                    NewTempoRange = post_data_split[1]
+                    log.info('Tempo Range change via web: %s (new intensity %s)', SoundId, NewTempoRange)
+                    Sounds.Update(sound_id = SoundId, tempo_range = NewTempoRange)
+                    Sounds.Reprocess(sound_id = SoundId)
+                    self.wfile.write(b'done')
+                elif self.path == '/Status_Update':
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    # log.debug(jsonpickle.encode(GlobalStatus))
+                    self.wfile.write(jsonpickle.encode(GlobalStatus).encode())
+                elif self.path == '/Sound_Detail':
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/html')
+                    self.send_header('Cache-Control', 'no-store')
+                    self.wfile.write(bytes(self.html_sound_detail(post_data), "utf-8"))
+                elif self.path == '/CollectionUpdate':
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/plain')
+                    post_data_split = post_data.split(',')
+                    SoundId = post_data_split[0]
+                    NewCollectionName = post_data_split[1]
+                    if post_data_split[2] == 'true':
+                        NewCollectionState = True
+                    else:
+                        NewCollectionState = False
+                    log.info('Sound ID: %s Collection name: %s State: %s', SoundId, NewCollectionName, NewCollectionState)
+                    Sounds.CollectionUpdate(sound_id = SoundId, collection_name = NewCollectionName, state = NewCollectionState)
+                    self.wfile.write(b'done')
+                elif self.path == '/Wernicke':
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/plain')
+                    log.info('Heard: %s', post_data)
+                    self.wfile.write(b'coolthxbai')
+                else:
+                    self.send_response(404)
+                    self.send_header('Content-Type', 'text/plain')
+                    self.wfile.write(b'fuck')
+                    weblog.error('Invalid request to %s: %s', self.path, post_data)
+
+        except Exception as e:
+            log.error('Web server fucked up. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
 
     def html_main(self):
         """
@@ -2064,7 +2140,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
           xhttp.open("POST", "/Status_Update", true);
           xhttp.overrideMimeType('application/json')
           xhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
-          xhttp.send("LOVE");
+          xhttp.send('LOVE');
         }
 
         function FetchSoundDetail(sound_id, detail_div) {
@@ -2081,6 +2157,11 @@ class WebServerHandler(BaseHTTPRequestHandler):
         }
 
         function CheckboxHit(endpoint, id, val1=null, val2=null) {
+          var formData = new FormData();
+          formData.append('id', id);
+          formData.append('val1', val1);
+          formData.append('val2', val2);
+
           var xhttp = new XMLHttpRequest();
           xhttp.onreadystatechange = function() {
             if (this.readyState == 4 && this.status == 200) {
@@ -2090,7 +2171,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
           xhttp.open("POST", endpoint, true);
           xhttp.overrideMimeType('text/plain')
           xhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
-          xhttp.send(id + "," + val1 + "," + val2);
+          xhttp.send(id + ',' + val1 + ',' + val2);
         }
 
       </script>
@@ -2126,14 +2207,19 @@ class WebServerHandler(BaseHTTPRequestHandler):
     <a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/ShushPleaseHoney', 'on');">Shush Mode On</a><br/>
     <a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/ShushPleaseHoney', 'off');">Shush Mode Off</a><br/>
     <h1>Sounds</h1>
-    """
+"""
         for Row in Sounds.All():
             SoundId = str(Row['id'])
             SoundName = str(Row['name'])
-            html_out += f"    <button class=\"btn\" onClick=\"ButtonHit('/Honey_Say', '{SoundId}'); return false;\"><i class=\"fa fa-play-circle-o\" aria-hidden=\"true\"></i></button><a href=\"javascript:void(0);\" class=\"collapsible\">{SoundName}</a><br/>\n"
-            html_out += f"    <div class=\"sound_detail\" sound_id=\"{SoundId}\"><div class=\"loadingspinner\"></div></div>\n"
+            html_out += f"    <span id=\"Sound{SoundId}\"><button class=\"btn\" onClick=\"ButtonHit('/Honey_Say', '{SoundId}'); return false;\"><i class=\"fa fa-play-circle-o\" aria-hidden=\"true\"></i></button><a href=\"javascript:void(0);\" class=\"collapsible\">{SoundName}</a><br/>\n"
+            html_out += f"    <div class=\"sound_detail\" sound_id=\"{SoundId}\"><div class=\"loadingspinner\"></div></div></span>\n"
             
         html_out += """
+    <h1>New Sound</h1>
+    <form id="formAjax" action="/New_Sound" method="post">
+    Folder: <input id="folder" type="text" name="folder"/><br/>
+    File:   <input id="fileAjax" type="file" name="filename"/><br/>
+            <input id="submit" type="submit" value="Upload"/></form><div id="status"></div><br/><br/>
       <script type="text/javascript">
 
         var coll = document.getElementsByClassName("collapsible");
@@ -2153,6 +2239,58 @@ class WebServerHandler(BaseHTTPRequestHandler):
         }
 
         StatusUpdate();
+
+        // Thank you, https://uploadcare.com/blog/file-upload-ajax/
+        var myForm = document.getElementById('formAjax');  // Our HTML form's ID
+        var myFolder = document.getElementById('folder');  // text field for the folder in which to place the new sound
+        var myFile = document.getElementById('fileAjax');  // Our HTML files' ID
+        var statusP = document.getElementById('status');
+
+        myForm.onsubmit = function(event) {
+            event.preventDefault();
+
+            statusP.innerHTML = 'Uploading and processing...';
+
+            // Get the files from the form input
+            var files = myFile.files;
+
+            // Create a FormData object
+            var formData = new FormData();
+
+            // Select only the first file from the input array
+            var file = files[0]; 
+
+            // Check the file type
+            if (file.type != 'audio/x-wav') {
+                statusP.innerHTML = 'The file selected is not a wav audio.';
+                return;
+            }
+
+            // Add the folder name to the AJAX request
+            formData.append('folder', myFolder.value);
+            // Add the file to the AJAX request
+            formData.append('fileAjax', file, file.name);
+
+            // Set up the request
+            var xhr = new XMLHttpRequest();
+
+            // Open the connection
+            xhr.open('POST', '/New_Sound', true);
+
+            // Set up a handler for when the task for the request is complete
+            xhr.onload = function () {
+              if (xhr.status == 200) {
+                statusP.innerHTML = 'Done!';
+              } else {
+                statusP.innerHTML = 'Upload error. Try again.';
+              }
+            };
+
+            // Send the data.
+            xhr.overrideMimeType('text/plain')
+            xhr.send(formData);
+        }
+
       </script>
     </body>
     </html>
@@ -2166,7 +2304,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
             The way it used to be, that section was built for all sounds in the main html, which was slower, way more dom, etc
         """
 
-        Row = Sounds.Select(sound_id = s_id)
+        Row = Sounds.GetSound(sound_id = s_id)
         SoundId = str(Row['id'])
         SoundName = str(Row['name'])
         SoundBaseVolumeAdjust = Row['base_volume_adjust']
@@ -2175,7 +2313,9 @@ class WebServerHandler(BaseHTTPRequestHandler):
         SoundCuteness = Row['cuteness']
         SoundTempoRange = Row['tempo_range']
 
-        html_out = f"Base volume adjust <select class=\"base_volume_adjust\" onchange=\"ButtonHit('/BaseVolChange', '{SoundId}', this.value); return false;\">\n"
+        html_out = f"<button class=\"btn\" onClick=\"if (window.confirm('Press OK to REALLY delete the sound')){{ButtonHit('/Delete_Sound', '{SoundId}'); document.getElementById('Sound{SoundId}').remove();}} return false;\"><i class=\"fa fa-trash-o\" aria-hidden=\"true\"></i></button>Delete Sound<br/>\n"
+
+        html_out += f"Base volume adjust <select class=\"base_volume_adjust\" onchange=\"ButtonHit('/BaseVolChange', '{SoundId}', this.value); return false;\">\n"
         for select_option in [0.2, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0]:
             if select_option == SoundBaseVolumeAdjust:
                 html_out += "<option selected=\"true\" "
