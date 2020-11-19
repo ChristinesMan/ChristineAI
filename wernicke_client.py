@@ -3,6 +3,21 @@
 # much of the time in silence, and why send all of that over the network? That would create more heat and 
 # Use more power. 
 
+
+
+
+
+
+
+# I have moved this functionality to the main python process, as a subprocess. This script is now a museum artifact. 
+
+
+
+
+
+
+
+
 # from __future__ import division   # for band-reject filter
 import time
 from datetime import datetime

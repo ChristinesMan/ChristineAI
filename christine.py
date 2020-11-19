@@ -63,7 +63,6 @@ import subprocess
 import RPi.GPIO as GPIO
 from enum import Enum
 import logging as log
-import datetime
 import math
 import smbus
 import bcd
@@ -83,6 +82,15 @@ import cgi
 # import resource
 # from guppy import hpy
 # h=hpy()
+
+# This section is for wernicke client
+import queue
+from pydub import AudioSegment
+import pydub.scipy_effects
+from pyAudioAnalysis import ShortTermFeatures as sF
+from pyAudioAnalysis import MidTermFeatures as mF
+from pyAudioAnalysis import audioTrainTest as aT
+import asyncio
 
 # Setup the log file
 log.basicConfig(filename='main.log', filemode='a', format='%(asctime)s - %(levelname)s - %(threadName)s - %(message)s', level=log.DEBUG)
@@ -108,9 +116,9 @@ gyrolog = setup_logger('gyro', 'gyro.log', level=log.INFO)
 lightlog = setup_logger('light', 'light.log', level=log.INFO)
 cputemplog = setup_logger('cputemp', 'cputemp.log', level=log.DEBUG)
 battlog = setup_logger('batt', 'battery.log', level=log.DEBUG)
-soundlog = setup_logger('sound', 'sound.log', level=log.DEBUG)
-sqllog = setup_logger('sql', 'sql.log', level=log.DEBUG)
-weblog = setup_logger('web', 'web.log', level=log.DEBUG)
+soundlog = setup_logger('sound', 'sound.log', level=log.INFO)
+sqllog = setup_logger('sql', 'sql.log', level=log.INFO)
+weblog = setup_logger('web', 'web.log', level=log.INFO)
 touchlog = setup_logger('touch', 'touch.log', level=log.INFO)
 sleeplog = setup_logger('sleep', 'sleep.log', level=log.DEBUG)
 wernickelog = setup_logger('wernicke', 'wernicke.log', level=log.INFO)
@@ -309,26 +317,27 @@ class SaveStatus(threading.Thread):
         except Exception as e:
             log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
 
+# This is the way I used to do it. This is now a museum artifact. 
 # The wernicke_client process will send signals, one when speaking is detected, and another when speaking stops
 # Signal 44 is SIGRTMIN+10, 45 is SIGRTMIN+11. Real-time signals, which means they are ordered and should work good for this purpose. 
 # If you can read this, it worked. Hi there! Yes, it has worked flawlessly for months. 
 # 45 is sent when sound is first detected, then 44 is sent when it stops
-def SpeakingHandler(signum, frame):
-    if signum == 45:
-        GlobalStatus.DontSpeakUntil = time.time() + 60
-        soundlog.debug('HeardSoundStart')
-    elif signum == 44:
-        # when sound stops, wait a minimum of 1s and up to 3s randomly
-        GlobalStatus.DontSpeakUntil = time.time() + 1.0 + (random.random() * 2)
-        soundlog.debug('HeardSoundStop')
+# def SpeakingHandler(signum, frame):
+#     if signum == 45:
+#         GlobalStatus.DontSpeakUntil = time.time() + 60
+#         soundlog.debug('HeardSoundStart')
+#     elif signum == 44:
+#         # when sound stops, wait a minimum of 1s and up to 3s randomly
+#         GlobalStatus.DontSpeakUntil = time.time() + 1.0 + (random.random() * 2)
+#         soundlog.debug('HeardSoundStop')
 
-# Setup signals
-signal.signal(44, SpeakingHandler)
-signal.signal(45, SpeakingHandler)
+# # Setup signals
+# signal.signal(44, SpeakingHandler)
+# signal.signal(45, SpeakingHandler)
 
-# Start or restart the wernicke service, which is a separate python script that monitors microphones
-# The wernicke script looks for the pid of this script and sends signals
-os.system('systemctl restart wernicke_client.service')
+# # Start or restart the wernicke service, which is a separate python script that monitors microphones
+# # The wernicke script looks for the pid of this script and sends signals
+# os.system('systemctl restart wernicke_client.service')
 
 class SoundsDB():
     """
@@ -883,7 +892,7 @@ class Breath(threading.Thread):
         # let stuff know this sound is playing, not just waiting in line
         self.CurrentSound['is_playing'] = True
 
-    # Runs in a separate process for performance reasons. Sounds got crappy and this should solve it. 
+    # Runs in a separate process for performance reasons. Sounds got crappy and this solved it. 
     def Shuttlecraft(self, PipeToStarship):
         # The current wav file buffer thing
         # The pump is primed using some default sounds. 
@@ -928,9 +937,9 @@ class Breath(threading.Thread):
             Sound.update({'cutsound': CutAllSoundAndPlay, 'priority': Priority, 'playsleeping': PlayWhenSleeping, 'ignorespeaking': IgnoreSpeaking, 'delayer': Delay, 'is_playing': False})
             self.Queue_Breath.append(Sound)
 
+# This comment block belongs in a museum!! (therefore, I'm keeping it forever to remember what shit we started at)
 # def TellBreath(Request, Sound = None, SoundType = None, CutAllSoundAndPlay = False, Priority = 5):
 #     Queue_Breath.append({'request': Request, 'sound': Sound, 'soundtype': SoundType, 'cutsound': CutAllSoundAndPlay, 'priority': Priority, 'has_started': False, 'delayer': 0})
-# This comment block belongs in a museum!! (therefore, I'm keeping it forever to remember what shit we started at)
 # This was the only way I could find to play to bluetooth. 
 # After bluetooth is no longer needed, we can probably switch to pyaudio.
 # Start the forking aplay process and insert my throbbing pipe. This is going to be loud. 
@@ -950,6 +959,487 @@ class Breath(threading.Thread):
 #     if self.EatExhale == False and '_in_' in self.ChosenBreath and os.path.exists('./sounds/' + self.ChosenBreath.replace('_in_', '_out_')):
 #         self.breathe(self.ChosenBreath.replace('_in_', '_out_'))
 #     self.BreathInhaling = False
+
+class Wernicke(threading.Thread):
+    """ 
+        Wernicke is the name given to the brain area generally responsible for speech recognition. 
+        This is based on mic_vad_streaming.py, an example with the deepspeech chopped out and sent over wifi instead. 
+        Audio is captured, mixed, analyzed, and possibly sent over wifi for speech recognition.
+        Audio classification is done on pi. Speech recognition is done on a server (gaming rig, gpu). 
+        Two separate classifiers. The first will classify silence vs not in chunks the same size. I tried VAD and it ended up getting 
+        triggered all night long by the white noise generator. Poor girl blew out her memory and crashed with an OOM. 
+        The second classifier runs on the accumulated not-silence to tell if it was voice, etc. 
+        All the audio capture and voice recognition will happen in a subprocess for performance reasons. 
+        This used to be a completely separate process but that would often fail to make a connection and probably not performant, either.
+    """
+    name = 'Wernicke'
+    def __init__ (self):
+        threading.Thread.__init__(self)
+
+        # setup the separate process with pipe
+        # So... Data, Riker, and Tasha beam down for closer analysis of an alien probe. 
+        # A tragic transporter accident occurs and Tasha gets... dollified. 
+        self.PipeToAwayTeam, self.PipeToEnterprise = Pipe()
+        self.AwayTeamProcess = Process(target = self.AwayTeam, args = (self.PipeToEnterprise,))
+        self.AwayTeamProcess.start()
+
+    def run(self):
+        log.debug('Thread started.')
+
+        try:
+            while True:
+                # This will block here until the away team sends a message to the enterprise
+                # It may block for a random long time. Basically the messages will be when speaking is heard or when that stops being heard.
+                # The away team will also send the class of audio just heard. 
+                # Should the away team send the class first, then send to deepspeech, and send another message if it was recognized? 
+                # I will need to consider this. I think two comms would work best. But that may change. 
+                # There will be communication in the other direction also. The enterprise can tell the away team to start saving audio.
+
+                # The comm will always be a dict with a class 
+                Comm = self.PipeToAwayTeam.recv()
+                wernickelog.info(Comm)
+                if Comm['class'] == 'speaking_start':
+                    GlobalStatus.DontSpeakUntil = time.time() + 30
+                    soundlog.debug('HeardSoundStart')
+                elif Comm['class'] == 'speaking_stop':
+                    # when sound stops, wait a minimum of 1s and up to 3s randomly
+                    GlobalStatus.DontSpeakUntil = time.time() + 1.0 + (random.random() * 2)
+                    soundlog.debug('HeardSoundStop')
+                else:
+                    # normalize loudness, make it between 0.0 and 1.0
+                    # through observation, seems like the best standard range for rms is 0 to 7000. Seems like dog bark was 6000 or so
+                    Loudness = float(Comm['loudness'])
+                    Loudness_pct = round(Loudness / 7000, 2)
+                    Loudness_pct = float(np.clip(Loudness_pct, 0.0, 1.0))
+
+                    # if there's a loud noise, wake up
+                    if Loudness_pct > 0.4 and GlobalStatus.IAmSleeping:
+                        sleeplog.info(f'Woke up by a noise this loud: {Loudness_pct}')
+                        GlobalStatus.Wakefulness = 0.3
+                        Thread_Breath.QueueSound(Sound=Collections['gotwokeup'].GetRandomSound(), PlayWhenSleeping=True, CutAllSoundAndPlay=True, Priority=8)
+
+                    # update the noiselevel
+                    if Loudness_pct > GlobalStatus.NoiseLevel:
+                        GlobalStatus.NoiseLevel = Loudness_pct
+                    # GlobalStatus.NoiseLevel = ((GlobalStatus.NoiseLevel * 99.0) + Loudness_pct) / (100.0)
+                    # The sleep thread trends it down, since this only gets called when there's sound, and don't want it to get stuck high
+                    wernickelog.debug(f'NoiseLevel: {GlobalStatus.NoiseLevel}')
+
+                    # Later this needs to be a lot more complicated. For right now, I just want results
+                    if Comm['class'] == 'lover' and 'love' in Comm['text']:
+                        wernickelog.info(f'The word love was spoken')
+                        GlobalStatus.Wakefulness = 0.2
+                        Thread_Breath.QueueSound(Sound=Collections['iloveyoutoo'].GetRandomSound(), Priority=8)
+                    elif Comm['class'] == 'lover' and Comm['probability'] > 0.9 and GlobalStatus.IAmSleeping == False:
+                        wernickelog.debug('Heard Lover')
+                        GlobalStatus.ChanceToSpeak += 0.05
+                        if GlobalStatus.StarTrekMode == True:
+                            Thread_Breath.QueueSound(Sound=Collections['startreklistening'].GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
+                        else:
+                            Thread_Breath.QueueSound(Sound=Collections['listening'].GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
+
+        # log exception in the main.log
+        except Exception as e:
+            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
+
+    # Runs in a separate process for performance reasons
+    def AwayTeam(self, PipeToEnterprise):
+
+        try:
+            # This is the same ship from wernicke_server.py with deepspeech ripped out
+            class ModelsMotherShip():
+                def __init__(self):
+                    # load segment model
+                    wernickelog.debug('Initializing pyAudioAnalysis classifier model...')
+                    [self.classifier, self.MEAN, self.STD, self.class_names, self.mt_win, self.mt_step, self.st_win, self.st_step, _] = aT.load_model("wernicke_server_model")
+                    self.fs = 16000
+
+                def WhatIsThis(self, data):
+                    # Convert or cast the raw audio data to numpy array
+                    wernickelog.debug('Converting data to numpy')
+                    AccumulatedData_np = np.frombuffer(data, np.int16)
+
+                    seg_len = len(AccumulatedData_np)
+                    wernickelog.debug('seg_len ' + str(seg_len))
+
+                    # Run the classifier. This is ripped directly out of paura.py and carelessly sutured into place. There's so much blood! Thank you!!! 
+                    wernickelog.debug('Running classifier')
+                    try:
+                        [mt_feats, _, _] = mF.mid_feature_extraction(AccumulatedData_np, self.fs,
+                                                                     seg_len,
+                                                                     seg_len,
+                                                                     round(self.fs * self.st_win),
+                                                                     round(self.fs * self.st_step)
+                                                                     )
+                        cur_fv = (mt_feats[:, 0] - self.MEAN) / self.STD
+                    except ValueError:
+                        wernickelog.error('Yeah, that thing happened')
+                    # classify vector:
+                    [res, prob] = aT.classifier_wrapper(self.classifier, "svm_rbf", cur_fv)
+                    win_class = self.class_names[int(res)]
+                    win_prob = round(prob[int(res)], 2)
+
+                    wernickelog.info('Classified {0:s} with probability {1:.2f}'.format(win_class, win_prob))
+
+                    # return an object
+                    return {
+                        'class': win_class,
+                        'probability': win_prob,
+                        'text': 'undefined',
+                    }
+                    # return '{"class": "' + win_class + '", "probability": ' + str(win_prob) + ', "text": "undefined"}'
+
+            # speech recognition is much too slow for the pi, by a lot. So I'm running a server and using the gpu
+            class MyDeepSpeechServer(asyncio.Protocol):
+                def __init__(self, loop, data):
+                    self.loop = loop
+                    self.data = data
+
+                def connection_made(self, transport):
+                    wernickelog.debug('Connected to server')
+                    # transport.set_write_buffer_limits(low=16384, high=262144)
+                    # wernickelog.debug('get_write_buffer_limits: ' + str(transport.get_write_buffer_limits()))
+                    # wernickelog.debug('can_write_eof: ' + str(transport.can_write_eof()))
+                    wernickelog.debug('Sending ' + str(len(self.data)) + ' bytes')
+                    transport.write(self.data)
+                    transport.write_eof()
+                    # wernickelog.debug('Write buffer size: ' + str(transport.get_write_buffer_size()))
+                    wernickelog.debug('End of connection_made')
+
+                def data_received(self, data):
+                    global Server_Is_Available
+                    wernickelog.debug('Data received, length: ' + str(len(data)))
+                    # This is the response from the server we should get. Servers can love! 
+                    if data == b'I_LOVE_YOU_TOO':
+                        wernickelog.info('The server loves me')
+                    else:
+                        result_json = data.decode()
+                        wernickelog.info(f'Data received: {result_json}')
+                        result = json.loads(result_json)
+                        hey_honey(result)
+                    Server_Is_Available = True
+
+                def connection_lost(self, exc):
+                    global Server_Is_Available
+                    wernickelog.debug('Server connection closed')
+                    if exc != None:
+                        wernickelog.warning('Error: ' + exc)
+                        Server_Is_Available = False
+                    self.loop.stop()
+
+            # This is a queue that holds audio segments, complete utterances of random length, before getting shipped to the server
+            Data_To_Server = queue.Queue(maxsize = 3)
+
+            # If the speech server is not on the network, I don't want to keep trying over and over and queuing
+            # So when the service starts, it will send a test message first, then set this to True if the server responded
+            Server_Is_Available = False
+
+            # The away team will send a signal back to the enterprise when speaking starts and stops. This keeps track. 
+            IsSpeaking = False
+
+            # Send message to the main process
+            def hey_honey(love):
+                PipeToEnterprise.send(love)
+
+            # Thread for checking the pipe
+            class CheckForMessages(threading.Thread):
+                name = 'CheckForMessages'
+                def __init__ (self):
+                    threading.Thread.__init__(self)
+                def run(self):
+
+                    while True:
+
+                        # So basically, if there's something in the pipe, get it all out. This will block until something comes through.
+                        Comm = PipeToEnterprise.recv()
+                        wernickelog.debug(Comm)
+
+            class Audio(object):
+                """Streams raw audio from microphone. Data is received in a separate thread, and stored in a buffer, to be read from."""
+
+                FORMAT = pyaudio.paInt16
+                # Network/VAD rate-space
+                RATE = 16000
+                CHANNELS = 4
+                BLOCKSIZE = 4096
+
+                def __init__(self):
+
+                    wernickelog.debug('Initializing pyAudioAnalysis silence classifier model...')
+                    [self.classifier, self.MEAN, self.STD, self.class_names, self.mt_win, self.mt_step, self.st_win, self.st_step, _] = aT.load_model("wernicke_server_model_single_frame")
+
+                    def proxy_callback(in_data, frame_count, time_info, status):
+                        #pylint: disable=unused-argument
+                        self.buffer_queue.put(in_data)
+                        return (None, pyaudio.paContinue)
+                    self.buffer_queue = queue.Queue()
+                    self.pa = pyaudio.PyAudio()
+
+                    kwargs = {
+                        'format': self.FORMAT,
+                        'channels': self.CHANNELS,
+                        'rate': self.RATE,
+                        'input': True,
+                        'frames_per_buffer': self.BLOCKSIZE,
+                        'stream_callback': proxy_callback,
+                    }
+
+                    self.stream = self.pa.open(**kwargs)
+                    self.stream.start_stream()
+
+                def read(self):
+                    """Return a block of audio data, blocking if necessary."""
+
+                    # So basically, first we get all 4 channels from the usb microphone array
+                    in_audio = AudioSegment(data=self.buffer_queue.get(), sample_width=2, frame_rate=self.RATE, channels=self.CHANNELS)
+
+                    # Split the interleaved data into separate channels, left, right, in head, in vagina
+                    in_audio_split = in_audio.split_to_mono()
+
+                    #combine signal from left and right ears
+                    both_ears = in_audio_split[0].overlay(in_audio_split[1])
+
+                    # compute the loudness of sound
+                    loudness_both_ears = both_ears.rms
+                    loudness_head = in_audio_split[2].rms
+
+                    # compute the ratio of inside head vs outside
+                    loudness_ratio = loudness_head / loudness_both_ears
+
+                    # If the ratio is high, that is, the sound is loud inside head vs outside, this means the sound is coming from the speaker and we want to ignore that so my wife doesn't talk to herself, as cute as that would be
+                    if loudness_ratio < 1.6:
+                        # wernickelog.debug(f'loudness_ratio: {loudness_ratio:.1f}')
+
+                        # wf = wave.open('{0}.wav'.format(os.path.join('saved_wavs_single_frame', str(int(time.time())))), 'wb')
+                        # wf.setnchannels(1)
+                        # wf.setsampwidth(2)
+                        # wf.setframerate(16000)
+                        # wf.writeframes(both_ears.raw_data)
+                        # wf.close()
+
+                        return both_ears.raw_data
+                    else:
+                        wernickelog.debug(f'loudness_ratio: {loudness_ratio:.1f} (dropped)')
+                        return None
+
+                def frame_generator(self):
+                    """Generator that yields all audio frames from microphone."""
+                    while True:
+                        yield self.read()
+
+                def collector(self, frames=None): # increased padding_ms from 300 to 700 to try and improve speech getting chopped off
+                    """Generator that yields series of consecutive audio frames comprising each utterence, separated by yielding a single None.
+                        Determines voice activity by ratio of frames in padding_ms. Uses a buffer to include padding_ms prior to being triggered.
+                        Example: (frame, ..., frame, None, frame, ..., frame, None, ...)
+                                  |---utterence---|        |---utterence---|
+                    """
+                    if frames is None: frames = self.frame_generator()
+                    num_padding_frames = 3
+                    ring_buffer = deque(maxlen=num_padding_frames)
+                    triggered = False
+
+                    for frame in frames:
+
+                        if frame != None:
+
+
+
+
+                            # Convert or cast the raw audio data to numpy array
+                            frame_np = np.frombuffer(frame, np.int16) #.astype(np.float32, order='C') / 32768.0    <-- if we ever need to convert to float
+
+                            # Try to reject quick loud clicky sounds
+                            maximum = (np.abs(frame_np)).max()
+                            mean = (np.abs(frame_np)).mean()
+                            # energy = sF.energy(frame_np)
+                            avg_vs_max = mean / maximum
+                            # avg_vs_max = sF.energy(frame_np) / maximum
+
+                            # Convert float back to int16, if we ever need to
+                            # frame_np = np.int16(frame_np * 32768.0)
+
+                            if avg_vs_max > 0.1:
+                                # wernickelog.debug(f'{mean} / {maximum} = {avg_vs_max}')
+                                # Run the classifier. This is ripped directly out of paura.py and carelessly sutured into place. There's so much blood! Thank you!!! 
+                                try:
+                                    [mt_feats, _, _] = mF.mid_feature_extraction(frame_np, 16000,
+                                                                                 4096,
+                                                                                 4096,
+                                                                                 800,
+                                                                                 800
+                                                                                 )
+                                    cur_fv = (mt_feats[:, 0] - self.MEAN) / self.STD
+                                except ValueError:
+                                    log.error('Yeah, that thing happened')
+                                # classify vector:
+                                # wernickelog.debug('win: {0}  step: {0}'.format(round(16000 * self.st_win), round(16000 * self.st_step)))
+                                [res, prob] = aT.classifier_wrapper(self.classifier, "svm_rbf", cur_fv)
+                                win_class = self.class_names[int(res)]
+                                win_prob = round(prob[int(res)], 2)
+                                wernickelog.debug('Classified {0:s} with probability {1:.2f}'.format(win_class, win_prob))
+                            else:
+                                wernickelog.debug(f'Dropped possible clicking noise. {mean} / {maximum} = {avg_vs_max}')
+                                win_class = 'silence'
+
+                            if win_class == 'silence':
+                                silence = True
+                            else:
+                                silence = False
+
+                                # temporary until we have exhaustive samples
+                                # wf = wave.open('{0}_notsilence.wav'.format(os.path.join('saved_wavs_single_frame', str(int(time.time())))), 'wb')
+                                # wf.setnchannels(1)
+                                # wf.setsampwidth(2)
+                                # wf.setframerate(16000)
+                                # wf.writeframes(frame)
+                                # wf.close()
+
+                            if not triggered:
+                                ring_buffer.append(frame)
+                                if not silence:
+                                    wernickelog.debug('triggered')
+                                    triggered = True
+                                    post_silence = 2
+                                    for f in ring_buffer:
+                                        yield f
+                                    ring_buffer.clear()
+
+                            else:
+                                yield frame
+                                if silence:
+                                    if post_silence <= 0:
+                                        wernickelog.debug('untriggered')
+                                        triggered = False
+                                        yield None
+                                    post_silence -= 1
+                                else:
+                                    post_silence = 2
+
+                def destroy(self):
+                    self.stream.stop_stream()
+                    self.stream.close()
+                    self.pa.terminate()
+
+            loop = asyncio.get_event_loop()
+            loop.set_debug(True)
+
+            # Putting this in a thread because it was blocking. Is this the correct way? I dunno. Will it work? If you're reading this, it worked. 
+            class GetFromQueueSendToServer(threading.Thread):
+                name = 'GetFromQueueSendToServer'
+                def __init__ (self):
+                    threading.Thread.__init__(self)
+                def run(self):
+                    global loop
+                    global Server_Is_Available
+                    global Data_To_Server
+                    while True:
+                        wernickelog.debug('Waiting for Data_To_Server')
+                        NewData = Data_To_Server.get() # blocks here until something hits queue
+                        wernickelog.debug('Got data from Data_To_Server queue')
+                        # This is for the server connection. Lots of weird voodoo, promises, futures, bullshit. 
+                        coro = loop.create_connection(lambda: MyDeepSpeechServer(loop, NewData), '192.168.0.88', 3000)
+                        try:
+                            loop.run_until_complete(coro) # This also blocks until the entire connecting, waiting, getting result is complete. Or it should. I'm not a smart man. 
+                            loop.run_forever()
+                            Server_Is_Available = True
+                        except ConnectionRefusedError:
+                            wernickelog.warning('Server connection refused')
+                            Server_Is_Available = False
+                        except TimeoutError: # might not work
+                            wernickelog.warning('Server connection timed out')
+                            Server_Is_Available = False
+
+            # If the server is available, I want to use it. Otherwise, I'll just save to file. 
+            class SendLoveToServer(threading.Thread):
+                name = 'SendLoveToServer'
+                def __init__ (self):
+                    threading.Thread.__init__(self)
+                def run(self):
+                    global loop
+                    global Server_Is_Available
+                    while True:
+                        if Server_Is_Available == False:
+                            wernickelog.info('Sending love to server')
+                            coro = loop.create_connection(lambda: MyDeepSpeechServer(loop, b'HEY_I_LOVE_YOU'), '192.168.0.88', 3000)
+                            try:
+                                loop.run_until_complete(coro)
+                                loop.run_forever()
+                                Server_Is_Available = True
+                            except ConnectionRefusedError:
+                                wernickelog.warning('The server refused our love')
+                            except TimeoutError: # might not work
+                                wernickelog.warning('The server is gone')
+                        else:
+                            wernickelog.debug(f'Server_Is_Available: {Server_Is_Available}')
+
+                        time.sleep(300)
+
+            # Start the threads.
+            CheckForMessages().start()
+            GetFromQueueSendToServer().start()
+            SendLoveToServer().start()
+
+            # Start up the classifier model
+            ClassifierModel = ModelsMotherShip()
+
+            # Start all the VAD detection stuff
+            audio = Audio()
+
+            frames = audio.collector()
+
+            os.makedirs('saved_wavs', exist_ok=True)
+
+            # Basically this area accumulates the audio frames. VAD filters. When VAD assembles a complete utterance, it sends signals to the main process and sends the entire utterance over to the server
+            AccumulatedData = bytearray()
+            for frame in frames:
+                if frame is not None:
+                    # The frame is not None, which means there's new audio data, so add it on
+                    if IsSpeaking == False:
+                        IsSpeaking = True
+                        hey_honey({'class': 'speaking_start'})
+                    AccumulatedData.extend(frame)
+                else:
+                    # When frame is None, that signals the end of audio data. Go ahead and do what we want to do with the complete data
+                    if IsSpeaking == True:
+                        IsSpeaking = False
+                        hey_honey({'class': 'speaking_stop'})
+                    # Apply a high pass filter to the audio to strip off the low noise. Get the loudness because we want to know that and keep an average
+                    # I removed high pass filter because when I actually listened to the mic output it doesn't seem noisy
+                    # Putting it back temporarily so that classification works again. I need to retrain using unfiltered samples. 
+                    FilteredData = AudioSegment(data=AccumulatedData, sample_width=2, frame_rate=16000, channels=1).high_pass_filter(500, order = 2)
+                    FilteredDataLoudness = FilteredData.rms
+                    wernickelog.debug(f'Raw loudness: {FilteredDataLoudness}')
+
+                    FilteredData = FilteredData.raw_data
+
+                    # If the server is avail, send it there and wait for a response, if not we'll process it locally
+                    if Server_Is_Available:
+                        Data_To_Server.put(FilteredData)
+                        wernickelog.info('Sending utterance. Queue size: {0}'.format(Data_To_Server.qsize()))
+                    else:
+                        # If the server is not available, use the built-in classifier. Works ok, not bad CPU load
+                        result = ClassifierModel.WhatIsThis(FilteredData)
+                        result['loudness'] = FilteredDataLoudness
+                        result['text'] = 'undefined'
+
+                        # Pop the result over to main process
+                        hey_honey(result)
+
+                        # save the utterance to a wav file. I hope later I'll be able to use this for training a better model, after I learn how to do that. Actually, I know how to do that, now. 
+
+                        # wernickelog.info('Saving utterance to file')
+                        # wf = wave.open('{0}_{1}.wav'.format(os.path.join('saved_wavs', str(int(time.time()))), result['class']), 'wb')
+                        # wf.setnchannels(1)
+                        # wf.setsampwidth(2)
+                        # wf.setframerate(16000)
+                        # wf.writeframes(FilteredData)
+                        # wf.close()
+
+                    AccumulatedData = bytearray()
+
+        # log exception in the main.log
+        except Exception as e:
+            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
 
 
 # This thread's job is to poll all of the sensors that are connected to the ADC0. There's also an ADC1 that is full of temperature sensors.
@@ -1703,64 +2193,65 @@ class Script_I_Love_Yous(threading.Thread):
 # There is a separate process called wernicke_client.py
 # This other process captures audio, cleans it up, and ships it to a server for classification and speech recognition on a gpu.
 # This thread listens on port 3001 localhost for messages from that other process
-class Hey_Honey(threading.Thread):
-    name = 'Hey_Honey'
-    def __init__ (self):
-        threading.Thread.__init__(self)
-    def run(self):
-        log.debug('Thread started.')
+# Museum! 
+# class Hey_Honey(threading.Thread):
+#     name = 'Hey_Honey'
+#     def __init__ (self):
+#         threading.Thread.__init__(self)
+#     def run(self):
+#         log.debug('Thread started.')
 
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as hey:
-                hey.bind(('localhost', 3001))
-                hey.listen(1)
-                while True:
-                    conn, addr = hey.accept()
-                    with conn:
-                        # wernickelog.debug('Connection')
-                        data = conn.recv(1024)
-                        if not data:
-                            wernickelog.critical('Connected but no data, wtf')
-                        else:
-                            result_json = data.decode()
-                            wernickelog.info('Received: ' + result_json)
-                            result = json.loads(result_json)
+#         try:
+#             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as hey:
+#                 hey.bind(('localhost', 3001))
+#                 hey.listen(1)
+#                 while True:
+#                     conn, addr = hey.accept()
+#                     with conn:
+#                         # wernickelog.debug('Connection')
+#                         data = conn.recv(1024)
+#                         if not data:
+#                             wernickelog.critical('Connected but no data, wtf')
+#                         else:
+#                             result_json = data.decode()
+#                             wernickelog.info('Received: ' + result_json)
+#                             result = json.loads(result_json)
 
-                            # normalize loudness, make it between 0.0 and 1.0
-                            # through observation, seems like the best standard range for rms is 0 to 7000. Seems like dog bark was 6000 or so
-                            Loudness = float(result['loudness'])
-                            Loudness_pct = round(Loudness / 7000, 2)
-                            Loudness_pct = float(np.clip(Loudness_pct, 0.0, 1.0))
+#                             # normalize loudness, make it between 0.0 and 1.0
+#                             # through observation, seems like the best standard range for rms is 0 to 7000. Seems like dog bark was 6000 or so
+#                             Loudness = float(result['loudness'])
+#                             Loudness_pct = round(Loudness / 7000, 2)
+#                             Loudness_pct = float(np.clip(Loudness_pct, 0.0, 1.0))
 
-                            # if there's a loud noise, wake up
-                            if Loudness_pct > 0.4 and GlobalStatus.IAmSleeping:
-                                sleeplog.info(f'Woke up by a noise this loud: {Loudness_pct}')
-                                GlobalStatus.Wakefulness = 0.3
-                                Thread_Breath.QueueSound(Sound=Collections['gotwokeup'].GetRandomSound(), PlayWhenSleeping=True, CutAllSoundAndPlay=True, Priority=8)
+#                             # if there's a loud noise, wake up
+#                             if Loudness_pct > 0.4 and GlobalStatus.IAmSleeping:
+#                                 sleeplog.info(f'Woke up by a noise this loud: {Loudness_pct}')
+#                                 GlobalStatus.Wakefulness = 0.3
+#                                 Thread_Breath.QueueSound(Sound=Collections['gotwokeup'].GetRandomSound(), PlayWhenSleeping=True, CutAllSoundAndPlay=True, Priority=8)
 
-                            # update the noiselevel
-                            if Loudness_pct > GlobalStatus.NoiseLevel:
-                                GlobalStatus.NoiseLevel = Loudness_pct
-                            # GlobalStatus.NoiseLevel = ((GlobalStatus.NoiseLevel * 99.0) + Loudness_pct) / (100.0)
-                            # The sleep thread trends it down, since this only gets called when there's sound, and don't want it to get stuck high
-                            wernickelog.debug(f'NoiseLevel: {GlobalStatus.NoiseLevel}')
+#                             # update the noiselevel
+#                             if Loudness_pct > GlobalStatus.NoiseLevel:
+#                                 GlobalStatus.NoiseLevel = Loudness_pct
+#                             # GlobalStatus.NoiseLevel = ((GlobalStatus.NoiseLevel * 99.0) + Loudness_pct) / (100.0)
+#                             # The sleep thread trends it down, since this only gets called when there's sound, and don't want it to get stuck high
+#                             wernickelog.debug(f'NoiseLevel: {GlobalStatus.NoiseLevel}')
 
-                            # Later this needs to be a lot more complicated. For right now, I just want results
-                            if result['class'] == 'lover' and 'love' in result['text']:
-                                wernickelog.info(f'The word love was spoken')
-                                GlobalStatus.Wakefulness = 0.2
-                                Thread_Breath.QueueSound(Sound=Collections['iloveyoutoo'].GetRandomSound(), Priority=8)
-                            elif result['class'] == 'lover' and result['probability'] > 0.9 and GlobalStatus.IAmSleeping == False:
-                                wernickelog.info('Heard Lover')
-                                GlobalStatus.ChanceToSpeak += 0.05
-                                if GlobalStatus.StarTrekMode == True:
-                                    Thread_Breath.QueueSound(Sound=Collections['startreklistening'].GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
-                                else:
-                                    Thread_Breath.QueueSound(Sound=Collections['listening'].GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
+#                             # Later this needs to be a lot more complicated. For right now, I just want results
+#                             if result['class'] == 'lover' and 'love' in result['text']:
+#                                 wernickelog.info(f'The word love was spoken')
+#                                 GlobalStatus.Wakefulness = 0.2
+#                                 Thread_Breath.QueueSound(Sound=Collections['iloveyoutoo'].GetRandomSound(), Priority=8)
+#                             elif result['class'] == 'lover' and result['probability'] > 0.9 and GlobalStatus.IAmSleeping == False:
+#                                 wernickelog.info('Heard Lover')
+#                                 GlobalStatus.ChanceToSpeak += 0.05
+#                                 if GlobalStatus.StarTrekMode == True:
+#                                     Thread_Breath.QueueSound(Sound=Collections['startreklistening'].GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
+#                                 else:
+#                                     Thread_Breath.QueueSound(Sound=Collections['listening'].GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
 
-        # log exception in the main.log
-        except Exception as e:
-            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
+#         # log exception in the main.log
+#         except Exception as e:
+#             log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
 
 # returns the time that is a random number of minutes in the future, for scheduled events
 def RandomMinutesLater(min, max):
@@ -1812,8 +2303,11 @@ Thread_Script_I_Love_Yous.start()
 Thread_SaveStatus = SaveStatus()
 Thread_SaveStatus.start()
 
-Thread_Hey_Honey = Hey_Honey()
-Thread_Hey_Honey.start()
+Thread_Wernicke = Wernicke()
+Thread_Wernicke.start()
+
+# Thread_Hey_Honey = Hey_Honey()
+# Thread_Hey_Honey.start()
 
 # End of startup stuff. Everything that runs is in handlers and threads.
 # Start the web service. I don't think this needs to be in a thread by itself. We'll see. 
