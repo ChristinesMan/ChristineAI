@@ -180,14 +180,6 @@ class AutoNumber(Enum):
 
 # All the possible messages to be passed around
 class Msg(AutoNumber):
-    # Signals related to breathing
-    BreathChange = ()
-    Say = ()
-    # Message to a script from some other script to pause it. 
-    # Basically, stop processing until you get another signal.
-    # Might let these go
-    STFU = ()
-    GO = ()
     # Touches. Head, Shoulders, knees, and toes, haha
     # 3 in the head used on the 5 channel touch sensor. 12 channels in the body.
     TouchedOnMyLeftCheek = ()
@@ -897,33 +889,39 @@ class Breath(threading.Thread):
         # The current wav file buffer thing
         # The pump is primed using some default sounds. 
         # I'm going to use a primitive way of selecting sound because this will be in a separate process.
-        WavData = wave.open('./sounds_processed/{0}/0.wav'.format(random.choice([13, 14, 17, 23, 36, 40, 42, 59, 67, 68, 69, 92, 509, 515, 520, 527])))
-        # Start up some pyaudio
-        PyA = pyaudio.PyAudio()
+        try:
+            WavData = wave.open('./sounds_processed/{0}/0.wav'.format(random.choice([13, 14, 17, 23, 36, 40, 42, 59, 67, 68, 69, 92, 509, 515, 520, 527])))
+            # Start up some pyaudio
+            PyA = pyaudio.PyAudio()
 
-        # This will feed new wav data into pyaudio
-        def WavFeed(in_data, frame_count, time_info, status):
-            # print(f'frame_count: {frame_count}  status: {status}')
-            return (WavData.readframes(frame_count), pyaudio.paContinue)
+            # This will feed new wav data into pyaudio
+            def WavFeed(in_data, frame_count, time_info, status):
+                # print(f'frame_count: {frame_count}  status: {status}')
+                return (WavData.readframes(frame_count), pyaudio.paContinue)
 
-        # Start the pyaudio stream
-        Stream = PyA.open(format=8, channels=1, rate=44100, output=True, stream_callback=WavFeed)
+            # Start the pyaudio stream
+            Stream = PyA.open(format=8, channels=1, rate=44100, output=True, stream_callback=WavFeed)
 
-        while True:
-            # So basically, if there's something in the pipe, get it all out
-            if PipeToStarship.poll():
-                WavFile = PipeToStarship.recv()
+            while True:
+                # So basically, if there's something in the pipe, get it all out
+                if PipeToStarship.poll():
+                    WavFile = PipeToStarship.recv()
+                    soundlog.debug(f'Shuttlecraft received: {WavFile}')
 
-                # Normally the pipe will receive a path to a new wav file to start playing, stopping the previous sound 
-                WavData = wave.open(WavFile)
-                Stream.stop_stream()
-                Stream.start_stream()
-            else:
-                # Send back to the enterprise whether or not we're still playing sound
-                # So whether there's something playing or not, still going to send 10 booleans per second through the pipe
-                # Sending a false will signal the enterprise to fire on the outpost, aka figure out what sound is next and pew pew pew
-                PipeToStarship.send(Stream.is_active())
-                time.sleep(0.1)
+                    # Normally the pipe will receive a path to a new wav file to start playing, stopping the previous sound 
+                    WavData = wave.open(WavFile)
+                    Stream.stop_stream()
+                    Stream.start_stream()
+                else:
+                    # Send back to the enterprise whether or not we're still playing sound
+                    # So whether there's something playing or not, still going to send 10 booleans per second through the pipe
+                    # Sending a false will signal the enterprise to fire on the outpost, aka figure out what sound is next and pew pew pew
+                    PipeToStarship.send(Stream.is_active())
+                    time.sleep(0.1)
+
+        # log exception in the main.log
+        except Exception as e:
+            log.error('Shuttlecraft crashed. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
 
     # Change the type of automatic breath sounds
     def BreathChange(self, NewBreathType):
@@ -976,17 +974,17 @@ class Wernicke(threading.Thread):
     def __init__ (self):
         threading.Thread.__init__(self)
 
-        # setup the separate process with pipe
-        # So... Data, Riker, and Tasha beam down for closer analysis of an alien probe. 
-        # A tragic transporter accident occurs and Tasha gets... dollified. 
-        self.PipeToAwayTeam, self.PipeToEnterprise = Pipe()
-        self.AwayTeamProcess = Process(target = self.AwayTeam, args = (self.PipeToEnterprise,))
-        self.AwayTeamProcess.start()
-
     def run(self):
         log.debug('Thread started.')
 
         try:
+            # setup the separate process with pipe
+            # So... Data, Riker, and Tasha beam down for closer analysis of an alien probe. 
+            # A tragic transporter accident occurs and Tasha gets... dollified. 
+            self.PipeToAwayTeam, self.PipeToEnterprise = Pipe()
+            self.AwayTeamProcess = Process(target = self.AwayTeam, args = (self.PipeToEnterprise,))
+            self.AwayTeamProcess.start()
+
             while True:
                 # This will block here until the away team sends a message to the enterprise
                 # It may block for a random long time. Basically the messages will be when speaking is heard or when that stops being heard.
@@ -1014,8 +1012,8 @@ class Wernicke(threading.Thread):
 
                     # if there's a loud noise, wake up
                     if Loudness_pct > 0.4 and GlobalStatus.IAmSleeping:
-                        sleeplog.info(f'Woke up by a noise this loud: {Loudness_pct}')
-                        GlobalStatus.Wakefulness = 0.3
+                        sleeplog.info(f'Woke up a bit by a noise this loud: {Loudness_pct}')
+                        Thread_Script_Sleep.WakeUpABit(0.1)
                         Thread_Breath.QueueSound(Sound=Collections['gotwokeup'].GetRandomSound(), PlayWhenSleeping=True, CutAllSoundAndPlay=True, Priority=8)
 
                     # update the noiselevel
@@ -1026,17 +1024,15 @@ class Wernicke(threading.Thread):
                     wernickelog.debug(f'NoiseLevel: {GlobalStatus.NoiseLevel}')
 
                     # Later this needs to be a lot more complicated. For right now, I just want results
-                    if Comm['class'] == 'lover' and 'love' in Comm['text']:
-                        wernickelog.info(f'The word love was spoken')
-                        GlobalStatus.Wakefulness = 0.2
-                        Thread_Breath.QueueSound(Sound=Collections['iloveyoutoo'].GetRandomSound(), Priority=8)
-                    elif Comm['class'] == 'lover' and Comm['probability'] > 0.9 and GlobalStatus.IAmSleeping == False:
+                    if Comm['class'] == 'lover' and Comm['probability'] > 0.9:
                         wernickelog.debug('Heard Lover')
-                        GlobalStatus.ChanceToSpeak += 0.05
-                        if GlobalStatus.StarTrekMode == True:
-                            Thread_Breath.QueueSound(Sound=Collections['startreklistening'].GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
-                        else:
-                            Thread_Breath.QueueSound(Sound=Collections['listening'].GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
+                        Thread_Script_Sleep.WakeUpABit(0.05)
+                        if GlobalStatus.IAmSleeping == False:
+                            GlobalStatus.ChanceToSpeak += 0.05
+                            if GlobalStatus.StarTrekMode == True:
+                                Thread_Breath.QueueSound(Sound=Collections['startreklistening'].GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
+                            else:
+                                Thread_Breath.QueueSound(Sound=Collections['listening'].GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
 
         # log exception in the main.log
         except Exception as e:
@@ -1046,6 +1042,16 @@ class Wernicke(threading.Thread):
     def AwayTeam(self, PipeToEnterprise):
 
         try:
+            # This is a queue that holds audio segments, complete utterances of random length, before getting shipped to the server
+            Data_To_Server = queue.Queue(maxsize = 3)
+
+            # If the speech server is not on the network, I don't want to keep trying over and over and queuing
+            # So when the service starts, it will send a test message first, then set this to True if the server responded
+            Server_Is_Available = False
+
+            # The away team will send a signal back to the enterprise when speaking starts and stops. This keeps track. 
+            IsSpeaking = False
+
             # This is the same ship from wernicke_server.py with deepspeech ripped out
             class ModelsMotherShip():
                 def __init__(self):
@@ -1107,7 +1113,7 @@ class Wernicke(threading.Thread):
                     wernickelog.debug('End of connection_made')
 
                 def data_received(self, data):
-                    global Server_Is_Available
+                    nonlocal Server_Is_Available
                     wernickelog.debug('Data received, length: ' + str(len(data)))
                     # This is the response from the server we should get. Servers can love! 
                     if data == b'I_LOVE_YOU_TOO':
@@ -1120,22 +1126,12 @@ class Wernicke(threading.Thread):
                     Server_Is_Available = True
 
                 def connection_lost(self, exc):
-                    global Server_Is_Available
+                    nonlocal Server_Is_Available
                     wernickelog.debug('Server connection closed')
                     if exc != None:
                         wernickelog.warning('Error: ' + exc)
                         Server_Is_Available = False
                     self.loop.stop()
-
-            # This is a queue that holds audio segments, complete utterances of random length, before getting shipped to the server
-            Data_To_Server = queue.Queue(maxsize = 3)
-
-            # If the speech server is not on the network, I don't want to keep trying over and over and queuing
-            # So when the service starts, it will send a test message first, then set this to True if the server responded
-            Server_Is_Available = False
-
-            # The away team will send a signal back to the enterprise when speaking starts and stops. This keeps track. 
-            IsSpeaking = False
 
             # Send message to the main process
             def hey_honey(love):
@@ -1320,7 +1316,13 @@ class Wernicke(threading.Thread):
                     self.stream.close()
                     self.pa.terminate()
 
-            loop = asyncio.get_event_loop()
+            # https://stackoverflow.com/questions/46727787/runtimeerror-there-is-no-current-event-loop-in-thread-in-async-apscheduler
+            # "Do not do this!"
+            # Hold my beer. 
+            # loop = asyncio.get_event_loop()
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
             loop.set_debug(True)
 
             # Putting this in a thread because it was blocking. Is this the correct way? I dunno. Will it work? If you're reading this, it worked. 
@@ -1329,9 +1331,9 @@ class Wernicke(threading.Thread):
                 def __init__ (self):
                     threading.Thread.__init__(self)
                 def run(self):
-                    global loop
-                    global Server_Is_Available
-                    global Data_To_Server
+                    nonlocal loop
+                    nonlocal Server_Is_Available
+                    nonlocal Data_To_Server
                     while True:
                         wernickelog.debug('Waiting for Data_To_Server')
                         NewData = Data_To_Server.get() # blocks here until something hits queue
@@ -1355,8 +1357,10 @@ class Wernicke(threading.Thread):
                 def __init__ (self):
                     threading.Thread.__init__(self)
                 def run(self):
-                    global loop
-                    global Server_Is_Available
+                    nonlocal loop
+                    nonlocal Server_Is_Available
+                    log.info(type(Server_Is_Available))
+                    log.info(type(Data_To_Server))
                     while True:
                         if Server_Is_Available == False:
                             wernickelog.info('Sending love to server')
@@ -1730,7 +1734,7 @@ class Sensor_MPU(threading.Thread):
                     # if she gets hit, wake up a bit
                     if self.JostledLevel > 0.1 and GlobalStatus.IAmSleeping == True:
                         sleeplog.info(f'Woke up by being jostled this much: {self.JostledLevel}')
-                        GlobalStatus.Wakefulness += 0.1
+                        Thread_Script_Sleep.WakeUpABit(0.1)
                         Thread_Breath.QueueSound(Sound=Collections['gotwokeup'].GetRandomSound(), PlayWhenSleeping=True, IgnoreSpeaking=True, CutAllSoundAndPlay=True)
 
                     # Update the boolean that tells if we're laying down. While laying down I recorded 4.37, 1.60. However, now it's 1.55, 2.7. wtf happened? The gyro has not moved. Maybe position difference. 
@@ -1966,20 +1970,8 @@ class Script_Sleep(threading.Thread):
                 # Update the running average that we're using for wakefulness
                 GlobalStatus.Wakefulness = ((GlobalStatus.Wakefulness * self.ArousalAverageWindow) + self.Arousal) / (self.ArousalAverageWindow + 1)
 
-                # Update the boolean that tells everything else whether sleeping or not
-                # I also want to detect when sleeping starts
-                if self.JustFellAsleep():
-                    sleeplog.info('JustFellAsleep')
-                    GlobalStatus.Wakefulness -= 0.05 # try to prevent wobble
-                    Thread_Breath.QueueSound(Sound=Collections['goodnight'].GetRandomSound(), PlayWhenSleeping=True, Priority=8)
-                    GlobalStatus.IAmSleeping = True
-                    Thread_Breath.BreathChange('breathe_sleeping')
-                if self.JustWokeUp():
-                    sleeplog.info('JustWokeUp')
-                    GlobalStatus.Wakefulness += 0.05 # try to prevent wobble
-                    GlobalStatus.IAmSleeping = False
-                    Thread_Breath.BreathChange('breathe_normal')
-                    Thread_Breath.QueueSound(Sound=Collections['waking'].GetRandomSound(), PlayWhenSleeping=True, Priority=8)
+                # After updating wakefulness, figure out whether we crossed a threshold. 
+                self.EvaluateWakefulness()
 
                 # log it
                 sleeplog.debug('Arousal = %.2f  LightLevel = %.2f  TouchedLevel = %.2f  NoiseLevel = %.2f  JostledLevel = %.2f  Wakefulness = %.2f', self.Arousal, GlobalStatus.LightLevelPct, GlobalStatus.TouchedLevel, GlobalStatus.NoiseLevel, GlobalStatus.JostledLevel, GlobalStatus.Wakefulness)
@@ -2003,8 +1995,40 @@ class Script_Sleep(threading.Thread):
         except Exception as e:
             log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
 
+    def WakeUpABit(self, value):
+        GlobalStatus.Wakefulness += value
+        self.EvaluateWakefulness()
+
+    # Update the boolean that tells everything else whether sleeping or not
+    # I also want to detect when sleeping starts
+    def EvaluateWakefulness(self):
+        if self.JustFellAsleep():
+            sleeplog.info('JustFellAsleep')
+            GlobalStatus.Wakefulness -= 0.1 # try to prevent wobble
+            Thread_Breath.QueueSound(Sound=Collections['goodnight'].GetRandomSound(), PlayWhenSleeping=True, Priority=8, CutAllSoundAndPlay=True)
+            GlobalStatus.IAmSleeping = True
+            Thread_Breath.BreathChange('breathe_sleeping')
+        if self.JustWokeUp():
+            sleeplog.info('JustWokeUp')
+            GlobalStatus.Wakefulness += 0.1 # try to prevent wobble
+            GlobalStatus.IAmSleeping = False
+            Thread_Breath.BreathChange('breathe_normal')
+            Thread_Breath.QueueSound(Sound=Collections['waking'].GetRandomSound(), PlayWhenSleeping=True, Priority=8, CutAllSoundAndPlay=True)
+
+    # I want to do stuff when just falling asleep and when getting up
+    def JustFellAsleep(self):
+        if GlobalStatus.Wakefulness < self.MinWakefulnessToBeAwake and GlobalStatus.IAmSleeping == False:
+            return True
+        else:
+            return False
+    def JustWokeUp(self):
+        if GlobalStatus.Wakefulness > self.MinWakefulnessToBeAwake and GlobalStatus.IAmSleeping == True:
+            return True
+        else:
+            return False
+
     # This code shall be in a museum. 
-    # At one time I figured that I would automatically set the bedtime and wake up times according to the trend. But it never worked out quite right. 
+    # At one time I figured that I would automatically set the bedtime and wake up times according to the trend. But it never worked out quite right. So, at length, fuck it. 
     # def RecalculateSleepyTime(self):
     #     self.WakeHour = None
     #     self.SleepHour = None
@@ -2040,18 +2064,6 @@ class Script_Sleep(threading.Thread):
         self.AnnounceTiredTime = False
     def StartBreathingSleepy(self):
         Thread_Breath.BreathChange('breathe_sleepy')
-
-    # I want to do stuff when just falling asleep and when getting up
-    def JustFellAsleep(self):
-        if GlobalStatus.Wakefulness < self.MinWakefulnessToBeAwake and GlobalStatus.IAmSleeping == False:
-            return True
-        else:
-            return False
-    def JustWokeUp(self):
-        if GlobalStatus.Wakefulness > self.MinWakefulnessToBeAwake and GlobalStatus.IAmSleeping == True:
-            return True
-        else:
-            return False
 
 # When Christine gets touched, stuff should happen. That happens here. 
 class Script_Touch(threading.Thread):
