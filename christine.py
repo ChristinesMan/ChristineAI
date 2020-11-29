@@ -322,11 +322,9 @@ class SaveStatus(threading.Thread):
 #         # when sound stops, wait a minimum of 1s and up to 3s randomly
 #         GlobalStatus.DontSpeakUntil = time.time() + 1.0 + (random.random() * 2)
 #         soundlog.debug('HeardSoundStop')
-
 # # Setup signals
 # signal.signal(44, SpeakingHandler)
 # signal.signal(45, SpeakingHandler)
-
 # # Start or restart the wernicke service, which is a separate python script that monitors microphones
 # # The wernicke script looks for the pid of this script and sends signals
 # os.system('systemctl restart wernicke_client.service')
@@ -1038,6 +1036,12 @@ class Wernicke(threading.Thread):
         except Exception as e:
             log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
 
+    # I want the wernicke process to be able to save utterances on demand for training the classifiers
+    def StartRecording(self, distance, word):
+        self.PipeToAwayTeam.send({'msg': 'start', 'distance': distance, 'word': word})
+    def StopRecording(self):
+        self.PipeToAwayTeam.send({'msg': 'stop'})
+
     # Runs in a separate process for performance reasons
     def AwayTeam(self, PipeToEnterprise):
 
@@ -1061,25 +1065,19 @@ class Wernicke(threading.Thread):
                     self.fs = 16000
 
                 def WhatIsThis(self, data):
-                    # Convert or cast the raw audio data to numpy array
-                    wernickelog.debug('Converting data to numpy')
-                    AccumulatedData_np = np.frombuffer(data, np.int16)
-
-                    seg_len = len(AccumulatedData_np)
+                    # data is already a numpy int16 array
+                    seg_len = len(data)
                     wernickelog.debug('seg_len ' + str(seg_len))
 
                     # Run the classifier. This is ripped directly out of paura.py and carelessly sutured into place. There's so much blood! Thank you!!! 
                     wernickelog.debug('Running classifier')
-                    try:
-                        [mt_feats, _, _] = mF.mid_feature_extraction(AccumulatedData_np, self.fs,
-                                                                     seg_len,
-                                                                     seg_len,
-                                                                     round(self.fs * self.st_win),
-                                                                     round(self.fs * self.st_step)
-                                                                     )
-                        cur_fv = (mt_feats[:, 0] - self.MEAN) / self.STD
-                    except ValueError:
-                        wernickelog.error('Yeah, that thing happened')
+                    [mt_feats, _, _] = mF.mid_feature_extraction(data, self.fs,
+                                                                 seg_len,
+                                                                 seg_len,
+                                                                 round(self.fs * self.st_win),
+                                                                 round(self.fs * self.st_step)
+                                                                 )
+                    cur_fv = (mt_feats[:, 0] - self.MEAN) / self.STD
                     # classify vector:
                     [res, prob] = aT.classifier_wrapper(self.classifier, "svm_rbf", cur_fv)
                     win_class = self.class_names[int(res)]
@@ -1091,7 +1089,6 @@ class Wernicke(threading.Thread):
                     return {
                         'class': win_class,
                         'probability': win_prob,
-                        'text': 'undefined',
                     }
                     # return '{"class": "' + win_class + '", "probability": ' + str(win_prob) + ', "text": "undefined"}'
 
@@ -1137,18 +1134,26 @@ class Wernicke(threading.Thread):
             def hey_honey(love):
                 PipeToEnterprise.send(love)
 
+            # If we're recording, this holds the message from the enterprise containing file data. If not recording, contains None
+            RecordingState = None
+
             # Thread for checking the pipe
             class CheckForMessages(threading.Thread):
                 name = 'CheckForMessages'
                 def __init__ (self):
                     threading.Thread.__init__(self)
                 def run(self):
+                    nonlocal RecordingState
 
                     while True:
 
                         # So basically, if there's something in the pipe, get it all out. This will block until something comes through.
                         Comm = PipeToEnterprise.recv()
                         wernickelog.debug(Comm)
+                        if Comm['msg'] == 'start':
+                            RecordingState = Comm
+                        elif Comm['msg'] == 'stop':
+                            RecordingState = None
 
             class Audio(object):
                 """Streams raw audio from microphone. Data is received in a separate thread, and stored in a buffer, to be read from."""
@@ -1193,17 +1198,23 @@ class Wernicke(threading.Thread):
                     in_audio_split = in_audio.split_to_mono()
 
                     #combine signal from left and right ears
-                    both_ears = in_audio_split[0].overlay(in_audio_split[1])
+                    # both_ears = in_audio_split[0].overlay(in_audio_split[1])
 
                     # compute the loudness of sound
-                    loudness_both_ears = both_ears.rms
+                    loudness_left = in_audio_split[0].rms
+                    # loudness_right = in_audio_split[1].rms
+                    # loudness_both_ears = both_ears.rms
                     loudness_head = in_audio_split[2].rms
 
                     # compute the ratio of inside head vs outside
-                    loudness_ratio = loudness_head / loudness_both_ears
+                    # the left side was found to have a consistently higher ratio from inside head sounds, so using that
+                    # loudness_ratio = loudness_head / loudness_both_ears
+                    loudness_ratio_left = loudness_head / loudness_left
+                    # loudness_ratio_right = loudness_head / loudness_right
+                    # wernickelog.debug(f'loudness: {loudness_left} | {loudness_right}  loudness_ratio: {loudness_ratio_left:.1f} | {loudness_ratio_right:.1f}')
 
                     # If the ratio is high, that is, the sound is loud inside head vs outside, this means the sound is coming from the speaker and we want to ignore that so my wife doesn't talk to herself, as cute as that would be
-                    if loudness_ratio < 1.6:
+                    if loudness_ratio_left < 1.6:
                         # wernickelog.debug(f'loudness_ratio: {loudness_ratio:.1f}')
 
                         # wf = wave.open('{0}.wav'.format(os.path.join('saved_wavs_single_frame', str(int(time.time())))), 'wb')
@@ -1213,9 +1224,9 @@ class Wernicke(threading.Thread):
                         # wf.writeframes(both_ears.raw_data)
                         # wf.close()
 
-                        return both_ears.raw_data
+                        return in_audio_split[0].raw_data, in_audio_split[1].raw_data
                     else:
-                        wernickelog.debug(f'loudness_ratio: {loudness_ratio:.1f} (dropped)')
+                        wernickelog.debug(f'loudness_ratio: {loudness_ratio_left:.1f} (dropped)')
                         return None
 
                 def frame_generator(self):
@@ -1238,18 +1249,17 @@ class Wernicke(threading.Thread):
 
                         if frame != None:
 
-
-
-
                             # Convert or cast the raw audio data to numpy array
-                            frame_np = np.frombuffer(frame, np.int16) #.astype(np.float32, order='C') / 32768.0    <-- if we ever need to convert to float
+                            frame_np_left = np.frombuffer(frame[0], np.int16) #.astype(np.float32, order='C') / 32768.0    <-- if we ever need to convert to float
+                            frame_np_right = np.frombuffer(frame[1], np.int16) #.astype(np.float32, order='C') / 32768.0    <-- if we ever need to convert to float
+
+                            # Mix left and right just for the silence/notsilence classification
+                            frame_np = 0.5 * frame_np_left + 0.5 * frame_np_right
 
                             # Try to reject quick loud clicky sounds
                             maximum = (np.abs(frame_np)).max()
                             mean = (np.abs(frame_np)).mean()
-                            # energy = sF.energy(frame_np)
                             avg_vs_max = mean / maximum
-                            # avg_vs_max = sF.energy(frame_np) / maximum
 
                             # Convert float back to int16, if we ever need to
                             # frame_np = np.int16(frame_np * 32768.0)
@@ -1257,38 +1267,37 @@ class Wernicke(threading.Thread):
                             if avg_vs_max > 0.1:
                                 # wernickelog.debug(f'{mean} / {maximum} = {avg_vs_max}')
                                 # Run the classifier. This is ripped directly out of paura.py and carelessly sutured into place. There's so much blood! Thank you!!! 
-                                try:
-                                    [mt_feats, _, _] = mF.mid_feature_extraction(frame_np, 16000,
-                                                                                 4096,
-                                                                                 4096,
-                                                                                 800,
-                                                                                 800
-                                                                                 )
-                                    cur_fv = (mt_feats[:, 0] - self.MEAN) / self.STD
-                                except ValueError:
-                                    log.error('Yeah, that thing happened')
-                                # classify vector:
-                                # wernickelog.debug('win: {0}  step: {0}'.format(round(16000 * self.st_win), round(16000 * self.st_step)))
+                                [mt_feats, _, _] = mF.mid_feature_extraction(frame_np, 16000, 4096, 4096, 800, 800)
+                                cur_fv = (mt_feats[:, 0] - self.MEAN) / self.STD
                                 [res, prob] = aT.classifier_wrapper(self.classifier, "svm_rbf", cur_fv)
                                 win_class = self.class_names[int(res)]
                                 win_prob = round(prob[int(res)], 2)
+
+                                if win_class == 'silence':
+                                    silence = True
+                                    
+                                    # manually enabled as needed
+                                    # wf = wave.open('{0}.wav'.format(os.path.join('single_frames_silence', str(int(time.time())))), 'wb')
+                                    # wf.setnchannels(1)
+                                    # wf.setsampwidth(2)
+                                    # wf.setframerate(16000)
+                                    # wf.writeframes(frame_np.tobytes())
+                                    # wf.close()
+                                else:
+                                    silence = False
+
+                                    # wf = wave.open('{0}.wav'.format(os.path.join('single_frames_notsilence', str(int(time.time())))), 'wb')
+                                    # wf.setnchannels(1)
+                                    # wf.setsampwidth(2)
+                                    # wf.setframerate(16000)
+                                    # wf.writeframes(frame_np.tobytes())
+                                    # wf.close()
+
                                 wernickelog.debug('Classified {0:s} with probability {1:.2f}'.format(win_class, win_prob))
                             else:
-                                wernickelog.debug(f'Dropped possible clicking noise. {mean} / {maximum} = {avg_vs_max}')
-                                win_class = 'silence'
-
-                            if win_class == 'silence':
                                 silence = True
-                            else:
-                                silence = False
 
-                                # temporary until we have exhaustive samples
-                                # wf = wave.open('{0}_notsilence.wav'.format(os.path.join('saved_wavs_single_frame', str(int(time.time())))), 'wb')
-                                # wf.setnchannels(1)
-                                # wf.setsampwidth(2)
-                                # wf.setframerate(16000)
-                                # wf.writeframes(frame)
-                                # wf.close()
+                                wernickelog.debug(f'Dropped possible clicking noise. {mean} / {maximum} = {avg_vs_max}')
 
                             if not triggered:
                                 ring_buffer.append(frame)
@@ -1317,8 +1326,8 @@ class Wernicke(threading.Thread):
                     self.pa.terminate()
 
             # https://stackoverflow.com/questions/46727787/runtimeerror-there-is-no-current-event-loop-in-thread-in-async-apscheduler
-            # "Do not do this!"
-            # Hold my beer. 
+            # Experts warn: "Do not do this!" 
+            # Me: "Hold my beer." 
             # loop = asyncio.get_event_loop()
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
@@ -1391,17 +1400,19 @@ class Wernicke(threading.Thread):
 
             frames = audio.collector()
 
-            os.makedirs('saved_wavs', exist_ok=True)
+            os.makedirs('training_wavs', exist_ok=True)
 
             # Basically this area accumulates the audio frames. VAD filters. When VAD assembles a complete utterance, it sends signals to the main process and sends the entire utterance over to the server
-            AccumulatedData = bytearray()
+            AccumulatedDataLeft = bytearray()
+            AccumulatedDataRight = bytearray()
             for frame in frames:
                 if frame is not None:
                     # The frame is not None, which means there's new audio data, so add it on
                     if IsSpeaking == False:
                         IsSpeaking = True
                         hey_honey({'class': 'speaking_start'})
-                    AccumulatedData.extend(frame)
+                    AccumulatedDataLeft.extend(frame[0])
+                    AccumulatedDataRight.extend(frame[1])
                 else:
                     # When frame is None, that signals the end of audio data. Go ahead and do what we want to do with the complete data
                     if IsSpeaking == True:
@@ -1410,36 +1421,52 @@ class Wernicke(threading.Thread):
                     # Apply a high pass filter to the audio to strip off the low noise. Get the loudness because we want to know that and keep an average
                     # I removed high pass filter because when I actually listened to the mic output it doesn't seem noisy
                     # Putting it back temporarily so that classification works again. I need to retrain using unfiltered samples. 
-                    FilteredData = AudioSegment(data=AccumulatedData, sample_width=2, frame_rate=16000, channels=1).high_pass_filter(500, order = 2)
-                    FilteredDataLoudness = FilteredData.rms
-                    wernickelog.debug(f'Raw loudness: {FilteredDataLoudness}')
+                    # FilteredData = AudioSegment(data=AccumulatedData, sample_width=2, frame_rate=16000, channels=1).high_pass_filter(500, order = 2)
+                    # FilteredDataLoudness = FilteredData.rms
+                    # wernickelog.debug(f'Length: {len(AccumulatedData)}  Raw loudness: {FilteredDataLoudness}')
 
-                    FilteredData = FilteredData.raw_data
+                    # FilteredData = FilteredData.raw_data
+
+                    # Convert both sides to numpy, and the loudest side wins and gets classified
+                    AccumulatedDataLeft_np = np.frombuffer(AccumulatedDataLeft, np.int16)
+                    AccumulatedDataRight_np = np.frombuffer(AccumulatedDataRight, np.int16)
+                    rms_left = np.sqrt(np.mean(AccumulatedDataLeft_np**2))
+                    rms_right = np.sqrt(np.mean(AccumulatedDataRight_np**2))
+                    rms_ratio = rms_left / rms_right
+                    if rms_ratio >= 1:
+                        AccumulatedData = AccumulatedDataLeft
+                        rms = rms_left
+                    else:
+                        AccumulatedData = AccumulatedDataRight
+                        rms = rms_right
 
                     # If the server is avail, send it there and wait for a response, if not we'll process it locally
                     if Server_Is_Available:
-                        Data_To_Server.put(FilteredData)
+                        Data_To_Server.put(AccumulatedData)
                         wernickelog.info('Sending utterance. Queue size: {0}'.format(Data_To_Server.qsize()))
                     else:
                         # If the server is not available, use the built-in classifier. Works ok, not bad CPU load
-                        result = ClassifierModel.WhatIsThis(FilteredData)
-                        result['loudness'] = FilteredDataLoudness
+                        result = ClassifierModel.WhatIsThis(AccumulatedData)
+                        result['loudness'] = rms
                         result['text'] = 'undefined'
+                        result['rms_ratio'] = rms_ratio
 
                         # Pop the result over to main process
                         hey_honey(result)
 
                         # save the utterance to a wav file. I hope later I'll be able to use this for training a better model, after I learn how to do that. Actually, I know how to do that, now. 
+                        if RecordingState != None:
+                            RecordFileName = '{0}_{1}_{2}_{3}_{4:.0f}.wav'.format(os.path.join('training_wavs', str(int(time.time()))), RecordingState['distance'], RecordingState['word'], result['class'], rms)
+                            wernickelog.info(f'Saving utterance. File: {RecordFileName}')
+                            wf = wave.open(RecordFileName, 'wb')
+                            wf.setnchannels(1)
+                            wf.setsampwidth(2)
+                            wf.setframerate(16000)
+                            wf.writeframes(AccumulatedData)
+                            wf.close()
 
-                        # wernickelog.info('Saving utterance to file')
-                        # wf = wave.open('{0}_{1}.wav'.format(os.path.join('saved_wavs', str(int(time.time()))), result['class']), 'wb')
-                        # wf.setnchannels(1)
-                        # wf.setsampwidth(2)
-                        # wf.setframerate(16000)
-                        # wf.writeframes(FilteredData)
-                        # wf.close()
-
-                    AccumulatedData = bytearray()
+                    AccumulatedDataLeft = bytearray()
+                    AccumulatedDataRight = bytearray()
 
         # log exception in the main.log
         except Exception as e:
@@ -2324,7 +2351,47 @@ Thread_Wernicke.start()
 # End of startup stuff. Everything that runs is in handlers and threads.
 # Start the web service. I don't think this needs to be in a thread by itself. We'll see. 
 
+# This is a large list of 3377 words to help balance and prompt the gathering of voice sample data
+# The idea is that I can easily open up the web app, see a random word, and I'll click record and use it in a sentence
+# This starts at None since loading the pickle on every startup seems unnecessary, but once loaded for first time it stays, 
+# because 32kb isn't really that large.
+Training_Words = None
+
 class WebServerHandler(BaseHTTPRequestHandler):
+    def TrainingWordsPickle(self):
+        global Training_Words
+
+        if Training_Words != None:
+            with open('Training_Words.pickle', 'wb') as pfile:
+                pickle.dump(Training_Words, pfile, pickle.HIGHEST_PROTOCOL)
+
+    def TrainingWordsUnpickle(self):
+        global Training_Words
+
+        try:
+            with open('Training_Words.pickle', 'rb') as pfile:
+                Training_Words = pickle.load(pfile)
+        except FileNotFoundError:
+            log.error('Training_Words.pickle not found')
+            Training_Words = ['wtf', 'honey', 'you', 'win']
+
+    def TrainingWordsNew(self):
+        global Training_Words
+
+        if Training_Words == None:
+            self.TrainingWordsUnpickle()
+
+        return random.choice(Training_Words)
+
+    def TrainingWordsDel(self, word):
+        global Training_Words
+
+        if Training_Words == None:
+            self.TrainingWordsUnpickle()
+
+        Training_Words.remove(word)
+        self.TrainingWordsPickle()
+
     def do_GET(self):
         weblog.debug("incoming get: %s", self.path)
         if self.path == '/':
@@ -2485,6 +2552,32 @@ class WebServerHandler(BaseHTTPRequestHandler):
                     self.send_header('Content-Type', 'text/plain')
                     log.info('Heard: %s', post_data)
                     self.wfile.write(b'coolthxbai')
+                elif self.path == '/TrainingWordNew':
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/plain')
+                    self.wfile.write(self.TrainingWordsNew().encode())
+                elif self.path == '/RecordingStart':
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/plain')
+                    post_data_split = post_data.split(',')
+                    NearMidFar = post_data_split[0]
+                    Training_Word = post_data_split[1]
+                    if NearMidFar == 'near' or NearMidFar == 'mid' or NearMidFar == 'far':
+                        pass
+                    else:
+                        NearMidFar = 'undefined'
+                    GlobalStatus.IAmSleeping = True
+                    Thread_Wernicke.StartRecording(NearMidFar, Training_Word)
+                    self.TrainingWordsDel(Training_Word)
+                    wernickelog.info('Started record: NearMidFar: %s Training_Word: %s', NearMidFar, Training_Word)
+                    self.wfile.write(b'done')
+                elif self.path == '/RecordingStop':
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/plain')
+                    Thread_Script_Sleep.EvaluateWakefulness()
+                    Thread_Wernicke.StopRecording()
+                    wernickelog.info('Stopped record')
+                    self.wfile.write(b'done')
                 else:
                     self.send_response(404)
                     self.send_header('Content-Type', 'text/plain')
@@ -2662,12 +2755,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
           xhttp.send(sound_id);
         }
 
-        function CheckboxHit(endpoint, id, val1=null, val2=null) {
-          var formData = new FormData();
-          formData.append('id', id);
-          formData.append('val1', val1);
-          formData.append('val2', val2);
-
+        function CollectionHit(endpoint, id, val1=null, val2=null) {
           var xhttp = new XMLHttpRequest();
           xhttp.onreadystatechange = function() {
             if (this.readyState == 4 && this.status == 200) {
@@ -2678,6 +2766,49 @@ class WebServerHandler(BaseHTTPRequestHandler):
           xhttp.overrideMimeType('text/plain')
           xhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
           xhttp.send(id + ',' + val1 + ',' + val2);
+        }
+
+        function StartRecord() {
+          var form = document.getElementById('recordform');
+          var distance = recordform.elements['distance'].value
+          var word = recordform.elements['word'].value
+          var xhttp = new XMLHttpRequest();
+          xhttp.onreadystatechange = function() {
+            if (this.readyState == 4 && this.status == 200) {
+              //console.log('ButtonHitDone');
+            }
+          };
+          xhttp.open("POST", "/RecordingStart", true);
+          xhttp.overrideMimeType('text/plain')
+          xhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+          xhttp.send(distance + ',' + word);
+        }
+
+        function GetWord() {
+          var wordfield = document.getElementById('word');
+          var xhttp = new XMLHttpRequest();
+          xhttp.onreadystatechange = function() {
+            if (this.readyState == 4 && this.status == 200) {
+              wordfield.value = this.responseText;
+            }
+          };
+          xhttp.open("POST", "/TrainingWordNew", true);
+          xhttp.overrideMimeType('text/plain')
+          xhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+          xhttp.send();
+        }
+
+        function StopRecord() {
+          var xhttp = new XMLHttpRequest();
+          xhttp.onreadystatechange = function() {
+            if (this.readyState == 4 && this.status == 200) {
+              //console.log('ButtonHitDone');
+            }
+          };
+          xhttp.open("POST", "/RecordingStop", true);
+          xhttp.overrideMimeType('text/plain')
+          xhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+          xhttp.send('juststopit');
         }
 
       </script>
@@ -2712,6 +2843,14 @@ class WebServerHandler(BaseHTTPRequestHandler):
     <a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/StarTrek', 'off');">StarTrek Mode Off</a><br/>
     <a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/ShushPleaseHoney', 'on');">Shush Mode On</a><br/>
     <a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/ShushPleaseHoney', 'off');">Shush Mode Off</a><br/>
+    <h1>Record Training Audio</h1>
+    <form id="recordform" action="/RecordingStart" method="post">
+    <input type="radio" id="distance_near" name="distance" value="near" checked><label for="distance_near">Near</label>
+    <input type="radio" id="distance_mid" name="distance" value="mid"><label for="distance_mid">Mid</label>
+    <input type="radio" id="distance_far" name="distance" value="far"><label for="distance_far">Far</label><br/><br/>
+    <a href="javascript:void(0);" class="pinkButton" onClick="GetWord();">Get word</a><br/>
+    <input id="word" type="text" name="word" value="none"/><br/><br/>
+    <a href="javascript:void(0);" class="pinkButton" onClick="StartRecord();">Start</a><a href="javascript:void(0);" class="pinkButton" onClick="StopRecord();">Stop</a><br/>
     <h1>Sounds</h1>
 """
         for Row in Sounds.All():
@@ -2869,9 +3008,9 @@ class WebServerHandler(BaseHTTPRequestHandler):
         html_out += "<h5>Collections</h5>\n"
         for collection,ischecked in Sounds.CollectionsForSound(SoundId):
             if ischecked:
-                html_out += f"<input type=\"checkbox\" class=\"collection_checkbox\" onchange=\"CheckboxHit('/CollectionUpdate', '{SoundId}', '{collection}', this.checked); return false;\" checked=\"checked\"/>{collection}<br/>\n"
+                html_out += f"<input type=\"checkbox\" class=\"collection_checkbox\" onchange=\"CollectionHit('/CollectionUpdate', '{SoundId}', '{collection}', this.checked); return false;\" checked=\"checked\"/>{collection}<br/>\n"
             else:
-                html_out += f"<input type=\"checkbox\" class=\"collection_checkbox\" onchange=\"CheckboxHit('/CollectionUpdate', '{SoundId}', '{collection}', this.checked); return false;\"/>{collection}<br/>\n"
+                html_out += f"<input type=\"checkbox\" class=\"collection_checkbox\" onchange=\"CollectionHit('/CollectionUpdate', '{SoundId}', '{collection}', this.checked); return false;\"/>{collection}<br/>\n"
 
         return html_out
 
