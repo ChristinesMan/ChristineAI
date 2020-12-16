@@ -61,7 +61,6 @@ import array
 import audioop
 import subprocess
 import RPi.GPIO as GPIO
-from enum import Enum
 import logging as log
 import math
 import smbus
@@ -170,37 +169,6 @@ HardwareConfig = {
     'ADC1_TEMP_PUSSY': 7,
 }
 
-# This class allows the enumerations that follow to be auto-numbered, starting at 0
-class AutoNumber(Enum):
-    def __new__(cls):
-        value = len(cls.__members__)
-        obj = object.__new__(cls)
-        obj._value_ = value
-        return obj
-
-# All the possible messages to be passed around
-class Msg(AutoNumber):
-    # Touches. Head, Shoulders, knees, and toes, haha
-    # 3 in the head used on the 5 channel touch sensor. 12 channels in the body.
-    TouchedOnMyLeftCheek = ()
-    TouchedOnMyRightCheek = ()
-    TouchedOnMyOMGKisses = ()
-
-    # These correspond with the channel numbers 0-11
-    # Might get moved around when this is done
-    TouchedOnMyNeckLeft = ()
-    TouchedOnMyNeckRight = ()
-    TouchedOnMyBoobLeft = ()
-    TouchedOnMyBoobRight = ()
-    TouchedOnMyBackLeft = ()
-    TouchedOnMyBackRight = ()
-    TouchedOnMyAssLeft = ()
-    TouchedOnMyAssRight = ()
-    TouchedOnMyOvaries = ()
-    TouchedOnMyUterus = ()
-    TouchedOnMyVagina = ()
-    TouchedOnMyChest = ()
-    
 # Global object to store all status
 # This whole object will be pickled to a file at regular intervals and unpickled at startup
 class Status:
@@ -2291,6 +2259,8 @@ class Script_I_Love_Yous(threading.Thread):
 #         # log exception in the main.log
 #         except Exception as e:
 #             log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
+# Thread_Hey_Honey = Hey_Honey()
+# Thread_Hey_Honey.start()
 
 # returns the time that is a random number of minutes in the future, for scheduled events
 def RandomMinutesLater(min, max):
@@ -2333,8 +2303,8 @@ Thread_Sensor_Button.start()
 Thread_Script_Sleep = Script_Sleep()
 Thread_Script_Sleep.start()
 
-Thread_Script_Touch = Script_Touch()
-Thread_Script_Touch.start()
+# Thread_Script_Touch = Script_Touch()
+# Thread_Script_Touch.start()
 
 Thread_Script_I_Love_Yous = Script_I_Love_Yous()
 Thread_Script_I_Love_Yous.start()
@@ -2344,9 +2314,6 @@ Thread_SaveStatus.start()
 
 Thread_Wernicke = Wernicke()
 Thread_Wernicke.start()
-
-# Thread_Hey_Honey = Hey_Honey()
-# Thread_Hey_Honey.start()
 
 # End of startup stuff. Everything that runs is in handlers and threads.
 # Start the web service. I don't think this needs to be in a thread by itself. We'll see. 
