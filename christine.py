@@ -1950,6 +1950,10 @@ class Script_Sleep(threading.Thread):
                 # Trend the noise level down. When sounds are received in a separate thread, it trends up, window 20
                 GlobalStatus.NoiseLevel = (GlobalStatus.NoiseLevel * 20.0) / (21.0)
 
+                # Slowly decrement the touchedLevel
+                GlobalStatus.TouchedLevel -= 0.05
+                GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
+
                 # set the gyro tilt for the calculation that follows
                 if GlobalStatus.IAmLayingDown == True:
                     self.Tilt = 0.0
@@ -2066,103 +2070,162 @@ class Script_Touch(threading.Thread):
     def __init__ (self):
         threading.Thread.__init__(self)
 
-        # track how many recent I/O errors
-        self.IOErrors = 0
-
-        # Init some pins, otherwise they float
-        GPIO.setup(HardwareConfig['TOUCH_LCHEEK'], GPIO.IN)
-        GPIO.setup(HardwareConfig['TOUCH_RCHEEK'], GPIO.IN)
-        GPIO.setup(HardwareConfig['TOUCH_KISS'], GPIO.IN)
-        GPIO.setup(HardwareConfig['TOUCH_BODY'], GPIO.IN)
-
-        # Init I2C bus, for the body touch sensor
-        self.i2c = busio.I2C(board.SCL, board.SDA)
-
-        # Create MPR121 touch sensor object.
-        # The sensitivity settings were ugly hacked into /usr/local/lib/python3.6/site-packages/adafruit_mpr121.py
-        try:
-            self.mpr121 = adafruit_mpr121.MPR121(self.i2c)
-        except:
-            log.error('The touch sensor had an I/O failure on init. Body touch is unavailable.')
-            GlobalStatus.TouchedLevel = 0.0
-        else:
-            GPIO.add_event_detect(HardwareConfig['TOUCH_BODY'], GPIO.RISING, callback=self.Sensor_Body, bouncetime=100)
-
-        # Setup GPIO interrupts for head touch sensor
-        GPIO.add_event_detect(HardwareConfig['TOUCH_LCHEEK'], GPIO.RISING, callback=self.Sensor_LeftCheek, bouncetime=3000)
-        GPIO.add_event_detect(HardwareConfig['TOUCH_RCHEEK'], GPIO.RISING, callback=self.Sensor_RightCheek, bouncetime=3000)
-        GPIO.add_event_detect(HardwareConfig['TOUCH_KISS'], GPIO.RISING, callback=self.Sensor_Kissed, bouncetime=1000)
-
     def run(self):
         log.debug('Thread started.')
 
         try:
-            while True:
-                # One of these gets reset once my wife speaks, the other keeps getting incremented to infinity
-                # Slowly decrement
-                GlobalStatus.TouchedLevel -= 0.001
-                GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
-                # GlobalStatus.ChanceToSpeak -= 0.006  used to slowly decrement this, decided instead it'll just go to 0.0 when something chooses to speak
 
-                time.sleep(0.5)
+            # setup the separate process with pipe
+            # A class 1 probe is released by the enterprise into a mysterious wall of squishy plastic stuff surrounding the planet
+            self.PipeToProbe, self.PipeToEnterprise = Pipe()
+            self.ProbeProcess = Process(target = self.Class1Probe, args = (self.PipeToEnterprise,))
+            self.ProbeProcess.start()
+
+            while True:
+
+                # This will block here until the probe sends a message to the enterprise
+                # I think for touch probe, communication will be one way, probe to enterprise
+
+                # The sensors on the probe will send back the result as a string. 
+                # Such a primitive signaling technology has not been in active use since the dark ages of the early 21st century! 
+                # An embarrassing era in earth's history characterized by the fucking of inanimate objects and mass hysteria. 
+                SensorData = self.PipeToProbe.recv()
+                touchlog.info(SensorData)
+                if SensorData == 'LeftCheek':
+                    GlobalStatus.TouchedLevel += 0.05
+                    GlobalStatus.ChanceToSpeak += 0.05
+
+                    # Can't go past 0 or past 1
+                    GlobalStatus.ChanceToSpeak = float(np.clip(GlobalStatus.ChanceToSpeak, 0.0, 1.0))
+                    GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
+                elif SensorData == 'RightCheek':
+                    GlobalStatus.TouchedLevel += 0.05
+                    GlobalStatus.ChanceToSpeak += 0.05
+
+                    # Can't go past 0 or past 1
+                    GlobalStatus.ChanceToSpeak = float(np.clip(GlobalStatus.ChanceToSpeak, 0.0, 1.0))
+                    GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
+                elif SensorData == 'OMGKisses':
+                    GlobalStatus.DontSpeakUntil = time.time() + 2.0 + (random.random() * 3)
+                    soundlog.info('GotKissedSoundStop')
+                    Thread_Breath.QueueSound(Sound=Collections['kissing'].GetRandomSound(), IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=6)
+                    GlobalStatus.TouchedLevel += 0.1
+                    GlobalStatus.ChanceToSpeak += 0.1
+
+                    # Can't go past 0 or past 1
+                    GlobalStatus.ChanceToSpeak = float(np.clip(GlobalStatus.ChanceToSpeak, 0.0, 1.0))
+                    GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
+                elif SensorData == 'Vagina':
+                    pass
+                elif SensorData == 'FAIL':
+                    GlobalStatus.TouchedLevel = 0.0
+                    return
 
         # log exception in the main.log
         except Exception as e:
             log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
 
-    # Detect left cheek touch
-    def Sensor_LeftCheek(self, channel):
-        touchlog.info('Touched: Left cheek')
-        GlobalStatus.TouchedLevel += 0.05
-        GlobalStatus.ChanceToSpeak += 0.05
+    # Runs in a separate process for performance reasons
+    def Class1Probe(self, PipeToEnterprise):
 
-        # Can't go past 0 or past 1
-        GlobalStatus.ChanceToSpeak = float(np.clip(GlobalStatus.ChanceToSpeak, 0.0, 1.0))
-        GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
-
-        # PicoBleep(((1980, 4, 0.1), (1970, 4, 0.0)))
-
-    # Detect right cheek touch
-    def Sensor_RightCheek(self, channel):
-        touchlog.info('Touched: Right cheek')
-        GlobalStatus.TouchedLevel += 0.05
-        GlobalStatus.ChanceToSpeak += 0.05
-
-        # Can't go past 0 or past 1
-        GlobalStatus.ChanceToSpeak = float(np.clip(GlobalStatus.ChanceToSpeak, 0.0, 1.0))
-        GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
-
-        # PicoBleep(((1980, 4, 0.1), (1970, 4, 0.0)))
-
-    # Detect being kissed
-    def Sensor_Kissed(self, channel):
-        touchlog.info('Somebody kissed me!')
-        GlobalStatus.DontSpeakUntil = time.time() + 2.0 + (random.random() * 3)
-        soundlog.info('GotKissedSoundStop')
-        Thread_Breath.QueueSound(Sound=Collections['kissing'].GetRandomSound(), IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=6)
-        GlobalStatus.TouchedLevel += 0.1
-        GlobalStatus.ChanceToSpeak += 0.1
-
-        # Can't go past 0 or past 1
-        GlobalStatus.ChanceToSpeak = float(np.clip(GlobalStatus.ChanceToSpeak, 0.0, 1.0))
-        GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
-
-    # Detect being touched on the 12 sensors in the body
-    def Sensor_Body(self, channel):
-        # Get... all the cheese
         try:
-            touched = self.mpr121.touched_pins
-        except:
-            self.IOErrors += 1
-            log.error('The touch sensor had an I/O failure. Count = %s.', self.IOErrors)
-            if self.IOErrors > 10:
-                log.critical('The touch sensor thread has been shutdown, but maybe not.')
-                GlobalStatus.TouchedLevel = 0.0
-                return
-        touchlog.debug('Touch array: %s', touched)
-        for i in range(12):
-            if touched[i]:
-                touchlog.info('Touched: %s', Msg(Msg.TouchedOnMyNeckLeft.value + i).name)
+
+            # Touches. Head, Shoulders, knees, and toes, haha
+            # 3 in the head used on the 5 channel touch sensor. 12 channels in the body.
+            # These correspond with the channel numbers 0-11
+            BodyTouchZones = [
+                'Vagina',
+                'notinstalled_01',
+                'notinstalled_02',
+                'notinstalled_03',
+                'notinstalled_04',
+                'notinstalled_05',
+                'notinstalled_06',
+                'notinstalled_07',
+                'notinstalled_08',
+                'notinstalled_09',
+                'notinstalled_10',
+                'notinstalled_11']
+            log.info(BodyTouchZones)
+            # track how many recent I/O errors
+            IOErrors = 0
+
+            # Init I2C bus, for the body touch sensor
+            i2c = busio.I2C(board.SCL, board.SDA)
+
+            # Create MPR121 touch sensor object.
+            # The sensitivity settings were ugly hacked into /usr/local/lib/python3.6/site-packages/adafruit_mpr121.py
+            try:
+                mpr121 = adafruit_mpr121.MPR121(i2c)
+            except:
+                mpr121 = None
+                honey_touched('FAIL')
+                log.error('The touch sensor had an I/O failure on init. Body touch is unavailable.')
+
+            # Send message to the main process
+            def honey_touched(zone):
+                PipeToEnterprise.send(zone)
+
+            # Detect left cheek touch
+            def Sensor_LeftCheek(channel):
+                touchlog.info('Touched: Left cheek')
+                honey_touched('LeftCheek')
+
+            # Detect right cheek touch
+            def Sensor_RightCheek(channel):
+                touchlog.info('Touched: Right cheek')
+                honey_touched('RightCheek')
+
+            # Detect being kissed
+            def Sensor_Kissed(channel):
+                touchlog.info('Somebody kissed me!')
+                honey_touched('OMGKisses')
+
+            # Detect being touched on the 12 sensors in the body
+            def Sensor_Body(channel):
+                log.info('got here 1')
+                nonlocal IOErrors
+                # Get... all the cheese
+                # It appears there is no performance penalty from getting all the pins
+                # It looks in the source code like the hardware returns 12 bits all at once
+
+                try:
+                    touched = mpr121.touched_pins
+                except:
+                    IOErrors += 1
+                    log.warning('The touch sensor had an I/O failure. Count = %s.', IOErrors)
+                    if IOErrors > 10:
+                        log.critical('The touch sensor thread has been shutdown.')
+                        GPIO.remove_event_detect(HardwareConfig['TOUCH_BODY'])
+                        honey_touched('FAIL')
+                        return
+                touchlog.debug('Touch array: %s', touched)
+                for i in range(12):
+                    if touched[i]:
+                        honey_touched(BodyTouchZones[i])
+                        touchlog.info('Touched: %s', BodyTouchZones[i])
+
+            log.info('got here 2')
+            # Init some pins, otherwise they float
+            GPIO.setup(HardwareConfig['TOUCH_LCHEEK'], GPIO.IN)
+            GPIO.setup(HardwareConfig['TOUCH_RCHEEK'], GPIO.IN)
+            GPIO.setup(HardwareConfig['TOUCH_KISS'], GPIO.IN)
+            GPIO.setup(HardwareConfig['TOUCH_BODY'], GPIO.IN)
+
+            log.info('got here 3')
+            # As long as the init up there didn't fail, start monitoring the IRQ
+            if mpr121 != None:
+                GPIO.add_event_detect(HardwareConfig['TOUCH_BODY'], GPIO.RISING, callback=Sensor_Body, bouncetime=100)
+
+            log.info('got here 3')
+            # Setup GPIO interrupts for head touch sensor
+            GPIO.add_event_detect(HardwareConfig['TOUCH_LCHEEK'], GPIO.RISING, callback=Sensor_LeftCheek, bouncetime=3000)
+            GPIO.add_event_detect(HardwareConfig['TOUCH_RCHEEK'], GPIO.RISING, callback=Sensor_RightCheek, bouncetime=3000)
+            GPIO.add_event_detect(HardwareConfig['TOUCH_KISS'], GPIO.RISING, callback=Sensor_Kissed, bouncetime=1000)
+
+        # log exception in the main.log
+        except Exception as e:
+            log.error('We have lost contact with the probe. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
 
 # When touched or spoken to, it becomes more likely to say something nice
 class Script_I_Love_Yous(threading.Thread):
