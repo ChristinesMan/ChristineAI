@@ -275,7 +275,7 @@ class SaveStatus(threading.Thread):
 
         # log exception in the main.log
         except Exception as e:
-            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
+            log.error('Thread died. {0} {1} {2}'.format(e.__class__, e, format_tb(e.__traceback__)))
 
 # This is the way I used to do it. This is now a museum artifact. 
 # The wernicke_client process will send signals, one when speaking is detected, and another when speaking stops
@@ -342,7 +342,7 @@ class SoundsDB():
 
         # log exception in the main.log
         except Exception as e:
-            log.error('Database error. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
+            log.error('Database error. {0} {1} {2}'.format(e.__class__, e, format_tb(e.__traceback__)))
             return None
 
     def GetSound(self, sound_id):
@@ -831,7 +831,7 @@ class Breath(threading.Thread):
 
         # log exception in the main.log
         except Exception as e:
-            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
+            log.error('Thread died. {0} {1} {2}'.format(e.__class__, e, format_tb(e.__traceback__)))
 
     def ChooseNewBreath(self):
         self.CurrentSound = Collections[self.BreathStyle].GetRandomSound()
@@ -887,7 +887,7 @@ class Breath(threading.Thread):
 
         # log exception in the main.log
         except Exception as e:
-            log.error('Shuttlecraft crashed. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
+            log.error('Shuttlecraft crashed. {0} {1} {2}'.format(e.__class__, e, format_tb(e.__traceback__)))
 
     # Change the type of automatic breath sounds
     def BreathChange(self, NewBreathType):
@@ -1002,7 +1002,7 @@ class Wernicke(threading.Thread):
 
         # log exception in the main.log
         except Exception as e:
-            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
+            log.error('Thread died. {0} {1} {2}'.format(e.__class__, e, format_tb(e.__traceback__)))
 
     # I want the wernicke process to be able to save utterances on demand for training the classifiers
     def StartRecording(self, distance, word):
@@ -1534,7 +1534,7 @@ class Wernicke(threading.Thread):
 
         # log exception in the main.log
         except Exception as e:
-            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
+            log.error('Thread died. {0} {1} {2}'.format(e.__class__, e, format_tb(e.__traceback__)))
 
 
 # This thread's job is to poll all of the sensors that are connected to the ADC0. There's also an ADC1 that is full of temperature sensors.
@@ -1598,7 +1598,7 @@ class Sensor_ADC0(threading.Thread):
 
         # log exception in the main.log
         except Exception as e:
-            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
+            log.error('Thread died. {0} {1} {2}'.format(e.__class__, e, format_tb(e.__traceback__)))
 
     # read SPI data from MCP3008 chip, 8 possible adc's (0 thru 7)
     def readadc(self, adcnum):
@@ -1689,7 +1689,7 @@ class Sensor_ADC1(threading.Thread):
 
         # log exception in the main.log
         except Exception as e:
-            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
+            log.error('Thread died. {0} {1} {2}'.format(e.__class__, e, format_tb(e.__traceback__)))
 
     def GetAllTemps(self):
         # Go through all pins
@@ -1841,7 +1841,7 @@ class Sensor_MPU(threading.Thread):
 
         # log exception in the main.log
         except Exception as e:
-            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
+            log.error('Thread died. {0} {1} {2}'.format(e.__class__, e, format_tb(e.__traceback__)))
 
 # Poll the Pi CPU temperature
 # I need to make a sound of Christine saying "This is fine..."
@@ -1887,7 +1887,7 @@ class Sensor_PiTemp(threading.Thread):
 
         # log exception in the main.log
         except Exception as e:
-            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
+            log.error('Thread died. {0} {1} {2}'.format(e.__class__, e, format_tb(e.__traceback__)))
 
 # Poll the Pico for the button state. It's just a button, we'll embed it somewhere, dunno where yet
 # Not sure how often to check. Starting at 2 times per second
@@ -1913,7 +1913,7 @@ class Sensor_Button(threading.Thread):
 
         # log exception in the main.log
         except Exception as e:
-            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
+            log.error('Thread died. {0} {1} {2}'.format(e.__class__, e, format_tb(e.__traceback__)))
 
 # Poll the Pico for battery voltage every 60s
 # I don't see a point in shutting down from here, because Pico will shutdown when it needs to
@@ -1957,7 +1957,7 @@ class Sensor_Battery(threading.Thread):
 
         # log exception in the main.log
         except Exception as e:
-            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
+            log.error('Thread died. {0} {1} {2}'.format(e.__class__, e, format_tb(e.__traceback__)))
 
 # Called one time during startup to fetch reason for shutdown, etc
 # Read the System Information
@@ -2088,7 +2088,7 @@ class Script_Sleep(threading.Thread):
 
         # log exception in the main.log
         except Exception as e:
-            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
+            log.error('Thread died. {0} {1} {2}'.format(e.__class__, e, format_tb(e.__traceback__)))
 
     def WakeUpABit(self, value):
         GlobalStatus.Wakefulness += value
@@ -2219,7 +2219,7 @@ class Script_Touch(threading.Thread):
 
         # log exception in the main.log
         except Exception as e:
-            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
+            log.error('Thread died. {0} {1} {2}'.format(e.__class__, e, format_tb(e.__traceback__)))
 
     # Runs in a separate process for performance reasons
     def Class1Probe(self, PipeToEnterprise):
@@ -2321,7 +2321,7 @@ class Script_Touch(threading.Thread):
 
         # log exception in the main.log
         except Exception as e:
-            log.error('We have lost contact with the probe. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
+            log.error('We have lost contact with the probe. {0} {1} {2}'.format(e.__class__, e, format_tb(e.__traceback__)))
 
 # When touched or spoken to, it becomes more likely to say something nice
 class Script_I_Love_Yous(threading.Thread):
@@ -2354,7 +2354,7 @@ class Script_I_Love_Yous(threading.Thread):
 
         # log exception in the main.log
         except Exception as e:
-            log.error('Thread died. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
+            log.error('Thread died. {0} {1} {2}'.format(e.__class__, e, format_tb(e.__traceback__)))
 
 # There is a separate process called wernicke_client.py
 # This other process captures audio, cleans it up, and ships it to a server for classification and speech recognition on a gpu.
@@ -2712,7 +2712,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
                     weblog.error('Invalid request to %s: %s', self.path, post_data)
 
         except Exception as e:
-            log.error('Web server fucked up. Class: {0}  {1}'.format(e.__class__, format_tb(e.__traceback__)))
+            log.error('Web server fucked up. {0} {1} {2}'.format(e.__class__, e, format_tb(e.__traceback__)))
 
     def html_main(self):
         """
