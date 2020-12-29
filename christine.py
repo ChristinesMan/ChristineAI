@@ -2702,22 +2702,24 @@ class WebServerHandler(BaseHTTPRequestHandler):
                     self.send_response(200)
                     self.send_header('Content-Type', 'text/plain')
                     post_data_split = post_data.split(',')
-                    NearMidFar = post_data_split[0]
+                    SpeakingDistance = post_data_split[0]
                     Training_Word = post_data_split[1]
-                    if NearMidFar == 'near' or NearMidFar == 'mid' or NearMidFar == 'far':
+                    if SpeakingDistance == 'close' or SpeakingDistance == 'mid' or SpeakingDistance == 'far':
                         pass
                     else:
-                        NearMidFar = 'undefined'
-                    GlobalStatus.IAmSleeping = True
-                    Thread_Wernicke.StartRecording(NearMidFar, Training_Word)
+                        SpeakingDistance = 'undefined'
+                    GlobalStatus.ShushPleaseHoney = True
+                    Thread_Wernicke.StartRecording(SpeakingDistance, Training_Word)
                     self.TrainingWordsDel(Training_Word)
-                    wernickelog.info('Started record: NearMidFar: %s Training_Word: %s', NearMidFar, Training_Word)
+                    wernickelog.info('Started record: SpeakingDistance: %s Training_Word: %s', SpeakingDistance, Training_Word)
                     self.wfile.write(b'done')
                 elif self.path == '/RecordingStop':
                     self.send_response(200)
                     self.send_header('Content-Type', 'text/plain')
                     Thread_Script_Sleep.EvaluateWakefulness()
+                    GlobalStatus.ShushPleaseHoney = False
                     Thread_Wernicke.StopRecording()
+                    Thread_Breath.QueueSound(Sound=Collections['thanks'].GetRandomSound())
                     wernickelog.info('Stopped record')
                     self.wfile.write(b'done')
                 else:
@@ -2870,6 +2872,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
               document.getElementById("ChanceToSpeak").innerHTML = (status.ChanceToSpeak * 100).toPrecision(2) + '%';
               document.getElementById("JostledLevel").innerHTML = (status.JostledLevel * 100).toPrecision(2) + '%';
               document.getElementById("IAmLayingDown").innerHTML = status.IAmLayingDown;
+              document.getElementById("IAmSleeping").innerHTML = status.IAmSleeping;
               document.getElementById("ShushPleaseHoney").innerHTML = status.ShushPleaseHoney;
               document.getElementById("StarTrekMode").innerHTML = status.StarTrekMode;
               document.getElementById("BatteryVoltage").innerHTML = status.BatteryVoltage;
@@ -2967,6 +2970,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
     ChanceToSpeak: <span id="ChanceToSpeak"></span><br/>
     Jostled: <span id="JostledLevel"></span><br/>
     Laying down: <span id="IAmLayingDown"></span><br/>
+    Sleeping: <span id="IAmSleeping"></span><br/>
     <br/>
     StarTrekMode: <span id="StarTrekMode"></span><br/>
     ShushPleaseHoney: <span id="ShushPleaseHoney"></span><br/>
@@ -2987,7 +2991,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
     <a href="javascript:void(0);" class="pinkButton" onClick="ButtonHit('/ShushPleaseHoney', 'off');">Shush Mode Off</a><br/>
     <h1>Record Training Audio</h1>
     <form id="recordform" action="/RecordingStart" method="post">
-    <input type="radio" id="distance_near" name="distance" value="near" checked><label for="distance_near">Near</label>
+    <input type="radio" id="distance_close" name="distance" value="close" checked><label for="distance_close">Close</label>
     <input type="radio" id="distance_mid" name="distance" value="mid"><label for="distance_mid">Mid</label>
     <input type="radio" id="distance_far" name="distance" value="far"><label for="distance_far">Far</label><br/><br/>
     <a href="javascript:void(0);" class="pinkButton" onClick="GetWord();">Get word</a><br/>
