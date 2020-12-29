@@ -1681,10 +1681,7 @@ class Sensor_ADC1(threading.Thread):
         log.debug('Thread started.')
 
         # Get an initial read on all sensors and set averages to this initial reading
-        self.GetAllTemps()
-        for pin in range(8):
-            self.TempAvg[pin] = self.Temp[pin]
-            self.TempLongAvg[pin] = self.Temp[pin]
+        self.GetInitTemps()
 
         try:
             while True:
@@ -1700,6 +1697,20 @@ class Sensor_ADC1(threading.Thread):
         # log exception in the main.log
         except Exception as e:
             log.error('Thread died. {0} {1} {2}'.format(e.__class__, e, format_tb(e.__traceback__)))
+
+    def GetInitTemps(self):
+        # Go through all pins
+        for pin in range(8):
+            # if there is no label, it's unassigned, don't worry about really checking it. It's going to be 1024 - 1023 = 1 anyway. 
+            if self.TempLabel[pin] != None:
+                # The reading from the ADC is going to be backwards, so doing this to make it easier to read. This way, up is up, down is down.
+                self.TempRaw[pin] = 1024 - self.readadc(pin)
+            else:
+                self.TempRaw[pin] = 1
+            self.Temp[pin] = float(self.TempRaw[pin])
+            self.TempAvg[pin] = self.Temp[pin]
+            self.TempLongAvg[pin] = self.Temp[pin]
+            self.TempTrend[pin] = 1.0
 
     def GetAllTemps(self):
         # Go through all pins
