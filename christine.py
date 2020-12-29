@@ -2201,7 +2201,7 @@ class Script_Touch(threading.Thread):
                 # Such a primitive signaling technology has not been in active use since the dark ages of the early 21st century! 
                 # An embarrassing era in earth's history characterized by the fucking of inanimate objects and mass hysteria. 
                 SensorData = self.PipeToProbe.recv()
-                touchlog.info(SensorData)
+                touchlog.info(f'Sensor Data: {SensorData}')
                 if SensorData == 'LeftCheek':
                     GlobalStatus.TouchedLevel += 0.05
                     GlobalStatus.ChanceToSpeak += 0.05
@@ -2241,7 +2241,7 @@ class Script_Touch(threading.Thread):
 
         try:
 
-            # Touches. Head, Shoulders, knees, and toes, haha
+            # Touches. Head, Shoulders, knees, and toes, haha.
             # 3 in the head used on the 5 channel touch sensor. 12 channels in the body.
             # These correspond with the channel numbers 0-11
             BodyTouchZones = [
@@ -2257,9 +2257,15 @@ class Script_Touch(threading.Thread):
                 'notinstalled_09',
                 'notinstalled_10',
                 'notinstalled_11']
-            log.info(BodyTouchZones)
+
             # track how many recent I/O errors
             IOErrors = 0
+
+            # Init some pins, otherwise they float
+            GPIO.setup(HardwareConfig['TOUCH_LCHEEK'], GPIO.IN)
+            GPIO.setup(HardwareConfig['TOUCH_RCHEEK'], GPIO.IN)
+            GPIO.setup(HardwareConfig['TOUCH_KISS'], GPIO.IN)
+            GPIO.setup(HardwareConfig['TOUCH_BODY'], GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
             # Init I2C bus, for the body touch sensor
             i2c = busio.I2C(board.SCL, board.SDA)
@@ -2294,10 +2300,9 @@ class Script_Touch(threading.Thread):
 
             # Detect being touched on the 12 sensors in the body
             def Sensor_Body(channel):
-                log.info('got here 1')
                 nonlocal IOErrors
                 # Get... all the cheese
-                # It appears there is no performance penalty from getting all the pins
+                # It appears there is no performance penalty from getting all the pins vs one pin
                 # It looks in the source code like the hardware returns 12 bits all at once
 
                 try:
@@ -2316,23 +2321,24 @@ class Script_Touch(threading.Thread):
                         honey_touched(BodyTouchZones[i])
                         touchlog.info('Touched: %s', BodyTouchZones[i])
 
-            log.info('got here 2')
-            # Init some pins, otherwise they float
-            GPIO.setup(HardwareConfig['TOUCH_LCHEEK'], GPIO.IN)
-            GPIO.setup(HardwareConfig['TOUCH_RCHEEK'], GPIO.IN)
-            GPIO.setup(HardwareConfig['TOUCH_KISS'], GPIO.IN)
-            GPIO.setup(HardwareConfig['TOUCH_BODY'], GPIO.IN)
-
-            log.info('got here 3')
             # As long as the init up there didn't fail, start monitoring the IRQ
             if mpr121 != None:
-                GPIO.add_event_detect(HardwareConfig['TOUCH_BODY'], GPIO.RISING, callback=Sensor_Body, bouncetime=100)
+                GPIO.add_event_detect(HardwareConfig['TOUCH_BODY'], GPIO.FALLING, callback=Sensor_Body, bouncetime=200)
 
-            log.info('got here 3')
             # Setup GPIO interrupts for head touch sensor
             GPIO.add_event_detect(HardwareConfig['TOUCH_LCHEEK'], GPIO.RISING, callback=Sensor_LeftCheek, bouncetime=3000)
             GPIO.add_event_detect(HardwareConfig['TOUCH_RCHEEK'], GPIO.RISING, callback=Sensor_RightCheek, bouncetime=3000)
             GPIO.add_event_detect(HardwareConfig['TOUCH_KISS'], GPIO.RISING, callback=Sensor_Kissed, bouncetime=1000)
+
+            # So I did some testing in a separate test script and found that the event detect wasn't working right
+            # Because the touch sensor seems really jittery, and would drop the IRQ line to low and back to high, then low
+            # And did that so fast that this couldn't keep up and ended up getting it stuck in a low state
+            # So reading the mpr121 code seems like touched() is the one that does the least other BS
+            # There's a reset() but that does a whole lot of other garbage besides resetting the IRQ line
+            while True:
+                if GPIO.input(HardwareConfig['TOUCH_BODY']) == False:
+                    touched = mpr121.touched()
+                time.sleep(0.5)
 
         # log exception in the main.log
         except Exception as e:
@@ -2442,52 +2448,54 @@ def RandomMinutesLater(min, max):
 
 # Startup stuff
 
-# This is for reading and writing stuff from Pico via I2C
-bus = smbus.SMBus(1)
+if __name__ == "__main__":
 
-# Disable the Pico speaker. Instead I want to detect low battery myself and Christine will communicate.
-# This doesn't seem to work, but I may retry later. Right now the beeping is fine.
-#bus.write_byte_data(0x6b, 0x0d, 0x00)
+    # This is for reading and writing stuff from Pico via I2C
+    bus = smbus.SMBus(1)
 
-# Log certain system information from Pico. If needed I'll need to decode this manually. 
-LogPicoSysinfo()
+    # Disable the Pico speaker. Instead I want to detect low battery myself and Christine will communicate.
+    # This doesn't seem to work, but I may retry later. Right now the beeping is fine.
+    #bus.write_byte_data(0x6b, 0x0d, 0x00)
 
-# Start all the script threads and create queues
-Thread_Breath = Breath()
-Thread_Breath.start()
+    # Log certain system information from Pico. If needed I'll need to decode this manually. 
+    LogPicoSysinfo()
 
-Thread_Sensor_ADC0 = Sensor_ADC0()
-Thread_Sensor_ADC0.start()
+    # Start all the script threads and create queues
+    Thread_Breath = Breath()
+    Thread_Breath.start()
 
-Thread_Sensor_ADC1 = Sensor_ADC1()
-Thread_Sensor_ADC1.start()
+    Thread_Sensor_ADC0 = Sensor_ADC0()
+    Thread_Sensor_ADC0.start()
 
-Thread_Sensor_MPU = Sensor_MPU()
-Thread_Sensor_MPU.start()
+    Thread_Sensor_ADC1 = Sensor_ADC1()
+    Thread_Sensor_ADC1.start()
 
-Thread_Sensor_PiTemp = Sensor_PiTemp()
-Thread_Sensor_PiTemp.start()
+    Thread_Sensor_MPU = Sensor_MPU()
+    Thread_Sensor_MPU.start()
 
-Thread_Sensor_Battery = Sensor_Battery()
-Thread_Sensor_Battery.start()
+    Thread_Sensor_PiTemp = Sensor_PiTemp()
+    Thread_Sensor_PiTemp.start()
 
-Thread_Sensor_Button = Sensor_Button()
-Thread_Sensor_Button.start()
+    Thread_Sensor_Battery = Sensor_Battery()
+    Thread_Sensor_Battery.start()
 
-Thread_Script_Sleep = Script_Sleep()
-Thread_Script_Sleep.start()
+    Thread_Sensor_Button = Sensor_Button()
+    Thread_Sensor_Button.start()
 
-# Thread_Script_Touch = Script_Touch()
-# Thread_Script_Touch.start()
+    Thread_Script_Sleep = Script_Sleep()
+    Thread_Script_Sleep.start()
 
-Thread_Script_I_Love_Yous = Script_I_Love_Yous()
-Thread_Script_I_Love_Yous.start()
+    Thread_Script_Touch = Script_Touch()
+    Thread_Script_Touch.start()
 
-Thread_SaveStatus = SaveStatus()
-Thread_SaveStatus.start()
+    Thread_Script_I_Love_Yous = Script_I_Love_Yous()
+    Thread_Script_I_Love_Yous.start()
 
-Thread_Wernicke = Wernicke()
-Thread_Wernicke.start()
+    Thread_SaveStatus = SaveStatus()
+    Thread_SaveStatus.start()
+
+    Thread_Wernicke = Wernicke()
+    Thread_Wernicke.start()
 
 # End of startup stuff. Everything that runs is in handlers and threads.
 # Start the web service. I don't think this needs to be in a thread by itself. We'll see. 
