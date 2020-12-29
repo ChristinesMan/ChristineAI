@@ -1131,8 +1131,12 @@ class Wernicke(threading.Thread):
 
                 def __init__(self):
 
-                    wernickelog.debug('Initializing pyAudioAnalysis silence classifier model...')
-                    [self.classifier, self.MEAN, self.STD, self.class_names, self.mt_win, self.mt_step, self.st_win, self.st_step, _] = aT.load_model("wernicke_single_frame_svm_rbf")
+                    wernickelog.debug('Initializing pyAudioAnalysis single-block classifier model...')
+                    [self.classifier, self.MEAN, self.STD, self.class_names, self.mt_win, self.mt_step, self.st_win, self.st_step, _] = aT.load_model("wernicke_block_svm_rbf")
+
+                    # temporary for data collection
+                    for name in self.class_names:
+                        os.makedirs(f'./training_wavs_blocks/{name}/', exist_ok=True)
 
                     def proxy_callback(in_data, frame_count, time_info, status):
                         #pylint: disable=unused-argument
@@ -1178,71 +1182,67 @@ class Wernicke(threading.Thread):
                     loudness_ratio_left = loudness_head / loudness_left
                     loudness_ratio_right = loudness_head / loudness_right
                     # wernickelog.debug(f'loudness: {loudness_left} | {loudness_right}  loudness_ratio: {loudness_ratio_left:.1f} | {loudness_ratio_right:.1f}')
-
                     # If the ratio is high, that is, the sound is loud inside head vs outside, this means the sound is coming from the speaker and we want to ignore that so my wife doesn't talk to herself, as cute as that would be
-                    if loudness_ratio_left < 2.2 and loudness_ratio_right < 2.2:
-                        # wernickelog.debug(f'loudness_ratio: {loudness_ratio:.1f}')
 
-                        return in_audio_split[0].raw_data, in_audio_split[1].raw_data, both_ears.raw_data
-                    else:
-                        wernickelog.debug(f'loudness_ratio: {loudness_ratio_left:.1f} (dropped)')
-                        return None
+                    return in_audio_split[0].raw_data, in_audio_split[1].raw_data, both_ears.raw_data, loudness_ratio_left, loudness_ratio_right
 
                 def collector(self):
-                    """Generator that yields series of consecutive audio frames comprising each utterence, separated by yielding a single None.
-                        Determines voice activity by ratio of frames in padding_ms. Uses a buffer to include padding_ms prior to being triggered.
-                        Example: (frame, ..., frame, None, frame, ..., frame, None, ...)
+                    """Generator that yields series of consecutive audio blocks comprising each utterence, separated by yielding a single None.
+                        Example: (block, ..., block, None, block, ..., block, None, ...)
                                   |---utterence---|        |---utterence---|
                     """
-                    num_padding_frames = 2
-                    ring_buffer = deque(maxlen=num_padding_frames)
+                    num_padding_blocks = 2
+                    ring_buffer = deque(maxlen=num_padding_blocks)
 
-                    # triggered means we're currently seeing frames that are not silent
+                    # triggered means we're currently seeing blocks that are not silent
                     triggered = False
 
-                    # Limit the number of frames to some sane amount, after I discovered minute-long recordings
-                    triggered_frames = 0
+                    # Limit the number of blocks accumulated to some sane amount, after I discovered minute-long recordings
+                    triggered_blocks = 0
 
                     # The away team will send a signal back to the enterprise when speaking starts and stops. This keeps track. 
                     lover = False
 
                     while True:
-                        # forever read new frames
-                        frame = self.read()
+                        # forever read new blocks of audio data
+                        block = self.read()
 
-                        # sometimes frame gets thrown out because of an excessive feedback (wife talking to herself), basically we do nothing during that, everything pauses
-                        if frame != None:
+                        # sometimes block gets thrown out because of an excessive feedback (wife talking to herself), basically we do nothing during that, everything pauses
+                        # but we don't want to throw out a little noise in the middle of accumulating audio
+                        if (block[3] > 1.9 or block[4] > 1.9) and triggered == False:
+                            wernickelog.debug(f'loudness_ratio: {block[3]:.1f} / {block[4]:.1f} (dropped)')
+                        else:
 
                             # Convert or cast the raw audio data to numpy array
-                            frame_np_left = np.frombuffer(frame[0], np.int16) #.astype(np.float32, order='C') / 32768.0    <-- if we ever need to convert to float
-                            frame_np_right = np.frombuffer(frame[1], np.int16) #.astype(np.float32, order='C') / 32768.0    <-- if we ever need to convert to float
-                            frame_np_both = np.frombuffer(frame[2], np.int16) #.astype(np.float32, order='C') / 32768.0    <-- if we ever need to convert to float
+                            block_np_left = np.frombuffer(block[0], np.int16) #.astype(np.float32, order='C') / 32768.0    <-- if we ever need to convert to float
+                            block_np_right = np.frombuffer(block[1], np.int16) #.astype(np.float32, order='C') / 32768.0    <-- if we ever need to convert to float
+                            block_np_both = np.frombuffer(block[2], np.int16) #.astype(np.float32, order='C') / 32768.0    <-- if we ever need to convert to float
 
                             # Mix left and right just for the silence/notsilence classification
-                            # This resulted in noise for some reason, but I already have the frame mixed so I'll just do that
-                            # frame_np = 0.5 * frame_np_left + 0.5 * frame_np_right
-                            # frame_np = (frame_np_left / 2) + (frame_np_right / 2)
+                            # This resulted in noise for some reason, but I already have the block mixed so I'll just do that
+                            # block_np = 0.5 * block_np_left + 0.5 * block_np_right
+                            # block_np = (block_np_left / 2) + (block_np_right / 2)
 
                             # Try to reject quick loud clicky sounds
-                            maximum = (np.abs(frame_np_both)).max()
-                            mean = (np.abs(frame_np_both)).mean()
+                            maximum = (np.abs(block_np_both)).max()
+                            mean = (np.abs(block_np_both)).mean()
                             avg_vs_max = mean / maximum
 
                             # Convert float back to int16, if we ever need to
-                            # frame_np = np.int16(frame_np * 32768.0)
+                            # block_np = np.int16(block_np * 32768.0)
 
-                            # if the frame contains a huge but quick spike (a click) then drop it
+                            # if the block contains a huge but quick spike (a click) then drop it
                             if avg_vs_max > 0.1:
                                 # wernickelog.debug(f'{mean} / {maximum} = {avg_vs_max}')
 
                                 # Run the classifier. This is ripped directly out of paura.py and carelessly sutured into place. There's so much blood! Thank you!!! 
-                                [mt_feats, _, _] = mF.mid_feature_extraction(frame_np_both, 16000, 4000, 4000, 800, 800)
+                                [mt_feats, _, _] = mF.mid_feature_extraction(block_np_both, 16000, 4000, 4000, 800, 800)
                                 cur_fv = (mt_feats[:, 0] - self.MEAN) / self.STD
                                 [res, prob] = aT.classifier_wrapper(self.classifier, "svm_rbf", cur_fv)
                                 win_class = self.class_names[int(res)]
                                 win_prob = round(prob[int(res)], 2)
 
-                                if win_class == 'silence':
+                                if win_class == 'silence' or win_class == 'keyboard' or win_class == 'ignore':
                                     silence = True
                                     
                                     # manually enabled as needed
@@ -1252,10 +1252,10 @@ class Wernicke(threading.Thread):
                                     # wf.setnchannels(1)
                                     # wf.setsampwidth(2)
                                     # wf.setframerate(16000)
-                                    # wf.writeframes(frame[2])
+                                    # wf.writeframes(block[2])
                                     # wf.close()
 
-                                elif win_class == 'not_silence':
+                                elif win_class == 'lyriq' or win_class == 'roxy':
                                     silence = False
 
                                     # if win_prob > 0.8:
@@ -1265,7 +1265,7 @@ class Wernicke(threading.Thread):
                                     # wf.setnchannels(1)
                                     # wf.setsampwidth(2)
                                     # wf.setframerate(16000)
-                                    # wf.writeframes(frame[2])
+                                    # wf.writeframes(block[2])
                                     # wf.close()
 
                                 else:
@@ -1274,6 +1274,16 @@ class Wernicke(threading.Thread):
                                     lover = True
 
                                 wernickelog.debug('Classified {0:s} with probability {1:.2f}'.format(win_class, win_prob))
+
+                                # manually enabled as needed
+                                # RecordTimeStamp = str(round(time.time(), 2)).replace('.', '')
+                                # RecordFileName = 'training_wavs_blocks/{0}/{1}_{2:.1f}.wav'.format(win_class, RecordTimeStamp, win_prob)
+                                # wf = wave.open(RecordFileName, 'wb')
+                                # wf.setnchannels(1)
+                                # wf.setsampwidth(2)
+                                # wf.setframerate(16000)
+                                # wf.writeframes(block[2])
+                                # wf.close()
                             else:
                                 silence = True
 
@@ -1281,10 +1291,10 @@ class Wernicke(threading.Thread):
 
                             # NOT triggered
                             if not triggered:
-                                ring_buffer.append(frame)
+                                ring_buffer.append(block)
                                 if not silence:
-                                    triggered_frames += 1
-                                    if triggered_frames > 1:
+                                    triggered_blocks += 1
+                                    if triggered_blocks > 1:
                                         wernickelog.debug('triggered')
                                         triggered = True
                                         post_silence = 1
@@ -1294,20 +1304,20 @@ class Wernicke(threading.Thread):
                                             yield f
                                         ring_buffer.clear()
                                 else:
-                                    triggered_frames = 0
+                                    triggered_blocks = 0
 
                             # TRIGGERED! 
                             else:
-                                yield frame
-                                triggered_frames += 1
-                                if triggered_frames > 20:   #temporary
-                                    log.warning('triggered_frames limit chopped off the wernicke recording')
+                                yield block
+                                triggered_blocks += 1
+                                if triggered_blocks > 20:   #temporary
+                                    log.warning('triggered_blocks limit chopped off the wernicke recording')
                                     silence = True
                                 if silence:
                                     if post_silence <= 0:
                                         wernickelog.debug('untriggered')
                                         triggered = False
-                                        triggered_frames = 0
+                                        triggered_blocks = 0
                                         if lover == True:
                                             lover = False
                                             hey_honey({'class': 'speaking_stop'})
@@ -1395,22 +1405,22 @@ class Wernicke(threading.Thread):
             # Start all the VAD detection stuff
             audio = Audio()
 
-            frames = audio.collector()
+            blocks = audio.collector()
 
-            os.makedirs('training_wavs', exist_ok=True)
+            # os.makedirs('training_wavs', exist_ok=True)
 
-            # Basically this area accumulates the audio frames. VAD filters. When VAD assembles a complete utterance, it sends signals to the main process and sends the entire utterance over to the server
+            # Basically this area accumulates the audio blocks. VAD filters. When VAD assembles a complete utterance, it sends signals to the main process and sends the entire utterance over to the server
             AccumulatedDataLeft = bytearray()
             AccumulatedDataRight = bytearray()
             AccumulatedDataBoth = bytearray()
-            for frame in frames:
-                if frame is not None:
-                    # The frame is not None, which means there's new audio data, so add it on
-                    AccumulatedDataLeft.extend(frame[0])
-                    AccumulatedDataRight.extend(frame[1])
-                    AccumulatedDataBoth.extend(frame[2]) # temporary
+            for block in blocks:
+                if block is not None:
+                    # The block is not None, which means there's new audio data, so add it on
+                    AccumulatedDataLeft.extend(block[0])
+                    AccumulatedDataRight.extend(block[1])
+                    AccumulatedDataBoth.extend(block[2]) # temporary
                 else:
-                    # When frame is None, that signals the end of audio data. Go ahead and do what we want to do with the complete data
+                    # When block is None, that signals the end of audio data. Go ahead and do what we want to do with the complete data
                     # Apply a high pass filter to the audio to strip off the low noise. Get the loudness because we want to know that and keep an average
                     # I removed high pass filter because when I actually listened to the mic output it doesn't seem noisy
                     # Putting it back temporarily so that classification works again. I need to retrain using unfiltered samples. 
@@ -1519,7 +1529,7 @@ class Wernicke(threading.Thread):
                             wf.writeframes(AccumulatedData)
                             wf.close()
 
-                            RecordFileName = 'training_wavs_frames/{0}_{1}_{2}_{3}_{4:.0f}.wav'.format(RecordTimeStamp, RecordingState['distance'], RecordingState['word'], result['class'], rms)
+                            RecordFileName = 'training_wavs_blocks/{0}_{1}_{2}_{3}_{4:.0f}.wav'.format(RecordTimeStamp, RecordingState['distance'], RecordingState['word'], result['class'], rms)
                             wernickelog.info(f'Saving utterance. File: {RecordFileName}')
                             wf = wave.open(RecordFileName, 'wb')
                             wf.setnchannels(1)
