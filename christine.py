@@ -2118,30 +2118,24 @@ class Script_Sleep(threading.Thread):
     # Update the boolean that tells everything else whether sleeping or not
     # I also want to detect when sleeping starts
     def EvaluateWakefulness(self):
-        if self.JustFellAsleep():
+        if self.JustFellAsleep() == True:
             sleeplog.info('JustFellAsleep')
-            GlobalStatus.Wakefulness -= 0.1 # try to prevent wobble
+            GlobalStatus.Wakefulness -= 0.2 # try to prevent wobble
             Thread_Breath.QueueSound(Sound=Collections['goodnight'].GetRandomSound(), PlayWhenSleeping=True, Priority=8, CutAllSoundAndPlay=True)
             GlobalStatus.IAmSleeping = True
             Thread_Breath.BreathChange('breathe_sleeping')
-        if self.JustWokeUp():
+        if self.JustWokeUp() == True:
             sleeplog.info('JustWokeUp')
-            GlobalStatus.Wakefulness += 0.1 # try to prevent wobble
+            GlobalStatus.Wakefulness += 0.2 # try to prevent wobble
             GlobalStatus.IAmSleeping = False
             Thread_Breath.BreathChange('breathe_normal')
             Thread_Breath.QueueSound(Sound=Collections['waking'].GetRandomSound(), PlayWhenSleeping=True, Priority=8, CutAllSoundAndPlay=True)
 
     # I want to do stuff when just falling asleep and when getting up
     def JustFellAsleep(self):
-        if GlobalStatus.Wakefulness < self.MinWakefulnessToBeAwake and GlobalStatus.IAmSleeping == False:
-            return True
-        else:
-            return False
+        return GlobalStatus.Wakefulness < self.MinWakefulnessToBeAwake and GlobalStatus.IAmSleeping == False
     def JustWokeUp(self):
-        if GlobalStatus.Wakefulness > self.MinWakefulnessToBeAwake and GlobalStatus.IAmSleeping == True:
-            return True
-        else:
-            return False
+        return GlobalStatus.Wakefulness > self.MinWakefulnessToBeAwake and GlobalStatus.IAmSleeping == True
 
     # This code shall be in a museum. 
     # At one time I figured that I would automatically set the bedtime and wake up times according to the trend. But it never worked out quite right. So, at length, fuck it. 
