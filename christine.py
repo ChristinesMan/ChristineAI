@@ -2293,7 +2293,9 @@ class Script_Touch(threading.Thread):
                     GlobalStatus.ChanceToSpeak = float(np.clip(GlobalStatus.ChanceToSpeak, 0.0, 1.0))
                     GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
                 elif SensorData == 'Vagina':
-                    pass
+                    Thread_Breath.QueueSound(Sound=Collections['breathe_sex'].GetRandomSound(), IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=7)
+                    if random.random() > 0.7:
+                        Thread_Breath.QueueSound(Sound=Collections['sex_conversation'].GetRandomSound(), IgnoreSpeaking=True, Priority=8)
                 elif SensorData == 'FAIL':
                     GlobalStatus.TouchedLevel = 0.0
                     return
