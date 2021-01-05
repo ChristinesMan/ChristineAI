@@ -373,7 +373,7 @@ class SoundsDB():
             Sounds.append(Sound)
         return Sounds
 
-    def Update(self, sound_id, base_volume_adjust = None, ambience_volume_adjust = None, intensity = None, cuteness = None, tempo_range = None):
+    def Update(self, sound_id, base_volume_adjust = None, ambience_volume_adjust = None, intensity = None, cuteness = None, tempo_range = None, replay_wait = None):
         """
             Update one sound
         """
@@ -388,6 +388,8 @@ class SoundsDB():
             self.DoQuery(f'UPDATE sounds SET cuteness = {cuteness} WHERE id = {sound_id}')
         if tempo_range != None:
             self.DoQuery(f'UPDATE sounds SET tempo_range = {tempo_range} WHERE id = {sound_id}')
+        if replay_wait != None:
+            self.DoQuery(f'UPDATE sounds SET replay_wait = {replay_wait} WHERE id = {sound_id}')
 
     def NewSound(self, new_path):
         """
@@ -646,15 +648,23 @@ Sounds = SoundsDB()
 class SoundCollection():
     def __init__(self, name):
         self.name = name
-        self.sounds = []
+
+        # Thought for a while how to handle the replay_wait that will be per sound
+        # There will be a master list, and a list updated every 100s that sounds will actually be selected from
+        # And we need a LastUpdate var to keep track of when we last updated the available list
+        self.SoundsInCollection = []
+        self.SoundsAvailableToPlay = []
+        self.NextUpdateSeconds = 0
+
+        # Generator that yields all the sound ids in the collection
         self.SoundIDs = self.SoundIDGenerator()
-        self.LastPlayed = {}
+
         for sound_id in self.SoundIDs:
             if sound_id != None:
                 Sound = Sounds.GetSound(sound_id = sound_id)
                 if Sound != None:
-                    self.sounds.append(Sound)
-                    self.LastPlayed[sound_id] = 0
+                    Sound['SkipUntil'] = 0
+                    self.SoundsInCollection.append(Sound)
                 else:
                     log.warning(f'Removed derelict sound id {sound_id} from {name} collection')
                     Sounds.CollectionUpdate(sound_id = sound_id, collection_name = name, state = False)
@@ -662,6 +672,7 @@ class SoundCollection():
     def SoundIDGenerator(self):
         """Generator that yields sound ids
         """
+
         Row = Sounds.GetCollection(self.name)
 
         # In case the db row has null in that field, like no sounds in the collection
@@ -680,16 +691,56 @@ class SoundCollection():
                     # sqllog.debug(f'id: {element}')
                     yield int(element)
 
-    def GetRandomSound(self):
-        """Returns some weird ass rando sound, but if we played that sound less than 60s ago, choose another
+    def UpdateAvailableSounds(self):
+        """Updates the list that keeps track of sounds that are available to play
         """
-        while True:
-            Choice = random.choice(self.sounds)
-            sound_id = Choice['id']
-            if self.LastPlayed[sound_id] < time.time() - 60:
-                break
-        self.LastPlayed[sound_id] = time.time()
-        return Choice
+
+        # Store the time so that we don't have to call time so much
+        CurrentSeconds = time.time()
+
+        # Throw this 100s in the future
+        self.NextUpdateSeconds = CurrentSeconds + 100
+
+        # Empty the list of available sounds
+        self.SoundsAvailableToPlay = []
+
+        # Go through all the sounds and add available ones to the list
+        for Sound in self.SoundsInCollection:
+            if Sound['SkipUntil'] < CurrentSeconds:
+                self.SoundsAvailableToPlay.append(Sound)
+
+    def GetRandomSound(self, intensity = None):
+        """Returns some weird ass rando sound. 
+        """
+
+        # if it's time to update the available list, do it
+        if self.NextUpdateSeconds < time.time():
+            self.UpdateAvailableSounds()
+
+        # log.info(f'{self.name} len: {len(self.SoundsAvailableToPlay)}')
+
+        # There may be times that we run out of available sounds and have to throw a None
+        if len(self.SoundsAvailableToPlay) == 0:
+            return None
+
+        # if the desired intensity is specified, we want to only select sounds near that intensity
+        if intensity == None:
+            RandoSound = random.choice(self.SoundsAvailableToPlay)
+        else:
+            SoundsNearIntensity = []
+            for Sound in self.SoundsAvailableToPlay:
+                if math.isclose(Sound['intensity'], intensity, abs_tol = 0.15):
+                    SoundsNearIntensity.append(Sound)
+            if len(SoundsNearIntensity) == 0:
+                return None
+            RandoSound = random.choice(SoundsNearIntensity)
+
+        # set the sound's skip until this, in seconds, and remove it from the available sounds. 
+        if RandoSound['replay_wait'] != 0:
+            RandoSound['SkipUntil'] = time.time() + RandoSound['replay_wait']
+            self.SoundsAvailableToPlay.remove(RandoSound)
+
+        return RandoSound
 
 Collections = {}
 for CollectionName in Sounds.Collections():
@@ -895,11 +946,12 @@ class Breath(threading.Thread):
 
     # Add a sound to the queue to be played
     def QueueSound(self, Sound, CutAllSoundAndPlay = False, Priority = 5, PlayWhenSleeping = False, IgnoreSpeaking = False, Delay = 0):
-        # If a collection is empty, it's possible to get a None sound. Just chuck it. 
+        # If a collection is empty, or no sounds available at this time, it's possible to get a None sound. Just chuck it. 
         if Sound != None:
             # Take the Sound and add all the options to it. Merges the two dicts into one. 
             Sound.update({'cutsound': CutAllSoundAndPlay, 'priority': Priority, 'playsleeping': PlayWhenSleeping, 'ignorespeaking': IgnoreSpeaking, 'delayer': Delay, 'is_playing': False})
             self.Queue_Breath.append(Sound)
+            soundlog.info(f'Queued: {Sound}')
 
 # This comment block belongs in a museum!! (therefore, I'm keeping it forever to remember what shit we started at)
 # def TellBreath(Request, Sound = None, SoundType = None, CutAllSoundAndPlay = False, Priority = 5):
@@ -2670,9 +2722,18 @@ class WebServerHandler(BaseHTTPRequestHandler):
                     post_data_split = post_data.split(',')
                     SoundId = post_data_split[0]
                     NewTempoRange = post_data_split[1]
-                    log.info('Tempo Range change via web: %s (new intensity %s)', SoundId, NewTempoRange)
+                    log.info('Tempo Range change via web: %s (new range %s)', SoundId, NewTempoRange)
                     Sounds.Update(sound_id = SoundId, tempo_range = NewTempoRange)
                     Sounds.Reprocess(sound_id = SoundId)
+                    self.wfile.write(b'done')
+                elif self.path == '/ReplayWaitChange':
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/plain')
+                    post_data_split = post_data.split(',')
+                    SoundId = post_data_split[0]
+                    NewReplayWait = post_data_split[1]
+                    log.info('Replay Wait change via web: %s (new wait %s)', SoundId, NewReplayWait)
+                    Sounds.Update(sound_id = SoundId, replay_wait = NewReplayWait)
                     self.wfile.write(b'done')
                 elif self.path == '/Status_Update':
                     self.send_response(200)
@@ -3111,6 +3172,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
         SoundIntensity = Row['intensity']
         SoundCuteness = Row['cuteness']
         SoundTempoRange = Row['tempo_range']
+        SoundReplayWait = Row['replay_wait']
 
         html_out = f"<button class=\"btn\" onClick=\"if (window.confirm('Press OK to REALLY delete the sound')){{ButtonHit('/Delete_Sound', '{SoundId}'); document.getElementById('Sound{SoundId}').remove();}} return false;\"><i class=\"fa fa-trash-o\" aria-hidden=\"true\"></i></button>Delete Sound<br/>\n"
 
@@ -3157,6 +3219,15 @@ class WebServerHandler(BaseHTTPRequestHandler):
             else:
                 html_out += "<option "
             html_out += "value=\"" + format(select_option, '.2f') + "\">" + format(select_option, '.2f') + "</option>\n"
+        html_out += "</select><br/>\n"
+
+        html_out += f"Replay Wait (minutes) <select class=\"replay_wait\" onchange=\"ButtonHit('/ReplayWaitChange', '{SoundId}', this.value); return false;\">\n"
+        for select_option in [('No wait', 0), ('1 minute', 60), ('5 minutes', 300), ('30 minutes', 1800), ('1 hour', 3600), ('2 hours', 7200), ('5 hours', 18000), ('8 hours', 28800), ('12 hours', 43200), ('24 hours', 86400), ('48 hours', 172800)]:
+            if select_option[1] == SoundReplayWait:
+                html_out += "<option selected=\"true\" "
+            else:
+                html_out += "<option "
+            html_out += "value=\"" + str(select_option[1]) + "\">" + select_option[0] + "</option>\n"
         html_out += "</select><br/>\n"
 
         html_out += "<h5>Collections</h5>\n"
