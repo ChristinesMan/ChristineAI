@@ -1362,7 +1362,7 @@ class Wernicke(threading.Thread):
                             else:
                                 yield block
                                 triggered_blocks += 1
-                                if triggered_blocks > 20:   #temporary
+                                if triggered_blocks > 30:   #temporary
                                     log.warning('triggered_blocks limit chopped off the wernicke recording')
                                     silence = True
                                 if silence:
@@ -1819,15 +1819,23 @@ class Sensor_MPU(threading.Thread):
     name = 'Sensor_MPU'
     def __init__ (self):
         threading.Thread.__init__(self)
-        self.AccelXRecord = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        self.AccelYRecord = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        self.GyroXRecord = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        self.GyroYRecord = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        self.GyroZRecord = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+        # How many single samples are averaged together to smooth the reading
+        self.SampleSize = 5
+
+        # Varous lists to store single samples. When they're full the values are averaged
+        self.AccelXRecord = [0.0] * self.SampleSize
+        self.AccelYRecord = [0.0] * self.SampleSize
+        self.GyroXRecord = [0.0] * self.SampleSize
+        self.GyroYRecord = [0.0] * self.SampleSize
+        self.GyroZRecord = [0.0] * self.SampleSize
+
+        # Smoothed average values
         self.SmoothXTilt = 0.0
         self.SmoothYTilt = 0.0
         self.TotalJostled = 0.0
-        self.SampleSize = 20
+
+        # index to keep track of pulling the average every SampleSize times
         self.LoopIndex = 0
 
         # I think sometimes the touch sensor or other I2C things conflict with the gyro, so I want to shut it down only after a run of i/o errors
@@ -1836,10 +1844,12 @@ class Sensor_MPU(threading.Thread):
         # I want to keep track of the max jostled level, and taper off slowly
         self.JostledLevel = 0.0
         self.JostledAverageWindow = 400.0
+
     def run(self):
         log.debug('Thread started.')
         try:
             self.sensor = mpu6050(0x68)
+
         except:
             log.error('The gyro had an I/O failure on init. Gyro is unavailable.')
             GlobalStatus.JostledLevel = 0.0
@@ -1859,15 +1869,19 @@ class Sensor_MPU(threading.Thread):
                         GlobalStatus.JostledLevel = 0.0
                         GlobalStatus.IAmLayingDown = False
                         return
+
                 # Keep track of which iteration we're on. Fill the array with data.
                 self.LoopCycle = self.LoopIndex % self.SampleSize
+
                 # For Accel, we're just interested in the tilt of her body. Such as, sitting up, laying down, etc
                 self.AccelXRecord[self.LoopCycle] = data[0]['x']
                 self.AccelYRecord[self.LoopCycle] = data[0]['y']
+
                 # For Gyro, all I'm interested in is a number to describe how jostled she is, so I abs the data
                 self.GyroXRecord[self.LoopCycle] = abs(data[1]['x'])
                 self.GyroYRecord[self.LoopCycle] = abs(data[1]['y'])
                 self.GyroZRecord[self.LoopCycle] = abs(data[1]['z'])
+
                 # Every SampleSize'th iteration, send the average
                 if ( self.LoopCycle == 0 ):
                     # Reset the counter for I/O errors
@@ -1892,7 +1906,7 @@ class Sensor_MPU(threading.Thread):
                     if self.JostledLevel > GlobalStatus.JostledLevel:
                         GlobalStatus.JostledLevel = self.JostledLevel
 
-                    # Update the running average that we're using for wakefulness
+                    # Update the running average
                     GlobalStatus.JostledLevel = ((GlobalStatus.JostledLevel * self.JostledAverageWindow) + self.JostledLevel) / (self.JostledAverageWindow + 1)
 
                     # if she gets hit, wake up a bit
@@ -1910,7 +1924,7 @@ class Sensor_MPU(threading.Thread):
                     # log it
                     gyrolog.debug('{0:.2f}, {1:.2f}, {2:.2f}, {3:.2f}, LayingDown: {4}'.format(self.SmoothXTilt, self.SmoothYTilt, self.JostledLevel, GlobalStatus.JostledLevel, GlobalStatus.IAmLayingDown))
                 self.LoopIndex += 1
-                time.sleep(0.01)
+                time.sleep(0.02)
 
         # log exception in the main.log
         except Exception as e:
@@ -2080,10 +2094,10 @@ class Script_Sleep(threading.Thread):
         self.LocalTime = time.localtime()
 
         # The current conditions, right now. Basically light levels, gyro, noise level, touch, etc all added together, then we calculate a running average to cause gradual drowsiness. zzzzzzzzzz.......
-        self.Arousal = 0.5
+        self.Environment = 0.5
 
         # How quickly should wakefulness change?
-        self.ArousalAverageWindow = 5.0
+        self.EnvironmentAverageWindow = 5.0
 
         # How quickly should the daily hourly wakefulness trend change
         self.TrendAverageWindow = 10.0
@@ -2094,7 +2108,7 @@ class Script_Sleep(threading.Thread):
         self.TouchWeight = 2
         self.NoiseWeight = 3
         self.GyroWeight = 7
-        self.TiltWeight = 5
+        self.TiltWeight = 3
         self.TotalWeight = self.TrendWeight + self.LightWeight + self.TouchWeight + self.NoiseWeight + self.GyroWeight + self.TiltWeight
 
         # if laying down, 0, if not laying down, 1.         
@@ -2129,20 +2143,20 @@ class Script_Sleep(threading.Thread):
                 else:
                     self.Tilt = 1.0
 
-                # Calculate current conditions which we're calling arousal, not related to horny
-                self.Arousal = ((self.TrendWeight * GlobalStatus.WakefulnessTrending[self.LocalTime.tm_hour]) + (self.LightWeight * GlobalStatus.LightLevelPct) + (self.TouchWeight * GlobalStatus.TouchedLevel) + (self.NoiseWeight * GlobalStatus.NoiseLevel) + (self.GyroWeight * GlobalStatus.JostledLevel) + (self.TiltWeight * self.Tilt)) / self.TotalWeight
+                # Calculate current conditions which we're calling Environment, not related to horny
+                self.Environment = ((self.TrendWeight * GlobalStatus.WakefulnessTrending[self.LocalTime.tm_hour]) + (self.LightWeight * GlobalStatus.LightLevelPct) + (self.TouchWeight * GlobalStatus.TouchedLevel) + (self.NoiseWeight * GlobalStatus.NoiseLevel) + (self.GyroWeight * GlobalStatus.JostledLevel) + (self.TiltWeight * self.Tilt)) / self.TotalWeight
 
                 # clip it, can't go below 0 or higher than 1
-                self.Arousal = float(np.clip(self.Arousal, 0.0, 1.0))
+                self.Environment = float(np.clip(self.Environment, 0.0, 1.0))
 
                 # Update the running average that we're using for wakefulness
-                GlobalStatus.Wakefulness = ((GlobalStatus.Wakefulness * self.ArousalAverageWindow) + self.Arousal) / (self.ArousalAverageWindow + 1)
+                GlobalStatus.Wakefulness = ((GlobalStatus.Wakefulness * self.EnvironmentAverageWindow) + self.Environment) / (self.EnvironmentAverageWindow + 1)
 
                 # After updating wakefulness, figure out whether we crossed a threshold. 
                 self.EvaluateWakefulness()
 
                 # log it
-                sleeplog.debug('Arousal = %.2f  LightLevel = %.2f  TouchedLevel = %.2f  NoiseLevel = %.2f  JostledLevel = %.2f  Wakefulness = %.2f', self.Arousal, GlobalStatus.LightLevelPct, GlobalStatus.TouchedLevel, GlobalStatus.NoiseLevel, GlobalStatus.JostledLevel, GlobalStatus.Wakefulness)
+                sleeplog.debug('Environment = %.2f  LightLevel = %.2f  TouchedLevel = %.2f  NoiseLevel = %.2f  JostledLevel = %.2f  Wakefulness = %.2f', self.Environment, GlobalStatus.LightLevelPct, GlobalStatus.TouchedLevel, GlobalStatus.NoiseLevel, GlobalStatus.JostledLevel, GlobalStatus.Wakefulness)
 
                 # At the 30th minute of each hour, I want to adjust the 24 position array we're using to keep track of our usual bedtime
                 # Since we're waiting over 60 seconds each time, this should work fine and not double up
@@ -2172,13 +2186,13 @@ class Script_Sleep(threading.Thread):
     def EvaluateWakefulness(self):
         if self.JustFellAsleep() == True:
             sleeplog.info('JustFellAsleep')
-            GlobalStatus.Wakefulness -= 0.2 # try to prevent wobble
+            GlobalStatus.Wakefulness -= 0.15 # try to prevent wobble
             Thread_Breath.QueueSound(Sound=Collections['goodnight'].GetRandomSound(), PlayWhenSleeping=True, Priority=8, CutAllSoundAndPlay=True)
             GlobalStatus.IAmSleeping = True
             Thread_Breath.BreathChange('breathe_sleeping')
         if self.JustWokeUp() == True:
             sleeplog.info('JustWokeUp')
-            GlobalStatus.Wakefulness += 0.2 # try to prevent wobble
+            GlobalStatus.Wakefulness += 0.15 # try to prevent wobble
             GlobalStatus.IAmSleeping = False
             Thread_Breath.BreathChange('breathe_normal')
             Thread_Breath.QueueSound(Sound=Collections['waking'].GetRandomSound(), PlayWhenSleeping=True, Priority=8, CutAllSoundAndPlay=True)
@@ -2417,7 +2431,7 @@ class Script_I_Love_Yous(threading.Thread):
                         Thread_Breath.QueueSound(Sound=Collections['startrekconversate'].GetRandomSound())
                     else:
                         Thread_Breath.QueueSound(Sound=Collections['loving'].GetRandomSound())
-                soundlog.info('ChanceToSpeak = %.2f', GlobalStatus.ChanceToSpeak)
+                soundlog.debug('ChanceToSpeak = %.2f', GlobalStatus.ChanceToSpeak)
                 GlobalStatus.ChanceToSpeak -= 0.01
 
                 # Can't go past 0 or past 1
