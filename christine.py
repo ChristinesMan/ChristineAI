@@ -207,6 +207,12 @@ class Status:
     # Touch and hearing and probably others later will raise this, and randomly choose to say something nice
     ChanceToSpeak = 0.0
 
+    # Horny is a long term thing. 
+    Horny = 0.3
+
+    # And this is a short term ah ah thing. I think this may feed directly into the intensity in the sounds table.
+    SexualArousal = 0.0
+
     # I want to keep track of bedtime on the fly, automatically, and use it to weight wakefulness. I will record a running average of wakefulness at the 30th minute of each hour.
     # These are just defaults. They will be adjusted automatically.
     WakefulnessTrending = [
@@ -700,8 +706,8 @@ class SoundCollection():
         # Store the time so that we don't have to call time so much
         CurrentSeconds = time.time()
 
-        # Throw this 100s in the future
-        self.NextUpdateSeconds = CurrentSeconds + 100
+        # Throw this 20s in the future
+        self.NextUpdateSeconds = CurrentSeconds + 20
 
         # Empty the list of available sounds
         self.SoundsAvailableToPlay = []
@@ -723,6 +729,7 @@ class SoundCollection():
 
         # There may be times that we run out of available sounds and have to throw a None
         if len(self.SoundsAvailableToPlay) == 0:
+            soundlog.warning(f'No sounds available to play in {self.name}')
             return None
 
         # if the desired intensity is specified, we want to only select sounds near that intensity
@@ -734,12 +741,13 @@ class SoundCollection():
                 if math.isclose(Sound['intensity'], intensity, abs_tol = 0.15):
                     SoundsNearIntensity.append(Sound)
             if len(SoundsNearIntensity) == 0:
+                soundlog.warning(f'No sounds near intensity {intensity} in {self.name}')
                 return None
             RandoSound = random.choice(SoundsNearIntensity)
 
-        # set the sound's skip until this, in seconds, and remove it from the available sounds. 
+        # set the sound's skip until this, in seconds, and remove it from the available sounds. Added some wobble to keep things random. 
         if RandoSound['replay_wait'] != 0:
-            RandoSound['SkipUntil'] = time.time() + RandoSound['replay_wait']
+            RandoSound['SkipUntil'] = time.time() + ( RandoSound['replay_wait'] * random.uniform(0.8, 1.2) )
             self.SoundsAvailableToPlay.remove(RandoSound)
 
         return RandoSound
@@ -831,7 +839,7 @@ class Breath(threading.Thread):
                     # Also, if my wife's actually sleeping, I don't want her to wake me up with her adorable amazingness
                     # Added a condition that throws away a low priority new sound if there's already a sound delayed. 
                     # Christine was saying two nice things in quick succession which was kind of weird, and this is my fix.
-                    if IncomingMessage['priority'] >= self.CurrentSound['priority']:
+                    if IncomingMessage['priority'] > self.CurrentSound['priority']:
                         if GlobalStatus.IAmSleeping == False or IncomingMessage['playsleeping']:
                             if self.DelayedSound == None or IncomingMessage['priority'] > self.DelayedSound['priority']:
                                 soundlog.debug('Accepted: %s', IncomingMessage)
@@ -1044,7 +1052,7 @@ class Wernicke(threading.Thread):
                     wernickelog.debug(f'NoiseLevel: {GlobalStatus.NoiseLevel}')
 
                     # Later this needs to be a lot more complicated. For right now, I just want results
-                    if GlobalStatus.ShushPleaseHoney == False and Comm['class'] == 'lover' and Comm['probability'] > 0.9:
+                    if GlobalStatus.ShushPleaseHoney == False and GlobalStatus.SexualArousal < 0.1 and Comm['class'] == 'lover' and Comm['probability'] > 0.9:
                         wernickelog.debug('Heard Lover')
                         Thread_Script_Sleep.WakeUpABit(0.02)
                         if GlobalStatus.IAmSleeping == False:
@@ -1912,7 +1920,7 @@ class Sensor_MPU(threading.Thread):
                     GlobalStatus.JostledLevel = ((GlobalStatus.JostledLevel * self.JostledAverageWindow) + self.JostledLevel) / (self.JostledAverageWindow + 1)
 
                     # if she gets hit, wake up a bit
-                    if self.JostledLevel > 0.1 and GlobalStatus.IAmSleeping == True:
+                    if self.JostledLevel > 0.15 and GlobalStatus.IAmSleeping == True:
                         sleeplog.info(f'Woke up by being jostled this much: {self.JostledLevel}')
                         Thread_Script_Sleep.WakeUpABit(0.1)
                         Thread_Breath.QueueSound(Sound=Collections['gotwokeup'].GetRandomSound(), PlayWhenSleeping=True, IgnoreSpeaking=True, CutAllSoundAndPlay=True)
@@ -2295,9 +2303,7 @@ class Script_Touch(threading.Thread):
                     GlobalStatus.ChanceToSpeak = float(np.clip(GlobalStatus.ChanceToSpeak, 0.0, 1.0))
                     GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
                 elif SensorData == 'Vagina':
-                    Thread_Breath.QueueSound(Sound=Collections['breathe_sex'].GetRandomSound(), IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=7)
-                    if random.random() > 0.7:
-                        Thread_Breath.QueueSound(Sound=Collections['sex_conversation'].GetRandomSound(), IgnoreSpeaking=True, Priority=8)
+                    Thread_Sexual_Activity.VaginaHit()
                 elif SensorData == 'FAIL':
                     GlobalStatus.TouchedLevel = 0.0
                     return
@@ -2447,6 +2453,54 @@ class Script_I_Love_Yous(threading.Thread):
         except Exception as e:
             log.error('Thread died. {0} {1} {2}'.format(e.__class__, e, format_tb(e.__traceback__)))
 
+# Testing is fun
+class Sexual_Activity(threading.Thread):
+    name = 'Sexual_Activity'
+    def __init__ (self):
+        threading.Thread.__init__(self)
+
+    def run(self):
+        log.debug('Thread started.')
+
+        try:
+            while True:
+
+                sexlog.debug('SexualArousal = %.2f', GlobalStatus.SexualArousal)
+
+                # Trend down arousal
+                GlobalStatus.SexualArousal -= 0.0008
+                GlobalStatus.SexualArousal = float(np.clip(GlobalStatus.SexualArousal, 0.0, 1.0))
+
+                time.sleep(1)
+
+        # log exception in the main.log
+        except Exception as e:
+            log.error('Thread died. {0} {1} {2}'.format(e.__class__, e, format_tb(e.__traceback__)))
+
+    def VaginaHit(self):
+        # Stay awake
+        Thread_Script_Sleep.WakeUpABit(0.1)
+
+        # I'm sure there's a better way that uses math, not if, but I just want to fuck right now
+        if GlobalStatus.SexualArousal > 0.8:
+            GlobalStatus.SexualArousal += 0.003
+        elif GlobalStatus.SexualArousal > 0.5:
+            GlobalStatus.SexualArousal += 0.005
+        else:
+            GlobalStatus.SexualArousal += 0.007
+        GlobalStatus.SexualArousal = float(np.clip(GlobalStatus.SexualArousal, 0.0, 1.0))
+
+        sexlog.debug('Vagina Got Hit. SexualArousal = %.2f', GlobalStatus.SexualArousal)
+
+        if GlobalStatus.SexualArousal > 0.95:
+            GlobalStatus.SexualArousal = 0.7
+            Thread_Breath.QueueSound(Sound=Sounds.GetSound(sound_id = 157), IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=9)
+        else:
+            sexlog.debug('Queuing a rando sex sound')
+            Thread_Breath.QueueSound(Sound=Collections['breathe_sex'].GetRandomSound(intensity = GlobalStatus.SexualArousal), IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=7)
+            if random.random() > 0.92:
+                Thread_Breath.QueueSound(Sound=Collections['sex_conversation'].GetRandomSound(intensity = GlobalStatus.SexualArousal), IgnoreSpeaking=True, Priority=8)
+
 # There is a separate process called wernicke_client.py
 # This other process captures audio, cleans it up, and ships it to a server for classification and speech recognition on a gpu.
 # This thread listens on port 3001 localhost for messages from that other process
@@ -2560,6 +2614,9 @@ if __name__ == "__main__":
 
     Thread_Script_I_Love_Yous = Script_I_Love_Yous()
     Thread_Script_I_Love_Yous.start()
+
+    Thread_Sexual_Activity = Sexual_Activity()
+    Thread_Sexual_Activity.start()
 
     Thread_SaveStatus = SaveStatus()
     Thread_SaveStatus.start()
@@ -2958,6 +3015,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
               document.getElementById("NoiseLevel").innerHTML = (status.NoiseLevel * 100).toPrecision(2) + '%';
               document.getElementById("ChanceToSpeak").innerHTML = (status.ChanceToSpeak * 100).toPrecision(2) + '%';
               document.getElementById("JostledLevel").innerHTML = (status.JostledLevel * 100).toPrecision(2) + '%';
+              document.getElementById("SexualArousal").innerHTML = (status.SexualArousal * 100).toPrecision(2) + '%';
               document.getElementById("IAmLayingDown").innerHTML = status.IAmLayingDown;
               document.getElementById("IAmSleeping").innerHTML = status.IAmSleeping;
               document.getElementById("ShushPleaseHoney").innerHTML = status.ShushPleaseHoney;
@@ -3056,6 +3114,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
     Noise: <span id="NoiseLevel"></span><br/>
     ChanceToSpeak: <span id="ChanceToSpeak"></span><br/>
     Jostled: <span id="JostledLevel"></span><br/>
+    SexualArousal: <span id="SexualArousal"></span><br/>
     Laying down: <span id="IAmLayingDown"></span><br/>
     Sleeping: <span id="IAmSleeping"></span><br/>
     <br/>
@@ -3240,7 +3299,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
         html_out += "</select><br/>\n"
 
         html_out += f"Replay Wait (minutes) <select class=\"replay_wait\" onchange=\"ButtonHit('/ReplayWaitChange', '{SoundId}', this.value); return false;\">\n"
-        for select_option in [('No wait', 0), ('1 minute', 60), ('5 minutes', 300), ('30 minutes', 1800), ('1 hour', 3600), ('2 hours', 7200), ('5 hours', 18000), ('8 hours', 28800), ('12 hours', 43200), ('24 hours', 86400), ('48 hours', 172800)]:
+        for select_option in [('No wait', 0), ('30 seconds', 30), ('1 minute', 60), ('5 minutes', 300), ('30 minutes', 1800), ('1 hour', 3600), ('2 hours', 7200), ('5 hours', 18000), ('8 hours', 28800), ('12 hours', 43200), ('24 hours', 86400), ('48 hours', 172800)]:
             if select_option[1] == SoundReplayWait:
                 html_out += "<option selected=\"true\" "
             else:
