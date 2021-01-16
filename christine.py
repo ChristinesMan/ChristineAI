@@ -91,18 +91,19 @@ from pyAudioAnalysis import MidTermFeatures as mF
 from pyAudioAnalysis import audioTrainTest as aT
 import asyncio
 
-# Setup the log file
-log.basicConfig(filename='main.log', filemode='a', format='%(asctime)s - %(levelname)s - %(threadName)s - %(message)s', level=log.DEBUG)
+# Make sure the logs dir exists
+os.makedirs('./logs/', exist_ok=True)
+
+# Setup the main log file
+log.basicConfig(filename='logs/main.log', filemode='a', format='%(asctime)s - %(levelname)s - %(threadName)s - %(message)s', level=log.DEBUG)
 
 # Setup logging to multiple files. Based on https://stackoverflow.com/questions/11232230/logging-to-two-files-with-different-settings
-def setup_logger(name, log_file, level=log.INFO, format='%(asctime)s - %(message)s'):
+def setup_logger(name, level=log.INFO, format='%(asctime)s - %(message)s'):
     """Function to setup as many loggers as you want"""
 
     theformat = log.Formatter(format)
-
-    handler = log.FileHandler(log_file)
+    handler = log.FileHandler(f'./logs/{name}.log')
     handler.setFormatter(theformat)
-
     logger = log.getLogger(name)
     logger.setLevel(level)
     logger.addHandler(handler)
@@ -111,17 +112,18 @@ def setup_logger(name, log_file, level=log.INFO, format='%(asctime)s - %(message
     return logger
 
 # Lots of separate log files
-gyrolog = setup_logger('gyro', 'gyro.log', level=log.INFO)
-lightlog = setup_logger('light', 'light.log', level=log.INFO)
-cputemplog = setup_logger('cputemp', 'cputemp.log', level=log.DEBUG)
-battlog = setup_logger('batt', 'battery.log', level=log.DEBUG)
-soundlog = setup_logger('sound', 'sound.log', level=log.INFO)
-sqllog = setup_logger('sql', 'sql.log', level=log.INFO)
-weblog = setup_logger('web', 'web.log', level=log.INFO)
-touchlog = setup_logger('touch', 'touch.log', level=log.INFO)
-sleeplog = setup_logger('sleep', 'sleep.log', level=log.DEBUG)
-wernickelog = setup_logger('wernicke', 'wernicke.log', level=log.INFO)
-templog = setup_logger('temp', 'temp.log', level=log.DEBUG)
+gyrolog =     setup_logger('gyro',     level=log.INFO)
+lightlog =    setup_logger('light',    level=log.INFO)
+cputemplog =  setup_logger('cputemp',  level=log.DEBUG)
+battlog =     setup_logger('batt',     level=log.DEBUG)
+soundlog =    setup_logger('sound',    level=log.DEBUG)
+sqllog =      setup_logger('sql',      level=log.INFO)
+weblog =      setup_logger('web',      level=log.INFO)
+touchlog =    setup_logger('touch',    level=log.INFO)
+sleeplog =    setup_logger('sleep',    level=log.DEBUG)
+wernickelog = setup_logger('wernicke', level=log.INFO)
+templog =     setup_logger('temp',     level=log.DEBUG)
+sexlog =      setup_logger('sex',      level=log.DEBUG)
 
 # I want to log exceptions to the main log. Because it appears that redirecting stderr from the service is not capturing all the errors
 # So it looks like syntax and really batshit crazy stuff goes to journalctl. Softer stuff goes into the main log now. 
