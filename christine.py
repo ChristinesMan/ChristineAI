@@ -712,8 +712,8 @@ class SoundCollection():
         # Store the time so that we don't have to call time so much
         CurrentSeconds = time.time()
 
-        # Throw this 20s in the future
-        self.NextUpdateSeconds = CurrentSeconds + 20
+        # Throw this 5s in the future
+        self.NextUpdateSeconds = CurrentSeconds + 5
 
         # Empty the list of available sounds
         self.SoundsAvailableToPlay = []
@@ -1312,6 +1312,7 @@ class Wernicke(threading.Thread):
 
                                 if win_class == 'silence' or win_class == 'keyboard' or win_class == 'ignore':
                                     silence = True
+                                    lover = False
                                     
                                     # manually enabled as needed
                                     # RecordTimeStamp = str(round(time.time(), 2)).replace('.', '')
@@ -1325,6 +1326,7 @@ class Wernicke(threading.Thread):
 
                                 elif win_class == 'lyriq' or win_class == 'roxy':
                                     silence = False
+                                    lover = False
 
                                     # if win_prob > 0.8:
                                     # RecordTimeStamp = str(round(time.time(), 2)).replace('.', '')
@@ -1354,6 +1356,7 @@ class Wernicke(threading.Thread):
                                 # wf.close()
                             else:
                                 silence = True
+                                lover = False
 
                                 wernickelog.debug(f'Dropped possible clicking noise. {mean} / {maximum} = {avg_vs_max}')
 
@@ -1382,13 +1385,11 @@ class Wernicke(threading.Thread):
                                     log.warning('triggered_blocks limit chopped off the wernicke recording')
                                     silence = True
                                 if silence:
+                                    hey_honey({'class': 'speaking_stop'})
                                     if post_silence <= 0:
                                         wernickelog.debug('untriggered')
                                         triggered = False
                                         triggered_blocks = 0
-                                        if lover == True:
-                                            lover = False
-                                            hey_honey({'class': 'speaking_stop'})
                                         yield None
                                         ring_buffer.clear()
                                     post_silence -= 1
@@ -2203,7 +2204,7 @@ class Script_Sleep(threading.Thread):
             GlobalStatus.Wakefulness -= 0.15 # try to prevent wobble
             Thread_Breath.QueueSound(Sound=Collections['goodnight'].GetRandomSound(), PlayWhenSleeping=True, Priority=8, CutAllSoundAndPlay=True)
             GlobalStatus.IAmSleeping = True
-            Thread_Breath.BreathChange('breathe_sleeping')
+            Thread_Breath.BreathChange('breathe_sleepy')
         if self.JustWokeUp() == True:
             sleeplog.info('JustWokeUp')
             GlobalStatus.Wakefulness += 0.15 # try to prevent wobble
