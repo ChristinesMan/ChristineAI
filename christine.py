@@ -262,6 +262,8 @@ class Status:
     StarTrekMode = False
     ShushPleaseHoney = False
 
+# Never, ever think again about adding automatic percentage clipping to this class. 
+
 # Either unpickle, or initialize with defaults
 try:
     with open('GlobalStatus.pickle', 'rb') as pfile:
