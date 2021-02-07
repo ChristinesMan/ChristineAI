@@ -135,7 +135,7 @@ sys.excepthook = log_exception
 # We were here
 log.info('Script started')
 
-# Various settings that I want way at the top like this for easy changing
+# Various hardware settings
 HardwareConfig = {
     # GPIO pins used for head touches
     'TOUCH_LCHEEK': 25,
@@ -169,6 +169,10 @@ HardwareConfig = {
     'ADC1_TEMP_TORSO': 5,
     'ADC1_TEMP_DEEP': 6,
     'ADC1_TEMP_PUSSY': 7,
+    # Touch and release sensitivity for the MPR121 touch sensor. Higher numbers are less sensitive. 
+    'TOUCH_SENSITIVITY': [12, 12, 20, 12, 12, 12, 12, 12, 12, 12, 12, 12],
+    'RELEASE_SENSITIVITY': [10, 10, 10, 6, 6, 6, 6, 6, 6, 6, 6, 6],
+    'TOUCH_DEBOUNCE': 3,
 }
 
 # Global object to store all status
@@ -242,7 +246,7 @@ class Status:
         0.0, # 23:00
     ]
 
-    # Seems like pickling that list isn't working, so maybe picking the list separately? Yes, it worked. 
+    # Seems like pickling that list isn't working, so maybe pickling the list separately? Yes, it worked. 
     WakefulnessTrendingPickled = bytes()
 
     # Booleans for sleep/wake
@@ -1469,8 +1473,6 @@ class Wernicke(threading.Thread):
 
             blocks = audio.collector()
 
-            # os.makedirs('training_wavs', exist_ok=True)
-
             # Basically this area accumulates the audio blocks. VAD filters. When VAD assembles a complete utterance, it sends signals to the main process and sends the entire utterance over to the server
             AccumulatedDataLeft = bytearray()
             AccumulatedDataRight = bytearray()
@@ -2349,7 +2351,8 @@ class Script_Touch(threading.Thread):
             # Create MPR121 touch sensor object.
             # The sensitivity settings were ugly hacked into /usr/local/lib/python3.6/site-packages/adafruit_mpr121.py
             try:
-                mpr121 = adafruit_mpr121.MPR121(i2c)
+                mpr121 = adafruit_mpr121.MPR121(i2c, touch_sensitivity=HardwareConfig['TOUCH_SENSITIVITY'], release_sensitivity=HardwareConfig['RELEASE_SENSITIVITY'], debounce=HardwareConfig['TOUCH_DEBOUNCE'])
+                touchlog.info('Touch sensor init success')
             except:
                 mpr121 = None
                 honey_touched('FAIL')
