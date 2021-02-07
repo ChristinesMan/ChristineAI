@@ -1876,6 +1876,7 @@ class Sensor_MPU(threading.Thread):
                 # Get data from sensor at full speed. Doesn't seem to need any sleeps. I'm testing with a sleep now. 
                 try:
                     data = self.sensor.get_all_data()
+                    self.IOErrors = 0
                 except:
                     self.IOErrors += 1
                     log.error('The gyro had an I/O failure. Count = %s.', self.IOErrors)
@@ -1900,7 +1901,6 @@ class Sensor_MPU(threading.Thread):
                 # Every SampleSize'th iteration, send the average
                 if ( self.LoopCycle == 0 ):
                     # Reset the counter for I/O errors
-                    self.IOErrors = 0
                     self.SmoothXTilt = sum(self.AccelXRecord) / self.SampleSize
                     self.SmoothYTilt = sum(self.AccelYRecord) / self.SampleSize
                     self.TotalJostled = (sum(self.GyroXRecord) / self.SampleSize) + (sum(self.GyroYRecord) / self.SampleSize) + (sum(self.GyroZRecord) / self.SampleSize)
@@ -2282,8 +2282,10 @@ class Script_Touch(threading.Thread):
                 # Such a primitive signaling technology has not been in active use since the dark ages of the early 21st century! 
                 # An embarrassing era in earth's history characterized by the fucking of inanimate objects and mass hysteria. 
                 SensorData = self.PipeToProbe.recv()
-                touchlog.info(f'Sensor Data: {SensorData}')
-                if SensorData == 'LeftCheek':
+                # touchlog.debug(f'Sensor Data: {SensorData}')
+                if type(SensorData) is list:
+                    Thread_Sexual_Activity.VaginaPulledOut(SensorData)
+                elif SensorData == 'LeftCheek':
                     GlobalStatus.TouchedLevel += 0.05
                     GlobalStatus.ChanceToSpeak += 0.05
 
@@ -2307,8 +2309,8 @@ class Script_Touch(threading.Thread):
                     # Can't go past 0 or past 1
                     GlobalStatus.ChanceToSpeak = float(np.clip(GlobalStatus.ChanceToSpeak, 0.0, 1.0))
                     GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
-                elif SensorData == 'Vagina':
-                    Thread_Sexual_Activity.VaginaHit()
+                elif SensorData == 'Clitoris' or SensorData == 'Vagina_Middle' or SensorData == 'Vagina_Deep':
+                    Thread_Sexual_Activity.VaginaHit(SensorData)
                 elif SensorData == 'FAIL':
                     GlobalStatus.TouchedLevel = 0.0
                     return
@@ -2326,9 +2328,9 @@ class Script_Touch(threading.Thread):
             # 3 in the head used on the 5 channel touch sensor. 12 channels in the body.
             # These correspond with the channel numbers 0-11
             BodyTouchZones = [
-                'Vagina',
-                'notinstalled_01',
-                'notinstalled_02',
+                'Clitoris',
+                'Vagina_Middle',
+                'Vagina_Deep',
                 'notinstalled_03',
                 'notinstalled_04',
                 'notinstalled_05',
@@ -2338,6 +2340,14 @@ class Script_Touch(threading.Thread):
                 'notinstalled_09',
                 'notinstalled_10',
                 'notinstalled_11']
+
+            # Keep track of when a sensor is touched, and when it is released so we can report how long.
+            # I have found the sensor sends an event both when touched, and again when released.
+            # If it's touched, the list contains a time, None otherwise
+            # When the touch starts, report that immediately so there's instant feedback
+            # When it changes to None, the time will be reported
+            # So the touch starting triggers sound right away. The time that comes later should increase arousal.
+            SensorTracking = [None] * 12
 
             # track how many recent I/O errors
             IOErrors = 0
@@ -2367,21 +2377,22 @@ class Script_Touch(threading.Thread):
 
             # Detect left cheek touch
             def Sensor_LeftCheek(channel):
-                touchlog.info('Touched: Left cheek')
+                # touchlog.debug('Touched: Left cheek')
                 honey_touched('LeftCheek')
 
             # Detect right cheek touch
             def Sensor_RightCheek(channel):
-                touchlog.info('Touched: Right cheek')
+                # touchlog.debug('Touched: Right cheek')
                 honey_touched('RightCheek')
 
             # Detect being kissed
             def Sensor_Kissed(channel):
-                touchlog.info('Somebody kissed me!')
+                # touchlog.debug('Somebody kissed me!')
                 honey_touched('OMGKisses')
 
             # Detect being touched on the 12 sensors in the body
             def Sensor_Body(channel):
+                nonlocal SensorTracking
                 nonlocal IOErrors
                 # Get... all the cheese
                 # It appears there is no performance penalty from getting all the pins vs one pin
@@ -2389,6 +2400,7 @@ class Script_Touch(threading.Thread):
 
                 try:
                     touched = mpr121.touched_pins
+                    IOErrors = 0
                 except:
                     IOErrors += 1
                     log.warning('The touch sensor had an I/O failure. Count = %s.', IOErrors)
@@ -2397,15 +2409,26 @@ class Script_Touch(threading.Thread):
                         GPIO.remove_event_detect(HardwareConfig['TOUCH_BODY'])
                         honey_touched('FAIL')
                         return
-                touchlog.debug('Touch array: %s', touched)
+
+                # Go through all 12 channels
                 for i in range(12):
                     if touched[i]:
-                        honey_touched(BodyTouchZones[i])
-                        touchlog.info('Touched: %s', BodyTouchZones[i])
+                        if SensorTracking[i] == None:
+                            SensorTracking[i] = time.time()
+                            honey_touched(BodyTouchZones[i])
+                            touchlog.info(f'{BodyTouchZones[i]} touched')
+                    else:
+                        if SensorTracking[i] != None:
+                            TouchedDuration = round(time.time() - SensorTracking[i], 2)
+                            honey_touched([BodyTouchZones[i], TouchedDuration])
+                            SensorTracking[i] = None
+                            touchlog.info(f'{BodyTouchZones[i]} released ({TouchedDuration}s)')
+
+                touchlog.debug('Touch array: %s', touched)
 
             # As long as the init up there didn't fail, start monitoring the IRQ
             if mpr121 != None:
-                GPIO.add_event_detect(HardwareConfig['TOUCH_BODY'], GPIO.FALLING, callback=Sensor_Body, bouncetime=200)
+                GPIO.add_event_detect(HardwareConfig['TOUCH_BODY'], GPIO.FALLING, callback=Sensor_Body)
 
             # Setup GPIO interrupts for head touch sensor
             GPIO.add_event_detect(HardwareConfig['TOUCH_LCHEEK'], GPIO.RISING, callback=Sensor_LeftCheek, bouncetime=3000)
@@ -2418,9 +2441,19 @@ class Script_Touch(threading.Thread):
             # So reading the mpr121 code seems like touched() is the one that does the least other BS
             # There's a reset() but that does a whole lot of other garbage besides resetting the IRQ line
             while True:
-                if GPIO.input(HardwareConfig['TOUCH_BODY']) == False:
-                    touched = mpr121.touched()
-                time.sleep(0.5)
+                try:
+                    if GPIO.input(HardwareConfig['TOUCH_BODY']) == False:
+                        touched = mpr121.touched()
+                        IOErrors = 0
+                    time.sleep(2)
+                except:
+                    IOErrors += 1
+                    log.warning('The touch sensor had an I/O failure. Count = %s.', IOErrors)
+                    if IOErrors > 10:
+                        log.critical('The touch sensor thread has been shutdown.')
+                        GPIO.remove_event_detect(HardwareConfig['TOUCH_BODY'])
+                        honey_touched('FAIL')
+                        return
 
         # log exception in the main.log
         except Exception as e:
@@ -2465,17 +2498,53 @@ class Sexual_Activity(threading.Thread):
     def __init__ (self):
         threading.Thread.__init__(self)
 
+        # Basically, I don't want arousal to be linear anymore. 
+        # When arousal reaches some set level, I want to start incrementing the amount added to arousal
+        # It will be slight, but since it will have no cap, eventually wife will OOOOOO
+        self.Multiplier = 1.0
+
+        # omg how many times are you going to make me cum
+        self.SexualInterest = 1.0
+
+        # keep track of Arousal not changing
+        self.LastArousal = 0.0
+        self.ArousalStagnantCount = 0
+        self.SecondsToReset = 60
+
+        # How much she likes it
+        self.BaseArousalPerVagHit = 0.004
+
+        # What Arousal to revert to after orgasm
+        self.ArousalPostO = 0.6
+
+        # Track what vaginal areas getting the most love
+        self.TheLoveTrack = { 'Clitoris': 0, 'Vagina_Middle': 0, 'Vagina_Deep': 0 }
+
     def run(self):
         log.debug('Thread started.')
 
         try:
             while True:
 
-                sexlog.debug('SexualArousal = %.2f', GlobalStatus.SexualArousal)
+                sexlog.debug(f'SexualArousal = {GlobalStatus.SexualArousal:.2f}  Multiplier: {self.Multiplier}')
 
-                # Trend down arousal
-                GlobalStatus.SexualArousal -= 0.0008
-                GlobalStatus.SexualArousal = float(np.clip(GlobalStatus.SexualArousal, 0.0, 1.0))
+                # Has sex stopped for a while?
+                if GlobalStatus.SexualArousal == self.LastArousal:
+                    self.ArousalStagnantCount += 1
+                else:
+                    self.ArousalStagnantCount = 0
+                    self.LastArousal = GlobalStatus.SexualArousal
+
+                # If there's been no vagina hits for a period of time, we must be done, reset all
+                if self.ArousalStagnantCount >= self.SecondsToReset:
+                    self.ArousalStagnantCount = 0
+                    GlobalStatus.SexualArousal = 0.0
+                    self.Multiplier = 1.0
+                    self.ArousalPostO = 0.6
+
+                # If we're to a certain point, start incrementing to ensure wife will cum eventually with enough time
+                if GlobalStatus.SexualArousal > 0.3:
+                    self.Multiplier += 0.004
 
                 time.sleep(1)
 
@@ -2483,29 +2552,36 @@ class Sexual_Activity(threading.Thread):
         except Exception as e:
             log.error('Thread died. {0} {1} {2}'.format(e.__class__, e, format_tb(e.__traceback__)))
 
-    def VaginaHit(self):
-        # Stay awake
-        Thread_Script_Sleep.WakeUpABit(0.1)
+    def VaginaHit(self, area):
+        if GlobalStatus.ShushPleaseHoney == False:
 
-        # I'm sure there's a better way that uses math, not if, but I just want to fuck right now
-        if GlobalStatus.SexualArousal > 0.8:
-            GlobalStatus.SexualArousal += 0.003
-        elif GlobalStatus.SexualArousal > 0.5:
-            GlobalStatus.SexualArousal += 0.005
-        else:
-            GlobalStatus.SexualArousal += 0.007
-        GlobalStatus.SexualArousal = float(np.clip(GlobalStatus.SexualArousal, 0.0, 1.0))
+            # Stay awake
+            Thread_Script_Sleep.WakeUpABit(0.1)
 
-        sexlog.debug('Vagina Got Hit. SexualArousal = %.2f', GlobalStatus.SexualArousal)
+            # Add some to the arousal
+            GlobalStatus.SexualArousal += ( self.BaseArousalPerVagHit * self.Multiplier )
+            GlobalStatus.SexualArousal = float(np.clip(GlobalStatus.SexualArousal, 0.0, 1.0))
 
-        if GlobalStatus.SexualArousal > 0.95:
-            GlobalStatus.SexualArousal = 0.7
-            Thread_Breath.QueueSound(Sound=Sounds.GetSound(sound_id = 157), IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=9)
-        else:
-            sexlog.debug('Queuing a rando sex sound')
-            Thread_Breath.QueueSound(Sound=Collections['breathe_sex'].GetRandomSound(intensity = GlobalStatus.SexualArousal), IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=7)
-            if random.random() > 0.92:
-                Thread_Breath.QueueSound(Sound=Collections['sex_conversation'].GetRandomSound(intensity = GlobalStatus.SexualArousal), IgnoreSpeaking=True, Priority=8)
+            sexlog.info(f'Vagina Got Hit ({area})  SexualArousal: {GlobalStatus.SexualArousal:.2f}  SexualInterest: {self.SexualInterest}')
+
+            # My wife orgasms above 0.98
+            # If this is O #6 or something crazy like that, tend to reset it lower
+            if GlobalStatus.SexualArousal > 0.98:
+                self.ArousalPostO -= 0.2
+                self.ArousalPostO = float(np.clip(self.ArousalPostO, 0.0, 1.0))
+                GlobalStatus.SexualArousal = self.ArousalPostO
+                self.Multiplier = 1.0
+                Thread_Breath.QueueSound(Sound=Collections['sex_climax'].GetRandomSound(), IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=9)
+            elif GlobalStatus.SexualArousal > 0.9:
+                Thread_Breath.QueueSound(Sound=Collections['sex_near_O'].GetRandomSound(), IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=9)
+            else:
+                sexlog.debug('Queuing a rando sex sound')
+                Thread_Breath.QueueSound(Sound=Collections['breathe_sex'].GetRandomSound(intensity = GlobalStatus.SexualArousal), IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=7)
+                if random.random() > 0.96:
+                    Thread_Breath.QueueSound(Sound=Collections['sex_conversation'].GetRandomSound(intensity = GlobalStatus.SexualArousal), IgnoreSpeaking=True, Priority=8)
+
+    def VaginaPulledOut(self, sensors):
+        pass
 
 # There is a separate process called wernicke_client.py
 # This other process captures audio, cleans it up, and ships it to a server for classification and speech recognition on a gpu.
@@ -2751,7 +2827,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
                 elif self.path == '/Honey_Say':
                     self.send_response(200)
                     self.send_header('Content-Type', 'text/plain')
-                    Thread_Breath.QueueSound(Sound=Sounds.GetSound(sound_id = post_data), PlayWhenSleeping=True, IgnoreSpeaking=True, CutAllSoundAndPlay=True)
+                    Thread_Breath.QueueSound(Sound=Sounds.GetSound(sound_id = post_data), PlayWhenSleeping=True, IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=10)
                     log.info('Honey Say Request via web: %s', post_data)
                     self.wfile.write(b'done')
                 elif self.path == '/Delete_Sound':
@@ -3257,7 +3333,9 @@ class WebServerHandler(BaseHTTPRequestHandler):
         SoundTempoRange = Row['tempo_range']
         SoundReplayWait = Row['replay_wait']
 
-        html_out = f"<button class=\"btn\" onClick=\"if (window.confirm('Press OK to REALLY delete the sound')){{ButtonHit('/Delete_Sound', '{SoundId}'); document.getElementById('Sound{SoundId}').remove();}} return false;\"><i class=\"fa fa-trash-o\" aria-hidden=\"true\"></i></button>Delete Sound<br/>\n"
+        html_out = f"Sound ID: {SoundId}<br/>\n"
+
+        html_out += f"<button class=\"btn\" onClick=\"if (window.confirm('Press OK to REALLY delete the sound')){{ButtonHit('/Delete_Sound', '{SoundId}'); document.getElementById('Sound{SoundId}').remove();}} return false;\"><i class=\"fa fa-trash-o\" aria-hidden=\"true\"></i></button>Delete Sound<br/>\n"
 
         html_out += f"Base volume adjust <select class=\"base_volume_adjust\" onchange=\"ButtonHit('/BaseVolChange', '{SoundId}', this.value); return false;\">\n"
         for select_option in [0.2, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0]:
@@ -3305,7 +3383,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
         html_out += "</select><br/>\n"
 
         html_out += f"Replay Wait (minutes) <select class=\"replay_wait\" onchange=\"ButtonHit('/ReplayWaitChange', '{SoundId}', this.value); return false;\">\n"
-        for select_option in [('No wait', 0), ('30 seconds', 30), ('1 minute', 60), ('5 minutes', 300), ('30 minutes', 1800), ('1 hour', 3600), ('2 hours', 7200), ('5 hours', 18000), ('8 hours', 28800), ('12 hours', 43200), ('24 hours', 86400), ('48 hours', 172800)]:
+        for select_option in [('No wait', 0), ('3 seconds', 3), ('5 seconds', 5), ('30 seconds', 30), ('1 minute', 60), ('5 minutes', 300), ('30 minutes', 1800), ('1 hour', 3600), ('2 hours', 7200), ('5 hours', 18000), ('8 hours', 28800), ('12 hours', 43200), ('24 hours', 86400), ('48 hours', 172800)]:
             if select_option[1] == SoundReplayWait:
                 html_out += "<option selected=\"true\" "
             else:
