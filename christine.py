@@ -170,8 +170,8 @@ HardwareConfig = {
     'ADC1_TEMP_DEEP': 6,
     'ADC1_TEMP_PUSSY': 7,
     # Touch and release sensitivity for the MPR121 touch sensor. Higher numbers are less sensitive. 
-    'TOUCH_SENSITIVITY': [12, 12, 20, 12, 12, 12, 12, 12, 12, 12, 12, 12],
-    'RELEASE_SENSITIVITY': [10, 10, 10, 6, 6, 6, 6, 6, 6, 6, 6, 6],
+    'TOUCH_SENSITIVITY':   [12, 12, 12, 12, 4, 12,  4, 12, 12, 12, 12, 12],
+    'RELEASE_SENSITIVITY': [ 6,  6,  6,  6, 2,  6,  2,  6,  6,  6,  6,  6],
     'TOUCH_DEBOUNCE': 3,
 }
 
@@ -941,7 +941,7 @@ class Breath(threading.Thread):
                     WavFile = PipeToStarship.recv()
                     soundlog.debug(f'Shuttlecraft received: {WavFile}')
 
-                    # Normally the pipe will receive a path to a new wav file to start playing, stopping the previous sound 
+                    # Normally the pipe will receive a path to a new wav file to start playing, stopping the previous sound
                     WavData = wave.open(WavFile)
                     Stream.stop_stream()
                     Stream.start_stream()
@@ -2324,17 +2324,21 @@ class Script_Touch(threading.Thread):
 
         try:
 
+            # Send message to the main process
+            def honey_touched(zone):
+                PipeToEnterprise.send(zone)
+
             # Touches. Head, Shoulders, knees, and toes, haha.
             # 3 in the head used on the 5 channel touch sensor. 12 channels in the body.
             # These correspond with the channel numbers 0-11
             BodyTouchZones = [
-                'Clitoris',
-                'Vagina_Middle',
-                'Vagina_Deep',
+                'FuckedUpPin00',
+                'FuckedUpPin01',
+                'FuckedUpPin02',
                 'notinstalled_03',
-                'notinstalled_04',
+                'Clitoris',
                 'notinstalled_05',
-                'notinstalled_06',
+                'Vagina_Middle',
                 'notinstalled_07',
                 'notinstalled_08',
                 'notinstalled_09',
@@ -2363,6 +2367,7 @@ class Script_Touch(threading.Thread):
 
             # Create MPR121 touch sensor object.
             # The sensitivity settings were ugly hacked into /usr/local/lib/python3.6/site-packages/adafruit_mpr121.py
+            # (I fixed that sort of. Settings are here now. The driver hacked to make it work.)
             try:
                 mpr121 = adafruit_mpr121.MPR121(i2c, touch_sensitivity=HardwareConfig['TOUCH_SENSITIVITY'], release_sensitivity=HardwareConfig['RELEASE_SENSITIVITY'], debounce=HardwareConfig['TOUCH_DEBOUNCE'])
                 touchlog.info('Touch sensor init success')
@@ -2370,10 +2375,6 @@ class Script_Touch(threading.Thread):
                 mpr121 = None
                 honey_touched('FAIL')
                 log.error('The touch sensor had an I/O failure on init. Body touch is unavailable.')
-
-            # Send message to the main process
-            def honey_touched(zone):
-                PipeToEnterprise.send(zone)
 
             # Detect left cheek touch
             def Sensor_LeftCheek(channel):
@@ -2441,19 +2442,22 @@ class Script_Touch(threading.Thread):
             # So reading the mpr121 code seems like touched() is the one that does the least other BS
             # There's a reset() but that does a whole lot of other garbage besides resetting the IRQ line
             while True:
-                try:
-                    if GPIO.input(HardwareConfig['TOUCH_BODY']) == False:
-                        touched = mpr121.touched()
-                        IOErrors = 0
-                    time.sleep(2)
-                except:
-                    IOErrors += 1
-                    log.warning('The touch sensor had an I/O failure. Count = %s.', IOErrors)
-                    if IOErrors > 10:
-                        log.critical('The touch sensor thread has been shutdown.')
-                        GPIO.remove_event_detect(HardwareConfig['TOUCH_BODY'])
-                        honey_touched('FAIL')
-                        return
+                if mpr121 != None:
+                    try:
+                        if GPIO.input(HardwareConfig['TOUCH_BODY']) == False:
+                            touched = mpr121.touched()
+                            IOErrors = 0
+                        time.sleep(2)
+                    except:
+                        IOErrors += 1
+                        log.warning('The touch sensor had an I/O failure. Count = %s.', IOErrors)
+                        if IOErrors > 10:
+                            log.critical('The touch sensor thread has been shutdown.')
+                            GPIO.remove_event_detect(HardwareConfig['TOUCH_BODY'])
+                            honey_touched('FAIL')
+                            return
+                else:
+                    time.sleep(300)
 
         # log exception in the main.log
         except Exception as e:
