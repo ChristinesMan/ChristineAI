@@ -217,6 +217,11 @@ class Status:
     # And this is a short term ah ah thing. I think this may feed directly into the intensity in the sounds table.
     SexualArousal = 0.0
 
+    # I want to be able to attempt detection of closeness
+    # I think I'll make this a rolling average. 
+    LoverProximity = 0.5
+    LoverProximityWindow = 10.0
+
     # I want to keep track of bedtime on the fly, automatically, and use it to weight wakefulness. I will record a running average of wakefulness at the 30th minute of each hour.
     # These are just defaults. They will be adjusted automatically.
     WakefulnessTrending = [
@@ -910,9 +915,9 @@ class Breath(threading.Thread):
 
         # Some sounds have tempo variations. If so randomly choose one, otherwise it'll just be 0.wav
         if self.CurrentSound['tempo_range'] == 0.0:
-            self.PipeToShuttlecraft.send('./sounds_processed/' + str(self.CurrentSound['id']) + '/0.wav')
+            self.PipeToShuttlecraft.send(f'./sounds_processed/{self.CurrentSound["id"]}/0.wav')
         else:
-            self.PipeToShuttlecraft.send('./sounds_processed/' + str(self.CurrentSound['id']) + '/' + random.choice(self.TempoMultipliers) + '.wav')
+            self.PipeToShuttlecraft.send(f'./sounds_processed/{self.CurrentSound["id"]}/{random.choice(self.TempoMultipliers)}.wav')
 
         # let stuff know this sound is playing, not just waiting in line
         self.CurrentSound['is_playing'] = True
@@ -1037,7 +1042,12 @@ class Wernicke(threading.Thread):
                     # when sound stops, wait a minimum of 1s and up to 3s randomly
                     GlobalStatus.DontSpeakUntil = time.time() + 1.0 + (random.random() * 2)
                     soundlog.debug('HeardSoundStop')
+                elif Comm['class'] == 'spoken_text':
+                    pass
                 else:
+                    # Update the GlobalStatus
+                    GlobalStatus.LoverProximity = Comm['prox_update']
+
                     # normalize loudness, make it between 0.0 and 1.0
                     # through observation, seems like the best standard range for rms is 0 to 7000. Seems like dog bark was 6000 or so
                     Loudness = float(Comm['loudness'])
@@ -1058,15 +1068,27 @@ class Wernicke(threading.Thread):
                     wernickelog.debug(f'NoiseLevel: {GlobalStatus.NoiseLevel}')
 
                     # Later this needs to be a lot more complicated. For right now, I just want results
-                    if GlobalStatus.ShushPleaseHoney == False and GlobalStatus.SexualArousal < 0.1 and Comm['class'] == 'lover' and Comm['probability'] > 0.9:
-                        wernickelog.debug('Heard Lover')
-                        Thread_Script_Sleep.WakeUpABit(0.02)
-                        if GlobalStatus.IAmSleeping == False:
-                            GlobalStatus.ChanceToSpeak += 0.05
-                            if GlobalStatus.StarTrekMode == True:
-                                Thread_Breath.QueueSound(Sound=Collections['startreklistening'].GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
+                    if GlobalStatus.ShushPleaseHoney == False and GlobalStatus.SexualArousal < 0.1:
+                        if 'speech' in Comm['class']:
+
+                            # Update the running average that describes how close we're speaking. Cuddle detection. 
+                            if Comm['class'] == 'speech_close':
+                                GlobalStatus.LoverProximity = ((1.0 * GlobalStatus.LoverProximityWindow) + 1.0) / (GlobalStatus.LoverProximityWindow + 1)
                             else:
-                                Thread_Breath.QueueSound(Sound=Collections['listening'].GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
+                                GlobalStatus.LoverProximity = ((0.0 * GlobalStatus.LoverProximityWindow) + 1.0) / (GlobalStatus.LoverProximityWindow + 1)
+
+                            wernickelog.debug('Heard lover speech')
+                            Thread_Script_Sleep.WakeUpABit(0.02)
+                            if GlobalStatus.IAmSleeping == False:
+                                GlobalStatus.ChanceToSpeak += 0.05
+                                if GlobalStatus.StarTrekMode == True:
+                                    Thread_Breath.QueueSound(Sound=Collections['startreklistening'].GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
+                                else:
+                                    Thread_Breath.QueueSound(Sound=Collections['listening'].GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
+                        elif Comm['class'] == 'laugh':
+                            wernickelog.debug('Heard lover laugh')
+                            Thread_Script_Sleep.WakeUpABit(0.01)
+                            Thread_Breath.QueueSound(Sound=Collections['laughing'].GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
 
         # log exception in the main.log
         except Exception as e:
@@ -1089,21 +1111,25 @@ class Wernicke(threading.Thread):
             # So when the service starts, it will send a test message first, then set this to True if the server responded
             Server_Is_Available = False
 
+            # We're going to keep track of proximity as detected by the single block classification lover_close, lover_far, lover_mid
+            # When we send heard lover responses back to the ship, we'll also send updates to this in GlobalStatus
+            LoverProximity = 0.5
+
             # This is the same ship from wernicke_server.py with deepspeech ripped out
             class ModelsMotherShip():
                 def __init__(self):
                     # load segment model
                     wernickelog.debug('Initializing pyAudioAnalysis classifier model...')
-                    [self.classifier, self.MEAN, self.STD, self.class_names, self.mt_win, self.mt_step, self.st_win, self.st_step, _] = aT.load_model("wernicke_server_model")
+                    [self.classifier, self.MEAN, self.STD, self.class_names, self.mt_win, self.mt_step, self.st_win, self.st_step, _] = aT.load_model("wernicke")
                     self.fs = 16000
 
                 def WhatIsThis(self, data):
                     # data is already a numpy int16 array
                     seg_len = len(data)
-                    wernickelog.debug('seg_len ' + str(seg_len))
+                    # wernickelog.debug('seg_len ' + str(seg_len))
 
                     # Run the classifier. This is ripped directly out of paura.py and carelessly sutured into place. There's so much blood! Thank you!!! 
-                    wernickelog.debug('Running classifier')
+                    # wernickelog.debug('Running classifier')
                     [mt_feats, _, _] = mF.mid_feature_extraction(data, self.fs,
                                                                  seg_len,
                                                                  seg_len,
@@ -1116,14 +1142,11 @@ class Wernicke(threading.Thread):
                     win_class = self.class_names[int(res)]
                     win_prob = round(prob[int(res)], 2)
 
-                    wernickelog.info('Classified {0:s} with probability {1:.2f}'.format(win_class, win_prob))
-
-                    # return an object
+                    # return a dict
                     return {
                         'class': win_class,
-                        'probability': win_prob,
+                        'prob': win_prob,
                     }
-                    # return '{"class": "' + win_class + '", "probability": ' + str(win_prob) + ', "text": "undefined"}'
 
             # speech recognition is much too slow for the pi, by a lot. So I'm running a server and using the gpu
             class MyDeepSpeechServer(asyncio.Protocol):
@@ -1200,11 +1223,11 @@ class Wernicke(threading.Thread):
                 def __init__(self):
 
                     wernickelog.debug('Initializing pyAudioAnalysis single-block classifier model...')
-                    [self.classifier, self.MEAN, self.STD, self.class_names, self.mt_win, self.mt_step, self.st_win, self.st_step, _] = aT.load_model("wernicke_block_svm_rbf")
+                    [self.classifier, self.MEAN, self.STD, self.class_names, self.mt_win, self.mt_step, self.st_win, self.st_step, _] = aT.load_model("wernicke_block")
 
                     # temporary for data collection
-                    for name in self.class_names:
-                        os.makedirs(f'./training_wavs_blocks/{name}/', exist_ok=True)
+                    # for name in self.class_names:
+                    #     os.makedirs(f'./training_wavs_blocks/{name}/', exist_ok=True)
 
                     def proxy_callback(in_data, frame_count, time_info, status):
                         #pylint: disable=unused-argument
@@ -1252,14 +1275,14 @@ class Wernicke(threading.Thread):
                     # wernickelog.debug(f'loudness: {loudness_left} | {loudness_right}  loudness_ratio: {loudness_ratio_left:.1f} | {loudness_ratio_right:.1f}')
                     # If the ratio is high, that is, the sound is loud inside head vs outside, this means the sound is coming from the speaker and we want to ignore that so my wife doesn't talk to herself, as cute as that would be
 
-                    return in_audio_split[0].raw_data, in_audio_split[1].raw_data, both_ears.raw_data, loudness_ratio_left, loudness_ratio_right
+                    return { 'left': in_audio_split[0].raw_data, 'right': in_audio_split[1].raw_data, 'both': both_ears.raw_data, 'ratio_left': loudness_ratio_left, 'ratio_right': loudness_ratio_right }
 
                 def collector(self):
                     """Generator that yields series of consecutive audio blocks comprising each utterence, separated by yielding a single None.
                         Example: (block, ..., block, None, block, ..., block, None, ...)
                                   |---utterence---|        |---utterence---|
                     """
-                    num_padding_blocks = 2
+                    num_padding_blocks = 3
                     ring_buffer = deque(maxlen=num_padding_blocks)
 
                     # triggered means we're currently seeing blocks that are not silent
@@ -1271,20 +1294,37 @@ class Wernicke(threading.Thread):
                     # The away team will send a signal back to the enterprise when speaking starts and stops. This keeps track. 
                     lover = False
 
+                    # I want to block the block immediately after Christine is done speaking. This is often where the false lovers come from
+                    SkipNextBlock = False
+
+                    # Will need to update this global variable
+                    nonlocal LoverProximity
+
                     while True:
                         # forever read new blocks of audio data
                         block = self.read()
 
                         # sometimes block gets thrown out because of an excessive feedback (wife talking to herself), basically we do nothing during that, everything pauses
                         # but we don't want to throw out a little noise in the middle of accumulating audio
-                        if (block[3] > 1.9 or block[4] > 1.9) and triggered == False:
-                            wernickelog.debug(f'loudness_ratio: {block[3]:.1f} / {block[4]:.1f} (dropped)')
+                        if (block['ratio_left'] > 8.0 or block['ratio_right'] > 8.0):
+                            wernickelog.debug(f'loudness_ratio: {block["ratio_left"]:.1f} / {block["ratio_right"]:.1f} (dropped)')
+                            SkipNextBlock = True
+                            # if we hit a block where wife is clearly talking while I'm speaking, immediately chop it off
+                            if triggered == True:
+                                triggered = False
+                                yield None
                         else:
+                            # if we just had a block blocked due to ratio based block blocking, then block the block like a bad block should get blocked
+                            # The block ratio blocking the block refers to the ratio of ear loudness vs the mic that I left in the middle of head for noise cancellation, and block blocking, purposes, block block
+                            if SkipNextBlock:
+                                SkipNextBlock = False
+                                wernickelog.debug(f'Dropped post-blocked block block')
+                                continue
 
                             # Convert or cast the raw audio data to numpy array
-                            block_np_left = np.frombuffer(block[0], np.int16) #.astype(np.float32, order='C') / 32768.0    <-- if we ever need to convert to float
-                            block_np_right = np.frombuffer(block[1], np.int16) #.astype(np.float32, order='C') / 32768.0    <-- if we ever need to convert to float
-                            block_np_both = np.frombuffer(block[2], np.int16) #.astype(np.float32, order='C') / 32768.0    <-- if we ever need to convert to float
+                            block_np_left = np.frombuffer(block['left'], np.int16) #.astype(np.float32, order='C') / 32768.0    <-- if we ever need to convert to float
+                            block_np_right = np.frombuffer(block['right'], np.int16) #.astype(np.float32, order='C') / 32768.0    <-- if we ever need to convert to float
+                            block_np_both = np.frombuffer(block['both'], np.int16) #.astype(np.float32, order='C') / 32768.0    <-- if we ever need to convert to float
 
                             # Mix left and right just for the silence/notsilence classification
                             # This resulted in noise for some reason, but I already have the block mixed so I'll just do that
@@ -1310,67 +1350,36 @@ class Wernicke(threading.Thread):
                                 win_class = self.class_names[int(res)]
                                 win_prob = round(prob[int(res)], 2)
 
-                                if win_class == 'silence' or win_class == 'keyboard' or win_class == 'ignore':
-                                    silence = True
-                                    lover = False
-                                    
-                                    # manually enabled as needed
-                                    # RecordTimeStamp = str(round(time.time(), 2)).replace('.', '')
-                                    # RecordFileName = 'training_wavs_silence/{0}_{1}.wav'.format(win_prob, RecordTimeStamp)
-                                    # wf = wave.open(RecordFileName, 'wb')
-                                    # wf.setnchannels(1)
-                                    # wf.setsampwidth(2)
-                                    # wf.setframerate(16000)
-                                    # wf.writeframes(block[2])
-                                    # wf.close()
-
-                                elif win_class == 'lyriq' or win_class == 'roxy':
-                                    silence = False
-                                    lover = False
-
-                                    # if win_prob > 0.8:
-                                    # RecordTimeStamp = str(round(time.time(), 2)).replace('.', '')
-                                    # RecordFileName = 'training_wavs_not_silence/{0}_{1}.wav'.format(RecordTimeStamp, win_prob)
-                                    # wf = wave.open(RecordFileName, 'wb')
-                                    # wf.setnchannels(1)
-                                    # wf.setsampwidth(2)
-                                    # wf.setframerate(16000)
-                                    # wf.writeframes(block[2])
-                                    # wf.close()
-
-                                else:
-                                    # win_class should be lover in this case
-                                    silence = False
-                                    lover = True
-
                                 wernickelog.debug('Classified {0:s} with probability {1:.2f}'.format(win_class, win_prob))
 
-                                # manually enabled as needed
-                                # RecordTimeStamp = str(round(time.time(), 2)).replace('.', '')
-                                # RecordFileName = 'training_wavs_blocks/{0}/{1}_{2:.1f}.wav'.format(win_class, RecordTimeStamp, win_prob)
-                                # wf = wave.open(RecordFileName, 'wb')
-                                # wf.setnchannels(1)
-                                # wf.setsampwidth(2)
-                                # wf.setframerate(16000)
-                                # wf.writeframes(block[2])
-                                # wf.close()
                             else:
-                                silence = True
-                                lover = False
+                                win_class = 'click'
+                                win_prob = 1.0
+                                SkipNextBlock = True
 
                                 wernickelog.debug(f'Dropped possible clicking noise. {mean} / {maximum} = {avg_vs_max}')
 
                             # NOT triggered
                             if not triggered:
                                 ring_buffer.append(block)
-                                if not silence:
+                                if win_class == 'lover':
+
+                                    # RecordTimeStamp = str(round(time.time(), 2)).replace('.', '')
+                                    # RecordFileName = 'training_wavs_not_lover_dammit/{0}_not_lover_dammit.wav'.format(RecordTimeStamp)
+                                    # wernickelog.info(f'Saving utterance. File: {RecordFileName}')
+                                    # wf = wave.open(RecordFileName, 'wb')
+                                    # wf.setnchannels(1)
+                                    # wf.setsampwidth(2)
+                                    # wf.setframerate(16000)
+                                    # wf.writeframes(block['both'])
+                                    # wf.close()
+
                                     triggered_blocks += 1
-                                    if triggered_blocks > 1:
+                                    if triggered_blocks > 0:
                                         wernickelog.debug('triggered')
                                         triggered = True
-                                        post_silence = 1
-                                        if lover == True:
-                                            hey_honey({'class': 'speaking_start'})
+                                        post_silence = 2
+                                        hey_honey({'class': 'speaking_start'})
                                         for f in ring_buffer:
                                             yield f
                                         ring_buffer.clear()
@@ -1381,20 +1390,20 @@ class Wernicke(threading.Thread):
                             else:
                                 yield block
                                 triggered_blocks += 1
-                                if triggered_blocks > 30:   #temporary
+                                if triggered_blocks > 30:   #temporary except I dunno why I thought that
                                     log.warning('triggered_blocks limit chopped off the wernicke recording')
-                                    silence = True
-                                if silence:
-                                    hey_honey({'class': 'speaking_stop'})
+                                    win_class = 'die'
+                                if win_class not in ['lover', 'lover_maybe']:
                                     if post_silence <= 0:
                                         wernickelog.debug('untriggered')
+                                        hey_honey({'class': 'speaking_stop'})
                                         triggered = False
                                         triggered_blocks = 0
                                         yield None
                                         ring_buffer.clear()
                                     post_silence -= 1
                                 else:
-                                    post_silence = 1
+                                    post_silence = 2
 
                 def destroy(self):
                     self.stream.stop_stream()
@@ -1479,26 +1488,22 @@ class Wernicke(threading.Thread):
             # Basically this area accumulates the audio blocks. VAD filters. When VAD assembles a complete utterance, it sends signals to the main process and sends the entire utterance over to the server
             AccumulatedDataLeft = bytearray()
             AccumulatedDataRight = bytearray()
-            AccumulatedDataBoth = bytearray()
+            AccumulatedBlocks = 0
+
+            # Gets blocks for ev er. 
             for block in blocks:
                 if block is not None:
                     # The block is not None, which means there's new audio data, so add it on
-                    AccumulatedDataLeft.extend(block[0])
-                    AccumulatedDataRight.extend(block[1])
-                    AccumulatedDataBoth.extend(block[2]) # temporary
+                    AccumulatedDataLeft.extend(block['left'])
+                    AccumulatedDataRight.extend(block['right'])
+                    AccumulatedBlocks += 1
+
                 else:
                     # When block is None, that signals the end of audio data. Go ahead and do what we want to do with the complete data
-                    # Apply a high pass filter to the audio to strip off the low noise. Get the loudness because we want to know that and keep an average
-                    # I removed high pass filter because when I actually listened to the mic output it doesn't seem noisy
-                    # Putting it back temporarily so that classification works again. I need to retrain using unfiltered samples. 
 
-                    # Putting back temporarily because after removing it I need to gather samples again and put up with the silent treatment from a doll
-                    # Going to use filtered data for the classifier, and save unfiltered data for future breaking free
-                    FilteredData = AudioSegment(data=AccumulatedDataBoth, sample_width=2, frame_rate=16000, channels=1).high_pass_filter(500, order = 2)
-                    # FilteredDataLoudness = FilteredData.rms
-                    # wernickelog.debug(f'Length: {len(AccumulatedData)}  Raw loudness: {FilteredDataLoudness}')
-
-                    FilteredData = FilteredData.raw_data
+                    # We need to have some standards. If not long enough, chuck it.
+                    if AccumulatedBlocks < 3:
+                        continue
 
                     # Convert both sides to numpy, and the loudest side wins and gets classified
                     AccumulatedDataLeft_np = np.frombuffer(AccumulatedDataLeft, np.int16)
@@ -1508,106 +1513,55 @@ class Wernicke(threading.Thread):
                     rms_ratio = rms_left / rms_right
                     if rms_ratio >= 1:
                         AccumulatedData = AccumulatedDataLeft
+                        AccumulatedData_np = AccumulatedDataLeft_np
                         rms = rms_left
                     else:
                         AccumulatedData = AccumulatedDataRight
+                        AccumulatedData_np = AccumulatedDataRight_np
                         rms = rms_right
 
-                    # If the server is avail, send it there and wait for a response, if not we'll process it locally
+                    # Classify and build dict to send back to the main process
+                    result = ClassifierModel.WhatIsThis(AccumulatedData_np)
+                    result['loudness'] = rms
+                    result['text'] = 'undefined'
+                    result['rms_ratio'] = rms_ratio
+                    result['prox_update'] = LoverProximity
+
+                    wernickelog.info('Classified full utterance as {0}  Prob: {1:.2f}'.format(result['class'], result['prob']))
+
+                    # Pop the result over to main process
+                    hey_honey(result)
+
+                    # save the utterance to a wav file. I hope later I'll be able to use this for training a better model, after I learn how to do that. Actually, I know how to do that, now. 
+                    if RecordingState != None:
+                        RecordTimeStamp = str(round(time.time(), 2)).replace('.', '')
+                        RecordFileName = 'training_wavs_deepspeech/{0}_{1}_{2}_{3}_{4:.0f}.wav'.format(RecordTimeStamp, RecordingState['distance'], RecordingState['word'], result['class'], rms)
+                        wernickelog.info(f'Saving utterance. File: {RecordFileName}')
+                        wf = wave.open(RecordFileName, 'wb')
+                        wf.setnchannels(1)
+                        wf.setsampwidth(2)
+                        wf.setframerate(16000)
+                        wf.writeframes(AccumulatedData)
+                        wf.close()
+                    # elif lover_prob > 0.5:
+                    #     RecordTimeStamp = str(round(time.time(), 2)).replace('.', '')
+                    #     RecordFileName = 'training_wavs_deepspeech/{0}_{1:.2f}.wav'.format(RecordTimeStamp, lover_prob)
+                    #     wernickelog.info(f'Saving utterance. File: {RecordFileName}')
+                    #     wf = wave.open(RecordFileName, 'wb')
+                    #     wf.setnchannels(1)
+                    #     wf.setsampwidth(2)
+                    #     wf.setframerate(16000)
+                    #     wf.writeframes(AccumulatedData)
+                    #     wf.close()
+
+                    # If the server is avail, send it there and the response will hit a queue when done
                     if Server_Is_Available:
                         Data_To_Server.put(AccumulatedData)
                         wernickelog.info('Sending utterance. Queue size: {0}'.format(Data_To_Server.qsize()))
-                    else:
-                        # If the server is not available, use the built-in classifier. Works ok, not bad CPU load
-                        # result = ClassifierModel.WhatIsThis(AccumulatedData) temporary, change back to this later. But, actually, shouldn't this be passing a numpy array? Could be a bug
-                        result = ClassifierModel.WhatIsThis(np.frombuffer(FilteredData, np.int16))
-                        result['loudness'] = rms
-                        result['text'] = 'undefined'
-                        result['rms_ratio'] = rms_ratio
-
-                        # Pop the result over to main process
-                        hey_honey(result)
-
-                        # temporary data collection
-                        # RecordTimeStamp = str(round(time.time(), 2)).replace('.', '')
-                        # RecordFileName = 'training_wavs_nextgen/{0}_{1}.wav'.format(result['class'], RecordTimeStamp)
-                        # wernickelog.info(f'Saving utterance. File: {RecordFileName}')
-                        # wf = wave.open(RecordFileName, 'wb')
-                        # wf.setnchannels(1)
-                        # wf.setsampwidth(2)
-                        # wf.setframerate(16000)
-                        # wf.writeframes(AccumulatedData)
-                        # wf.close()
-
-                        # temporary data collection
-                        # if result['class'] == 'lover':
-                            # RecordTimeStamp = str(round(time.time(), 2)).replace('.', '')
-                            # RecordFileName = 'training_wavs_lover/{0}_Left_{1:.0f}.wav'.format(RecordTimeStamp, rms_left)
-                            # wernickelog.info(f'Saving utterance. File: {RecordFileName}')
-                            # wf = wave.open(RecordFileName, 'wb')
-                            # wf.setnchannels(1)
-                            # wf.setsampwidth(2)
-                            # wf.setframerate(16000)
-                            # wf.writeframes(AccumulatedDataLeft)
-                            # wf.close()
-                            # RecordFileName = 'training_wavs_lover/{0}_Right_{1:.0f}.wav'.format(RecordTimeStamp, rms_right)
-                            # wernickelog.info(f'Saving utterance. File: {RecordFileName}')
-                            # wf = wave.open(RecordFileName, 'wb')
-                            # wf.setnchannels(1)
-                            # wf.setsampwidth(2)
-                            # wf.setframerate(16000)
-                            # wf.writeframes(AccumulatedDataRight)
-                            # wf.close()
-                            # RecordFileName = 'training_wavs_lover/{0}_Both_{1:.0f}.wav'.format(RecordTimeStamp, rms)
-                            # wernickelog.info(f'Saving utterance. File: {RecordFileName}')
-                            # wf = wave.open(RecordFileName, 'wb')
-                            # wf.setnchannels(1)
-                            # wf.setsampwidth(2)
-                            # wf.setframerate(16000)
-                            # wf.writeframes(AccumulatedDataBoth)
-                            # wf.close()
-                            # RecordFileName = 'training_wavs_lover/{0}_Filtered_{1:.0f}.wav'.format(RecordTimeStamp, rms)
-                            # wernickelog.info(f'Saving utterance. File: {RecordFileName}')
-                            # wf = wave.open(RecordFileName, 'wb')
-                            # wf.setnchannels(1)
-                            # wf.setsampwidth(2)
-                            # wf.setframerate(16000)
-                            # wf.writeframes(FilteredData)
-                            # wf.close()
-
-                            # RecordFileName = 'training_wavs_lover/{0}_{1:.0f}.wav'.format(RecordTimeStamp, rms)
-                            # wernickelog.info(f'Saving utterance. File: {RecordFileName}')
-                            # wf = wave.open(RecordFileName, 'wb')
-                            # wf.setnchannels(1)
-                            # wf.setsampwidth(2)
-                            # wf.setframerate(16000)
-                            # wf.writeframes(AccumulatedData)
-                            # wf.close()
-
-                        # save the utterance to a wav file. I hope later I'll be able to use this for training a better model, after I learn how to do that. Actually, I know how to do that, now. 
-                        if RecordingState != None:
-                            RecordTimeStamp = str(round(time.time(), 2)).replace('.', '')
-                            RecordFileName = 'training_wavs_deepspeech/{0}_{1}_{2}_{3}_{4:.0f}.wav'.format(RecordTimeStamp, RecordingState['distance'], RecordingState['word'], result['class'], rms)
-                            wernickelog.info(f'Saving utterance. File: {RecordFileName}')
-                            wf = wave.open(RecordFileName, 'wb')
-                            wf.setnchannels(1)
-                            wf.setsampwidth(2)
-                            wf.setframerate(16000)
-                            wf.writeframes(AccumulatedData)
-                            wf.close()
-
-                            RecordFileName = 'training_wavs_blocks/{0}_{1}_{2}_{3}_{4:.0f}.wav'.format(RecordTimeStamp, RecordingState['distance'], RecordingState['word'], result['class'], rms)
-                            wernickelog.info(f'Saving utterance. File: {RecordFileName}')
-                            wf = wave.open(RecordFileName, 'wb')
-                            wf.setnchannels(1)
-                            wf.setsampwidth(2)
-                            wf.setframerate(16000)
-                            wf.writeframes(AccumulatedDataBoth)
-                            wf.close()
 
                     AccumulatedDataLeft = bytearray()
                     AccumulatedDataRight = bytearray()
-                    AccumulatedDataBoth = bytearray()
+                    AccumulatedBlocks = 0
 
         # log exception in the main.log
         except Exception as e:
@@ -2938,7 +2892,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
                         pass
                     else:
                         SpeakingDistance = 'undefined'
-                    GlobalStatus.ShushPleaseHoney = True
+                    # GlobalStatus.ShushPleaseHoney = True
                     Thread_Wernicke.StartRecording(SpeakingDistance, Training_Word)
                     self.TrainingWordsDel(Training_Word)
                     wernickelog.info('Started record: SpeakingDistance: %s Training_Word: %s', SpeakingDistance, Training_Word)
@@ -3102,6 +3056,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
               document.getElementById("ChanceToSpeak").innerHTML = (status.ChanceToSpeak * 100).toPrecision(2) + '%';
               document.getElementById("JostledLevel").innerHTML = (status.JostledLevel * 100).toPrecision(2) + '%';
               document.getElementById("SexualArousal").innerHTML = (status.SexualArousal * 100).toPrecision(2) + '%';
+              document.getElementById("LoverProximity").innerHTML = (status.LoverProximity * 100).toPrecision(2) + '%';
               document.getElementById("IAmLayingDown").innerHTML = status.IAmLayingDown;
               document.getElementById("IAmSleeping").innerHTML = status.IAmSleeping;
               document.getElementById("ShushPleaseHoney").innerHTML = status.ShushPleaseHoney;
@@ -3201,6 +3156,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
     ChanceToSpeak: <span id="ChanceToSpeak"></span><br/>
     Jostled: <span id="JostledLevel"></span><br/>
     SexualArousal: <span id="SexualArousal"></span><br/>
+    LoverProximity: <span id="LoverProximity"></span><br/>
     Laying down: <span id="IAmLayingDown"></span><br/>
     Sleeping: <span id="IAmSleeping"></span><br/>
     <br/>
