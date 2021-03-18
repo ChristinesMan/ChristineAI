@@ -1795,9 +1795,9 @@ class Sensor_MPU(threading.Thread):
         # Varous lists to store single samples. When they're full the values are averaged
         self.AccelXRecord = [0.0] * self.SampleSize
         self.AccelYRecord = [0.0] * self.SampleSize
-        self.GyroXRecord = [0.0] * self.SampleSize
-        self.GyroYRecord = [0.0] * self.SampleSize
-        self.GyroZRecord = [0.0] * self.SampleSize
+        # self.GyroXRecord = [0.0] * self.SampleSize
+        # self.GyroYRecord = [0.0] * self.SampleSize
+        # self.GyroZRecord = [0.0] * self.SampleSize
 
         # Smoothed average values
         self.SmoothXTilt = 0.0
@@ -1848,16 +1848,17 @@ class Sensor_MPU(threading.Thread):
                 self.AccelYRecord[self.LoopCycle] = data[0]['y']
 
                 # For Gyro, all I'm interested in is a number to describe how jostled she is, so I abs the data
-                self.GyroXRecord[self.LoopCycle] = abs(data[1]['x'])
-                self.GyroYRecord[self.LoopCycle] = abs(data[1]['y'])
-                self.GyroZRecord[self.LoopCycle] = abs(data[1]['z'])
+                # The gyro is fucked at a hardware level, so disabling this temporarily. The accelerometer seems fine somehow.
+                # self.GyroXRecord[self.LoopCycle] = abs(data[1]['x'])
+                # self.GyroYRecord[self.LoopCycle] = abs(data[1]['y'])
+                # self.GyroZRecord[self.LoopCycle] = abs(data[1]['z'])
 
                 # Every SampleSize'th iteration, send the average
                 if ( self.LoopCycle == 0 ):
                     # Reset the counter for I/O errors
                     self.SmoothXTilt = sum(self.AccelXRecord) / self.SampleSize
                     self.SmoothYTilt = sum(self.AccelYRecord) / self.SampleSize
-                    self.TotalJostled = (sum(self.GyroXRecord) / self.SampleSize) + (sum(self.GyroYRecord) / self.SampleSize) + (sum(self.GyroZRecord) / self.SampleSize)
+                    self.TotalJostled = 7  # temporarily disabled  (sum(self.GyroXRecord) / self.SampleSize) + (sum(self.GyroYRecord) / self.SampleSize) + (sum(self.GyroZRecord) / self.SampleSize)
 
                     # I hereby declare this a museum artifact
                     # Figure out what to do now that SensorGovernor is dead
@@ -1891,7 +1892,7 @@ class Sensor_MPU(threading.Thread):
                         GlobalStatus.IAmLayingDown = False
 
                     # log it
-                    gyrolog.debug('{0:.2f}, {1:.2f}, {2:.2f}, {3:.2f}, LayingDown: {4}'.format(self.SmoothXTilt, self.SmoothYTilt, self.JostledLevel, GlobalStatus.JostledLevel, GlobalStatus.IAmLayingDown))
+                    gyrolog.debug('{0:.2f}, {1:.2f}, {2:.2f}, {3:.2f}, TotalJostled: {4:.2f}  LayingDown: {5}'.format(self.SmoothXTilt, self.SmoothYTilt, self.JostledLevel, GlobalStatus.JostledLevel, self.TotalJostled, GlobalStatus.IAmLayingDown))
                 self.LoopIndex += 1
                 time.sleep(0.02)
 
