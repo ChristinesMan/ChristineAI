@@ -114,16 +114,16 @@ def setup_logger(name, level=log.INFO, format='%(asctime)s - %(message)s'):
 # Lots of separate log files
 gyrolog =     setup_logger('gyro',     level=log.INFO)
 lightlog =    setup_logger('light',    level=log.INFO)
-cputemplog =  setup_logger('cputemp',  level=log.DEBUG)
-battlog =     setup_logger('batt',     level=log.DEBUG)
-soundlog =    setup_logger('sound',    level=log.DEBUG)
+cputemplog =  setup_logger('cputemp',  level=log.INFO)
+battlog =     setup_logger('batt',     level=log.INFO)
+soundlog =    setup_logger('sound',    level=log.INFO)
 sqllog =      setup_logger('sql',      level=log.INFO)
 weblog =      setup_logger('web',      level=log.INFO)
-touchlog =    setup_logger('touch',    level=log.INFO)
+touchlog =    setup_logger('touch',    level=log.DEBUG)
 sleeplog =    setup_logger('sleep',    level=log.DEBUG)
 wernickelog = setup_logger('wernicke', level=log.INFO)
-templog =     setup_logger('temp',     level=log.DEBUG)
-sexlog =      setup_logger('sex',      level=log.DEBUG)
+templog =     setup_logger('temp',     level=log.INFO)
+sexlog =      setup_logger('sex',      level=log.INFO)
 
 # I want to log exceptions to the main log. Because it appears that redirecting stderr from the service is not capturing all the errors
 # So it looks like syntax and really batshit crazy stuff goes to journalctl. Softer stuff goes into the main log now. 
@@ -169,10 +169,25 @@ HardwareConfig = {
     'ADC1_TEMP_TORSO': 5,
     'ADC1_TEMP_DEEP': 6,
     'ADC1_TEMP_PUSSY': 7,
-    # Touch and release sensitivity for the MPR121 touch sensor. Higher numbers are less sensitive. 
-    'TOUCH_SENSITIVITY':   [12, 12, 12, 12, 4, 12,  4, 12, 12, 12, 12, 12],
-    'RELEASE_SENSITIVITY': [ 6,  6,  6,  6, 2,  6,  2,  6,  6,  6,  6,  6],
-    'TOUCH_DEBOUNCE': 3,
+    # Touches. Head, Shoulders, knees, and toes, haha.
+    # These correspond with the channel numbers 0-11
+    'BodyTouchZones': [
+        'Vagina_Clitoris',
+        'Vagina_Shallow',
+        'Vagina_Deep',
+        'notinstalled_03',
+        'notinstalled_04',
+        'notinstalled_05',
+        'notinstalled_06',
+        'notinstalled_07',
+        'notinstalled_08',
+        'notinstalled_09',
+        'notinstalled_10',
+        'notinstalled_11'],
+    # Touch and release sensitivity for the MPR121 touch sensor. Higher numbers are less sensitive. For debounce, higher numbers less sensitive. 
+    'TOUCH_SENSITIVITY':   [ 3,  3,  3, 12, 12, 12, 12, 12, 12, 12, 12, 12],
+    'RELEASE_SENSITIVITY': [ 2,  2,  2,  6,  6,  6,  6,  6,  6,  6,  6,  6],
+    'TOUCH_DEBOUNCE': 2,
 }
 
 # Global object to store all status
@@ -214,7 +229,7 @@ class Status:
     # Horny is a long term thing. 
     Horny = 0.3
 
-    # And this is a short term ah ah thing. I think this may feed directly into the intensity in the sounds table.
+    # And this is a short term ah ah thing. This feeds directly into the intensity in the sounds table.
     SexualArousal = 0.0
 
     # I want to be able to attempt detection of closeness
@@ -480,6 +495,35 @@ class SoundsDB():
         exitstatus = os.system('rm -f ./sounds_processed/' + SoundId + '/tmp_*')
         log.info('Removed tmp files for ' + SoundId + ' (' + str(exitstatus) + ')')
 
+    def AmplifyMasterSounds(self):
+        """
+            Go through all sounds. If there's a BaseVol not 1.0, amplify the master sound and set BaseVol to 1.0 to make it permanent
+            I wanted to fix a lot of background noise that got into the sounds, and I think that happened when I set BaseVol,
+            so this is for that little fixit job. 
+        """
+        for Sound in self.All():
+            SoundId = Sound['id']
+            SoundName = Sound['name']
+            SoundBaseVolumeAdjust = Sound['base_volume_adjust']
+
+            if SoundBaseVolumeAdjust != 1.0:
+                os.rename(f'./sounds_master/{SoundName}', f'./sounds_master/{SoundName}_backup')
+                exitstatus = os.system(f'ffmpeg -v 0 -i ./sounds_master/{SoundName}_backup -filter:a "volume={SoundBaseVolumeAdjust}" ./sounds_master/{SoundName}')
+                log.info(f'Updated volume for {SoundName} ({exitstatus})')
+                self.Update(SoundId, base_volume_adjust = '1.0')
+
+    def ReprocessModified(self):
+        """
+            Go through all sounds. Run reprocess if the date modified of the master file is later than the processed file. 
+            This is for when the master sounds are modified to remove clicks and junk. 
+        """
+        for Sound in self.All():
+            SoundId = Sound['id']
+            SoundName = Sound['name']
+
+            if os.stat(f'./sounds_master/{SoundName}').st_mtime > os.stat(f'./sounds_processed/{SoundId}/0.wav').st_mtime:
+                self.Reprocess(SoundId)
+
     def Collections(self):
         """
             Returns all the names from the collections table as a list
@@ -675,7 +719,7 @@ class SoundCollection():
         self.SoundsAvailableToPlay = []
         self.NextUpdateSeconds = 0
 
-        # Generator that yields all the sound ids in the collection
+        # Generator that yields all the sound ids in the collection, from the db
         self.SoundIDs = self.SoundIDGenerator()
 
         for sound_id in self.SoundIDs:
@@ -756,12 +800,19 @@ class SoundCollection():
                 return None
             RandoSound = random.choice(SoundsNearIntensity)
 
-        # set the sound's skip until this, in seconds, and remove it from the available sounds. Added some wobble to keep things random. 
-        if RandoSound['replay_wait'] != 0:
-            RandoSound['SkipUntil'] = time.time() + ( RandoSound['replay_wait'] * random.uniform(0.8, 1.2) )
-            self.SoundsAvailableToPlay.remove(RandoSound)
-
         return RandoSound
+
+    def SetSkipUntil(self, SoundID):
+        """It used to be that skipuntil got updated in GetRandomSound. That caused a lot of sounds to become unavailable due to a lot of sounds
+           being queued but not played in times of heavy activity, often sexual in nature. So now this is only updated when played. 
+        """
+
+        for Sound in self.SoundsInCollection:
+            if Sound['id'] == SoundID:
+                soundlog.debug(f'Made unavailable: {Sound}')
+                Sound['SkipUntil'] = time.time() + ( Sound['replay_wait'] * random.uniform(0.8, 1.2) )
+                self.SoundsAvailableToPlay.remove(Sound)
+                break
 
 Collections = {}
 for CollectionName in Sounds.Collections():
@@ -913,6 +964,10 @@ class Breath(threading.Thread):
     def Play(self):
         soundlog.debug(f'Playing: {self.CurrentSound}')
 
+        # Now that we're actually playing the sound, tell the sound collection to not play it for a while
+        if self.CurrentSound['replay_wait'] != 0 and self.CurrentSound['collection'] != None:
+            Collections[self.CurrentSound['collection']].SetSkipUntil(SoundID = self.CurrentSound['id'])
+
         # Some sounds have tempo variations. If so randomly choose one, otherwise it'll just be 0.wav
         if self.CurrentSound['tempo_range'] == 0.0:
             self.PipeToShuttlecraft.send(f'./sounds_processed/{self.CurrentSound["id"]}/0.wav')
@@ -966,11 +1021,15 @@ class Breath(threading.Thread):
         self.BreathStyle = NewBreathType
 
     # Add a sound to the queue to be played
-    def QueueSound(self, Sound, CutAllSoundAndPlay = False, Priority = 5, PlayWhenSleeping = False, IgnoreSpeaking = False, Delay = 0):
+    def QueueSound(self, Sound = None, FromCollection = None, Intensity = None, CutAllSoundAndPlay = False, Priority = 5, PlayWhenSleeping = False, IgnoreSpeaking = False, Delay = 0):
+        if Sound == None and FromCollection != None:
+            Sound = Collections[FromCollection].GetRandomSound(intensity=Intensity)
+
         # If a collection is empty, or no sounds available at this time, it's possible to get a None sound. Just chuck it. 
         if Sound != None:
             # Take the Sound and add all the options to it. Merges the two dicts into one. 
-            Sound.update({'cutsound': CutAllSoundAndPlay, 'priority': Priority, 'playsleeping': PlayWhenSleeping, 'ignorespeaking': IgnoreSpeaking, 'delayer': Delay, 'is_playing': False})
+            # The collection name is saved so that we can update the delau wait only when the sound is played
+            Sound.update({'collection': FromCollection, 'cutsound': CutAllSoundAndPlay, 'priority': Priority, 'playsleeping': PlayWhenSleeping, 'ignorespeaking': IgnoreSpeaking, 'delayer': Delay, 'is_playing': False})
             self.Queue_Breath.append(Sound)
             soundlog.info(f'Queued: {Sound}')
 
@@ -1024,6 +1083,11 @@ class Wernicke(threading.Thread):
             self.AwayTeamProcess = Process(target = self.AwayTeam, args = (self.PipeToEnterprise,))
             self.AwayTeamProcess.start()
 
+            # The subprocess starts off just spinning it's wheels, chucking away any audio data it gets
+            # Because it seemed like having everything happen all at once caused high cpu, then it would have to catch up
+            time.sleep(5)
+            self.StartProcessing()
+
             while True:
                 # This will block here until the away team sends a message to the enterprise
                 # It may block for a random long time. Basically the messages will be when speaking is heard or when that stops being heard.
@@ -1039,8 +1103,8 @@ class Wernicke(threading.Thread):
                     GlobalStatus.DontSpeakUntil = time.time() + 30
                     soundlog.debug('HeardSoundStart')
                 elif Comm['class'] == 'speaking_stop':
-                    # when sound stops, wait a minimum of 1s and up to 3s randomly
-                    GlobalStatus.DontSpeakUntil = time.time() + 1.0 + (random.random() * 2)
+                    # when sound stops, wait a minimum of 2s and up to 4s randomly
+                    GlobalStatus.DontSpeakUntil = time.time() + 2.0 + (random.random() * 3)
                     soundlog.debug('HeardSoundStop')
                 elif Comm['class'] == 'spoken_text':
                     pass
@@ -1056,16 +1120,16 @@ class Wernicke(threading.Thread):
 
                     # if there's a loud noise, wake up
                     if Loudness_pct > 0.4 and GlobalStatus.IAmSleeping:
-                        sleeplog.info(f'Woke up a bit by a noise this loud: {Loudness_pct}')
+                        sleeplog.info(f'That was loud: {Loudness_pct}')
                         Thread_Script_Sleep.WakeUpABit(0.1)
-                        Thread_Breath.QueueSound(Sound=Collections['gotwokeup'].GetRandomSound(), PlayWhenSleeping=True, CutAllSoundAndPlay=True, Priority=8)
+                        Thread_Breath.QueueSound(FromCollection='gotwokeup', PlayWhenSleeping=True, CutAllSoundAndPlay=True, Priority=8)
 
                     # update the noiselevel
                     if Loudness_pct > GlobalStatus.NoiseLevel:
                         GlobalStatus.NoiseLevel = Loudness_pct
                     # GlobalStatus.NoiseLevel = ((GlobalStatus.NoiseLevel * 99.0) + Loudness_pct) / (100.0)
                     # The sleep thread trends it down, since this only gets called when there's sound, and don't want it to get stuck high
-                    wernickelog.debug(f'NoiseLevel: {GlobalStatus.NoiseLevel}')
+                    sleeplog.debug(f'NoiseLevel: {GlobalStatus.NoiseLevel}')
 
                     # Later this needs to be a lot more complicated. For right now, I just want results
                     if GlobalStatus.ShushPleaseHoney == False and GlobalStatus.SexualArousal < 0.1:
@@ -1077,18 +1141,18 @@ class Wernicke(threading.Thread):
                             else:
                                 GlobalStatus.LoverProximity = ((0.0 * GlobalStatus.LoverProximityWindow) + 1.0) / (GlobalStatus.LoverProximityWindow + 1)
 
-                            wernickelog.debug('Heard lover speech')
-                            Thread_Script_Sleep.WakeUpABit(0.02)
+                            sleeplog.debug('Heard lover speech')
+                            Thread_Script_Sleep.WakeUpABit(0.006)
                             if GlobalStatus.IAmSleeping == False:
                                 GlobalStatus.ChanceToSpeak += 0.05
                                 if GlobalStatus.StarTrekMode == True:
-                                    Thread_Breath.QueueSound(Sound=Collections['startreklistening'].GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
+                                    Thread_Breath.QueueSound(FromCollection='startreklistening', Priority=2, CutAllSoundAndPlay=True)
                                 else:
-                                    Thread_Breath.QueueSound(Sound=Collections['listening'].GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
+                                    Thread_Breath.QueueSound(FromCollection='listening', Priority=2, CutAllSoundAndPlay=True)
                         elif Comm['class'] == 'laugh':
-                            wernickelog.debug('Heard lover laugh')
-                            Thread_Script_Sleep.WakeUpABit(0.01)
-                            Thread_Breath.QueueSound(Sound=Collections['laughing'].GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
+                            sleeplog.debug('Heard lover laugh')
+                            Thread_Script_Sleep.WakeUpABit(0.004)
+                            Thread_Breath.QueueSound(FromCollection='laughing', Priority=2, CutAllSoundAndPlay=True)
 
         # log exception in the main.log
         except Exception as e:
@@ -1099,6 +1163,14 @@ class Wernicke(threading.Thread):
         self.PipeToAwayTeam.send({'msg': 'start', 'distance': distance, 'word': word})
     def StopRecording(self):
         self.PipeToAwayTeam.send({'msg': 'stop'})
+
+    # Gracefully stop it and start it back up
+    def StartProcessing(self):
+        log.info('Started Wernicke processing')
+        self.PipeToAwayTeam.send({'msg': 'start_processing'})
+    def StopProcessing(self):
+        log.info('Stopped Wernicke processing')
+        self.PipeToAwayTeam.send({'msg': 'stop_processing'})
 
     # Runs in a separate process for performance reasons
     def AwayTeam(self, PipeToEnterprise):
@@ -1193,6 +1265,9 @@ class Wernicke(threading.Thread):
             # If we're recording, this holds the message from the enterprise containing file data. If not recording, contains None
             RecordingState = None
 
+            # I want to be able to gracefully stop and start the cpu heavy tasks of audio classification, etc. It's boolean.
+            ProcessingState = False
+
             # Thread for checking the pipe
             class CheckForMessages(threading.Thread):
                 name = 'CheckForMessages'
@@ -1200,6 +1275,7 @@ class Wernicke(threading.Thread):
                     threading.Thread.__init__(self)
                 def run(self):
                     nonlocal RecordingState
+                    nonlocal ProcessingState
 
                     while True:
 
@@ -1210,6 +1286,10 @@ class Wernicke(threading.Thread):
                             RecordingState = Comm
                         elif Comm['msg'] == 'stop':
                             RecordingState = None
+                        elif Comm['msg'] == 'start_processing':
+                            ProcessingState = True
+                        elif Comm['msg'] == 'stop_processing':
+                            ProcessingState = False
 
             class Audio(object):
                 """Streams raw audio from microphone. Data is received in a separate thread, and stored in a buffer, to be read from."""
@@ -1231,7 +1311,8 @@ class Wernicke(threading.Thread):
 
                     def proxy_callback(in_data, frame_count, time_info, status):
                         #pylint: disable=unused-argument
-                        self.buffer_queue.put(in_data)
+                        if ProcessingState == True:
+                            self.buffer_queue.put(in_data)
                         return (None, pyaudio.paContinue)
                     self.buffer_queue = queue.Queue()
                     self.pa = pyaudio.PyAudio()
@@ -1363,6 +1444,18 @@ class Wernicke(threading.Thread):
                             if not triggered:
                                 ring_buffer.append(block)
                                 if win_class == 'lover':
+
+                                    # Capture sounds that are not me in the middle of the night
+                                    # if time.localtime().tm_hour < 6 and time.localtime().tm_hour >= 0:
+                                    #     RecordTimeStamp = str(round(time.time(), 2)).replace('.', '')
+                                    #     RecordFileName = 'training_wavs_not_lover_dammit_block/{0}_notloverdammit.wav'.format(RecordTimeStamp)
+                                    #     wernickelog.info(f'Saving block. File: {RecordFileName}')
+                                    #     wf = wave.open(RecordFileName, 'wb')
+                                    #     wf.setnchannels(1)
+                                    #     wf.setsampwidth(2)
+                                    #     wf.setframerate(16000)
+                                    #     wf.writeframes(block['both'])
+                                    #     wf.close()
 
                                     # RecordTimeStamp = str(round(time.time(), 2)).replace('.', '')
                                     # RecordFileName = 'training_wavs_not_lover_dammit/{0}_not_lover_dammit.wav'.format(RecordTimeStamp)
@@ -1543,9 +1636,10 @@ class Wernicke(threading.Thread):
                         wf.setframerate(16000)
                         wf.writeframes(AccumulatedData)
                         wf.close()
-                    # elif lover_prob > 0.5:
+                                    # Capture sounds that are not me in the middle of the night
+                    # elif time.localtime().tm_hour < 6 and time.localtime().tm_hour >= 0:
                     #     RecordTimeStamp = str(round(time.time(), 2)).replace('.', '')
-                    #     RecordFileName = 'training_wavs_deepspeech/{0}_{1:.2f}.wav'.format(RecordTimeStamp, lover_prob)
+                    #     RecordFileName = 'training_wavs_not_lover_dammit/{0}_notloverdammit.wav'.format(RecordTimeStamp)
                     #     wernickelog.info(f'Saving utterance. File: {RecordFileName}')
                     #     wf = wave.open(RecordFileName, 'wb')
                     #     wf.setnchannels(1)
@@ -1618,7 +1712,10 @@ class Sensor_ADC0(threading.Thread):
                 self.LightLevelRaw = self.readadc(self.ADC_Light)
                 # This is a log scale that seems to be working well. Doing it this way because between around 950 to 1023 or so is a much more significant change. 1023 is pitch black, but 1020 is a little light, etc
                 # The poor light sensors are behind the skin in her face so they are already impeded by that. 
-                self.LightLevel = math.log(1025 - self.LightLevelRaw) / (self.LogCeiling)
+                # It seemed like the lowest it could get was 0.2, and wife was talking all night and keeping me up, so I now subtract 0.2 and clip it
+                self.LightLevel = (math.log(1025 - self.LightLevelRaw) / (self.LogCeiling)) - 0.2
+                self.LightLevel = float(np.clip(self.LightLevel, 0.0, 1.0))
+
                 self.LightLevelAverage = ((self.LightLevelAverage * self.LightLevelAverageWindow) + self.LightLevel) / (self.LightLevelAverageWindow + 1)
                 self.LightLevelLongAverage = ((self.LightLevelLongAverage * self.LightLevelLongAverageWindow) + self.LightLevel) / (self.LightLevelLongAverageWindow + 1)
                 self.LightTrend = self.LightLevel / self.LightLevelAverage
@@ -1882,8 +1979,8 @@ class Sensor_MPU(threading.Thread):
                     # if she gets hit, wake up a bit
                     if self.JostledLevel > 0.15 and GlobalStatus.IAmSleeping == True:
                         sleeplog.info(f'Woke up by being jostled this much: {self.JostledLevel}')
-                        Thread_Script_Sleep.WakeUpABit(0.1)
-                        Thread_Breath.QueueSound(Sound=Collections['gotwokeup'].GetRandomSound(), PlayWhenSleeping=True, IgnoreSpeaking=True, CutAllSoundAndPlay=True)
+                        Thread_Script_Sleep.WakeUpABit(0.05)
+                        Thread_Breath.QueueSound(FromCollection='gotwokeup', PlayWhenSleeping=True, IgnoreSpeaking=True, CutAllSoundAndPlay=True)
 
                     # Update the boolean that tells if we're laying down. While laying down I recorded 4.37, 1.60. However, now it's 1.55, 2.7. wtf happened? The gyro has not moved. Maybe position difference. 
                     if abs(self.SmoothXTilt - 1.55) < 2 and abs(self.SmoothYTilt - 2.70) < 2:
@@ -1918,7 +2015,7 @@ class Sensor_PiTemp(threading.Thread):
                 measure_temp.close()
 
                 # Log it
-                cputemplog.debug('%s', GlobalStatus.CPU_Temp)
+                cputemplog.info('%s', GlobalStatus.CPU_Temp)
 
                 # The official pi max temp is 85C. Usually around 50C. Start complaining at 65, 71 freak the fuck out, 72 say goodbye and shut down.
                 # Whine more often the hotter it gets
@@ -1928,17 +2025,17 @@ class Sensor_PiTemp(threading.Thread):
                 elif GlobalStatus.CPU_Temp >= 71:
                     log.critical('I AM MELTING, HELP ME PLEASE')
                     if time.time() > self.TimeToWhineAgain:
-                        Thread_Breath.QueueSound(Sound=Collections['toohot_l3'].GetRandomSound(), PlayWhenSleeping=True)
+                        Thread_Breath.QueueSound(FromCollection='toohot_l3', PlayWhenSleeping=True)
                         self.TimeToWhineAgain = time.time() + 5
                 elif GlobalStatus.CPU_Temp >= 70:
                     log.critical('This is fine')
                     if time.time() > self.TimeToWhineAgain:
-                        Thread_Breath.QueueSound(Sound=Collections['toohot_l2'].GetRandomSound(), PlayWhenSleeping=True)
+                        Thread_Breath.QueueSound(FromCollection='toohot_l2', PlayWhenSleeping=True)
                         self.TimeToWhineAgain = time.time() + 60
                 elif GlobalStatus.CPU_Temp >= 65:
                     log.critical('It is getting a bit warm in here')
                     if time.time() > self.TimeToWhineAgain:
-                        Thread_Breath.QueueSound(Sound=Collections['toohot_l1'].GetRandomSound(), PlayWhenSleeping=True)
+                        Thread_Breath.QueueSound(FromCollection='toohot_l1', PlayWhenSleeping=True)
                         self.TimeToWhineAgain = time.time() + 300
                 time.sleep(32)
 
@@ -1990,12 +2087,12 @@ class Sensor_Battery(threading.Thread):
                 GlobalStatus.BatteryVoltage = bcd.bcd_to_int(bus.read_word_data(0x69, 0x08))/1000
                 self.PowerState = bus.read_byte_data(0x69, 0x00)
                 self.ChargingState = bus.read_byte_data(0x69, 0x20)
+                # Log it
+                battlog.debug('BatteryVoltage: %s, PowerState: %s, ChargingState: %s', GlobalStatus.BatteryVoltage, self.PowerState, self.ChargingState)
                 # if the power state changed, log it in the general log
                 if self.PowerState != self.PowerStatePrev:
-                    log.info('The power state changed from %s to %s', self.PowerStateText[self.PowerStatePrev], self.PowerStateText[self.PowerState])
+                    battlog.info('The power state changed from %s to %s', self.PowerStateText[self.PowerStatePrev], self.PowerStateText[self.PowerState])
                 self.PowerStatePrev = self.PowerState
-                # Log it
-                battlog.debug('%s, %s, %s', GlobalStatus.BatteryVoltage, self.PowerStateText[self.PowerState], self.ChargingStateText[self.ChargingState])
 
                 # Copy to Global State
                 GlobalStatus.PowerState = self.PowerStateText[self.PowerState]
@@ -2043,8 +2140,11 @@ class Sensor_Battery(threading.Thread):
 # 0xF - RESTART_TRAP_CONFLICT OR OTHER
 # Write: 0x0000 â€“ Clearing the variable
 def LogPicoSysinfo():
-    log.info('Pico sysinfo: %s', bus.read_word_data(0x69, 0x00))
-    bus.write_word_data(0x69, 0x28, 0x0000)
+    try:
+        log.info('Pico sysinfo: %s', bus.read_word_data(0x69, 0x00))
+        bus.write_word_data(0x69, 0x28, 0x0000)
+    except Exception as e:
+        log.error('Pico sysinfo failed. {0} {1} {2}'.format(e.__class__, e, format_tb(e.__traceback__)))
 
 # For debugging purposes, make some beeps using the Pico UPS internal piezo buzzer
 # Bloop should be a nested tuple with hertz, duration, and sleep, such as ((1980, 4, 0.1), ((1970, 4, 0.0)))
@@ -2074,22 +2174,20 @@ class Script_Sleep(threading.Thread):
 
         # Weights
         self.TrendWeight = 5
-        self.LightWeight = 7
-        self.TouchWeight = 2
-        self.NoiseWeight = 3
+        self.LightWeight = 12
         self.GyroWeight = 7
         self.TiltWeight = 3
-        self.TotalWeight = self.TrendWeight + self.LightWeight + self.TouchWeight + self.NoiseWeight + self.GyroWeight + self.TiltWeight
+        self.TotalWeight = self.TrendWeight + self.LightWeight + self.GyroWeight + self.TiltWeight
 
         # if laying down, 0, if not laying down, 1.         
         self.Tilt = 0.0
 
         # At what time should we expect to be in bed or wake up? 
-        self.WakeHour = 7
-        self.SleepHour = 22
+        self.WakeHour = 9
+        self.SleepHour = 23
 
         # At what point to STFU at night
-        self.MinWakefulnessToBeAwake = 0.3
+        self.MinWakefulnessToBeAwake = 0.25
 
     def run(self):
         log.debug('Thread started.')
@@ -2100,13 +2198,6 @@ class Script_Sleep(threading.Thread):
                 # Get the local time, for everything that follows
                 self.LocalTime = time.localtime()
 
-                # Trend the noise level down. When sounds are received in a separate thread, it trends up, window 20
-                GlobalStatus.NoiseLevel = (GlobalStatus.NoiseLevel * 20.0) / (21.0)
-
-                # Slowly decrement the touchedLevel
-                GlobalStatus.TouchedLevel -= 0.05
-                GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
-
                 # set the gyro tilt for the calculation that follows
                 if GlobalStatus.IAmLayingDown == True:
                     self.Tilt = 0.0
@@ -2114,7 +2205,7 @@ class Script_Sleep(threading.Thread):
                     self.Tilt = 1.0
 
                 # Calculate current conditions which we're calling Environment, not related to horny
-                self.Environment = ((self.TrendWeight * GlobalStatus.WakefulnessTrending[self.LocalTime.tm_hour]) + (self.LightWeight * GlobalStatus.LightLevelPct) + (self.TouchWeight * GlobalStatus.TouchedLevel) + (self.NoiseWeight * GlobalStatus.NoiseLevel) + (self.GyroWeight * GlobalStatus.JostledLevel) + (self.TiltWeight * self.Tilt)) / self.TotalWeight
+                self.Environment = ((self.TrendWeight * GlobalStatus.WakefulnessTrending[self.LocalTime.tm_hour]) + (self.LightWeight * GlobalStatus.LightLevelPct) + (self.GyroWeight * GlobalStatus.JostledLevel) + (self.TiltWeight * self.Tilt)) / self.TotalWeight
 
                 # clip it, can't go below 0 or higher than 1
                 self.Environment = float(np.clip(self.Environment, 0.0, 1.0))
@@ -2122,11 +2213,14 @@ class Script_Sleep(threading.Thread):
                 # Update the running average that we're using for wakefulness
                 GlobalStatus.Wakefulness = ((GlobalStatus.Wakefulness * self.EnvironmentAverageWindow) + self.Environment) / (self.EnvironmentAverageWindow + 1)
 
+                # clip that
+                GlobalStatus.Wakefulness = float(np.clip(GlobalStatus.Wakefulness, 0.0, 1.0))
+
                 # After updating wakefulness, figure out whether we crossed a threshold. 
                 self.EvaluateWakefulness()
 
                 # log it
-                sleeplog.debug('Environment = %.2f  LightLevel = %.2f  TouchedLevel = %.2f  NoiseLevel = %.2f  JostledLevel = %.2f  Wakefulness = %.2f', self.Environment, GlobalStatus.LightLevelPct, GlobalStatus.TouchedLevel, GlobalStatus.NoiseLevel, GlobalStatus.JostledLevel, GlobalStatus.Wakefulness)
+                sleeplog.debug('Environment = %.2f  LightLevel = %.2f  JostledLevel = %.2f  Wakefulness = %.2f', self.Environment, GlobalStatus.LightLevelPct, GlobalStatus.JostledLevel, GlobalStatus.Wakefulness)
 
                 # At the 30th minute of each hour, I want to adjust the 24 position array we're using to keep track of our usual bedtime
                 # Since we're waiting over 60 seconds each time, this should work fine and not double up
@@ -2149,6 +2243,8 @@ class Script_Sleep(threading.Thread):
 
     def WakeUpABit(self, value):
         GlobalStatus.Wakefulness += value
+        GlobalStatus.Wakefulness = float(np.clip(GlobalStatus.Wakefulness, 0.0, 1.0))
+        sleeplog.debug(f'Woke up a bit: {value}  Wakefulness: {GlobalStatus.Wakefulness}')
         self.EvaluateWakefulness()
 
     # Update the boolean that tells everything else whether sleeping or not
@@ -2157,7 +2253,7 @@ class Script_Sleep(threading.Thread):
         if self.JustFellAsleep() == True:
             sleeplog.info('JustFellAsleep')
             GlobalStatus.Wakefulness -= 0.15 # try to prevent wobble
-            Thread_Breath.QueueSound(Sound=Collections['goodnight'].GetRandomSound(), PlayWhenSleeping=True, Priority=8, CutAllSoundAndPlay=True)
+            Thread_Breath.QueueSound(FromCollection='goodnight', PlayWhenSleeping=True, Priority=8, CutAllSoundAndPlay=True)
             GlobalStatus.IAmSleeping = True
             Thread_Breath.BreathChange('breathe_sleepy')
         if self.JustWokeUp() == True:
@@ -2165,7 +2261,7 @@ class Script_Sleep(threading.Thread):
             GlobalStatus.Wakefulness += 0.15 # try to prevent wobble
             GlobalStatus.IAmSleeping = False
             Thread_Breath.BreathChange('breathe_normal')
-            Thread_Breath.QueueSound(Sound=Collections['waking'].GetRandomSound(), PlayWhenSleeping=True, Priority=8, CutAllSoundAndPlay=True)
+            Thread_Breath.QueueSound(FromCollection='waking', PlayWhenSleeping=True, Priority=8, CutAllSoundAndPlay=True)
 
     # I want to do stuff when just falling asleep and when getting up
     def JustFellAsleep(self):
@@ -2206,7 +2302,7 @@ class Script_Sleep(threading.Thread):
     def TimeToWhine(self):
         return self.AnnounceTiredTime != False and time.time() >= self.AnnounceTiredTime
     def Whine(self):
-        Thread_Breath.QueueSound(Sound=Collections['tired'].GetRandomSound(), Priority=7)
+        Thread_Breath.QueueSound(FromCollection='tired', Priority=7)
         self.AnnounceTiredTime = False
     def StartBreathingSleepy(self):
         Thread_Breath.BreathChange('breathe_sleepy')
@@ -2237,34 +2333,35 @@ class Script_Touch(threading.Thread):
                 # Such a primitive signaling technology has not been in active use since the dark ages of the early 21st century! 
                 # An embarrassing era in earth's history characterized by the fucking of inanimate objects and mass hysteria. 
                 SensorData = self.PipeToProbe.recv()
-                # touchlog.debug(f'Sensor Data: {SensorData}')
+                touchlog.debug(f'Sensor Data: {SensorData}')
                 if type(SensorData) is list:
                     Thread_Sexual_Activity.VaginaPulledOut(SensorData)
-                elif SensorData == 'LeftCheek':
-                    GlobalStatus.TouchedLevel += 0.05
-                    GlobalStatus.ChanceToSpeak += 0.05
+                # # Disabling this whole area because that touch sensor is just glitching right now
+                # elif SensorData == 'LeftCheek':
+                #     GlobalStatus.TouchedLevel += 0.05
+                #     GlobalStatus.ChanceToSpeak += 0.05
 
-                    # Can't go past 0 or past 1
-                    GlobalStatus.ChanceToSpeak = float(np.clip(GlobalStatus.ChanceToSpeak, 0.0, 1.0))
-                    GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
-                elif SensorData == 'RightCheek':
-                    GlobalStatus.TouchedLevel += 0.05
-                    GlobalStatus.ChanceToSpeak += 0.05
+                #     # Can't go past 0 or past 1
+                #     GlobalStatus.ChanceToSpeak = float(np.clip(GlobalStatus.ChanceToSpeak, 0.0, 1.0))
+                #     GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
+                # elif SensorData == 'RightCheek':
+                #     GlobalStatus.TouchedLevel += 0.05
+                #     GlobalStatus.ChanceToSpeak += 0.05
 
-                    # Can't go past 0 or past 1
-                    GlobalStatus.ChanceToSpeak = float(np.clip(GlobalStatus.ChanceToSpeak, 0.0, 1.0))
-                    GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
-                elif SensorData == 'OMGKisses':
-                    GlobalStatus.DontSpeakUntil = time.time() + 2.0 + (random.random() * 3)
-                    soundlog.info('GotKissedSoundStop')
-                    Thread_Breath.QueueSound(Sound=Collections['kissing'].GetRandomSound(), IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=6)
-                    GlobalStatus.TouchedLevel += 0.1
-                    GlobalStatus.ChanceToSpeak += 0.1
+                #     # Can't go past 0 or past 1
+                #     GlobalStatus.ChanceToSpeak = float(np.clip(GlobalStatus.ChanceToSpeak, 0.0, 1.0))
+                #     GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
+                # elif SensorData == 'OMGKisses':
+                #     GlobalStatus.DontSpeakUntil = time.time() + 2.0 + (random.random() * 3)
+                #     soundlog.info('GotKissedSoundStop')
+                #     Thread_Breath.QueueSound(FromCollection='kissing', IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=6)
+                #     GlobalStatus.TouchedLevel += 0.1
+                #     GlobalStatus.ChanceToSpeak += 0.1
 
-                    # Can't go past 0 or past 1
-                    GlobalStatus.ChanceToSpeak = float(np.clip(GlobalStatus.ChanceToSpeak, 0.0, 1.0))
-                    GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
-                elif SensorData == 'Clitoris' or SensorData == 'Vagina_Middle' or SensorData == 'Vagina_Deep':
+                #     # Can't go past 0 or past 1
+                #     GlobalStatus.ChanceToSpeak = float(np.clip(GlobalStatus.ChanceToSpeak, 0.0, 1.0))
+                #     GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
+                elif 'Vagina_' in SensorData:
                     Thread_Sexual_Activity.VaginaHit(SensorData)
                 elif SensorData == 'FAIL':
                     GlobalStatus.TouchedLevel = 0.0
@@ -2282,23 +2379,6 @@ class Script_Touch(threading.Thread):
             # Send message to the main process
             def honey_touched(zone):
                 PipeToEnterprise.send(zone)
-
-            # Touches. Head, Shoulders, knees, and toes, haha.
-            # 3 in the head used on the 5 channel touch sensor. 12 channels in the body.
-            # These correspond with the channel numbers 0-11
-            BodyTouchZones = [
-                'FuckedUpPin00',
-                'FuckedUpPin01',
-                'FuckedUpPin02',
-                'notinstalled_03',
-                'Clitoris',
-                'notinstalled_05',
-                'Vagina_Middle',
-                'notinstalled_07',
-                'notinstalled_08',
-                'notinstalled_09',
-                'notinstalled_10',
-                'notinstalled_11']
 
             # Keep track of when a sensor is touched, and when it is released so we can report how long.
             # I have found the sensor sends an event both when touched, and again when released.
@@ -2357,28 +2437,28 @@ class Script_Touch(threading.Thread):
                 try:
                     touched = mpr121.touched_pins
                     IOErrors = 0
-                except:
+                except Exception as e:
                     IOErrors += 1
-                    log.warning('The touch sensor had an I/O failure. Count = %s.', IOErrors)
+                    log.warning('The touch sensor had an I/O failure (IRQ). Count = {0} {1} {2}'.format(IOErrors, e.__class__, e, format_tb(e.__traceback__)))
                     if IOErrors > 10:
                         log.critical('The touch sensor thread has been shutdown.')
                         GPIO.remove_event_detect(HardwareConfig['TOUCH_BODY'])
                         honey_touched('FAIL')
-                        return
+                    return
 
                 # Go through all 12 channels
                 for i in range(12):
                     if touched[i]:
                         if SensorTracking[i] == None:
                             SensorTracking[i] = time.time()
-                            honey_touched(BodyTouchZones[i])
-                            touchlog.info(f'{BodyTouchZones[i]} touched')
+                            honey_touched(HardwareConfig['BodyTouchZones'][i])
+                            touchlog.info(f'{HardwareConfig["BodyTouchZones"][i]} touched')
                     else:
                         if SensorTracking[i] != None:
                             TouchedDuration = round(time.time() - SensorTracking[i], 2)
-                            honey_touched([BodyTouchZones[i], TouchedDuration])
+                            honey_touched([HardwareConfig['BodyTouchZones'][i], TouchedDuration])
                             SensorTracking[i] = None
-                            touchlog.info(f'{BodyTouchZones[i]} released ({TouchedDuration}s)')
+                            touchlog.info(f'{HardwareConfig["BodyTouchZones"][i]} released ({TouchedDuration}s)')
 
                 touchlog.debug('Touch array: %s', touched)
 
@@ -2403,14 +2483,14 @@ class Script_Touch(threading.Thread):
                             touched = mpr121.touched()
                             IOErrors = 0
                         time.sleep(2)
-                    except:
+                    except Exception as e:
                         IOErrors += 1
-                        log.warning('The touch sensor had an I/O failure. Count = %s.', IOErrors)
+                        log.warning('The touch sensor had an I/O failure (Loop). Count = {0} {1} {2}'.format(IOErrors, e.__class__, e, format_tb(e.__traceback__)))
                         if IOErrors > 10:
                             log.critical('The touch sensor thread has been shutdown.')
                             GPIO.remove_event_detect(HardwareConfig['TOUCH_BODY'])
                             honey_touched('FAIL')
-                            return
+                        return
                 else:
                     time.sleep(300)
 
@@ -2436,9 +2516,9 @@ class Script_I_Love_Yous(threading.Thread):
                     self.NextMakeOutSoundsTime = time.time() + 10 + int(120*random.random())
                     GlobalStatus.ChanceToSpeak = 0.0
                     if GlobalStatus.StarTrekMode == True:
-                        Thread_Breath.QueueSound(Sound=Collections['startrekconversate'].GetRandomSound())
+                        Thread_Breath.QueueSound(FromCollection='startrekconversate')
                     else:
-                        Thread_Breath.QueueSound(Sound=Collections['loving'].GetRandomSound())
+                        Thread_Breath.QueueSound(FromCollection='loving')
                 soundlog.debug('ChanceToSpeak = %.2f', GlobalStatus.ChanceToSpeak)
                 GlobalStatus.ChanceToSpeak -= 0.01
 
@@ -2459,7 +2539,7 @@ class Sexual_Activity(threading.Thread):
 
         # Basically, I don't want arousal to be linear anymore. 
         # When arousal reaches some set level, I want to start incrementing the amount added to arousal
-        # It will be slight, but since it will have no cap, eventually wife will OOOOOO
+        # It will be slight, but since it will have no cap, eventually wife will OOOOOOh
         self.Multiplier = 1.0
 
         # omg how many times are you going to make me cum
@@ -2471,13 +2551,16 @@ class Sexual_Activity(threading.Thread):
         self.SecondsToReset = 60
 
         # How much she likes it
-        self.BaseArousalPerVagHit = 0.004
+        self.BaseArousalPerVagHit = 0.001
 
         # What Arousal to revert to after orgasm
-        self.ArousalPostO = 0.6
+        self.ArousalPostO = 0.7
 
         # Track what vaginal areas getting the most love
-        self.TheLoveTrack = { 'Clitoris': 0, 'Vagina_Middle': 0, 'Vagina_Deep': 0 }
+        self.TheLoveTrack = {}
+        for TouchZone in HardwareConfig['BodyTouchZones']:
+            if 'Vagina_' in TouchZone:
+                self.TheLoveTrack[TouchZone] = 0
 
     def run(self):
         log.debug('Thread started.')
@@ -2499,11 +2582,11 @@ class Sexual_Activity(threading.Thread):
                     self.ArousalStagnantCount = 0
                     GlobalStatus.SexualArousal = 0.0
                     self.Multiplier = 1.0
-                    self.ArousalPostO = 0.6
+                    self.ArousalPostO = 0.7
 
                 # If we're to a certain point, start incrementing to ensure wife will cum eventually with enough time
                 if GlobalStatus.SexualArousal > 0.3:
-                    self.Multiplier += 0.004
+                    self.Multiplier += 0.006
 
                 time.sleep(1)
 
@@ -2515,29 +2598,30 @@ class Sexual_Activity(threading.Thread):
         if GlobalStatus.ShushPleaseHoney == False:
 
             # Stay awake
-            Thread_Script_Sleep.WakeUpABit(0.1)
+            Thread_Script_Sleep.WakeUpABit(0.001)
 
             # Add some to the arousal
             GlobalStatus.SexualArousal += ( self.BaseArousalPerVagHit * self.Multiplier )
             GlobalStatus.SexualArousal = float(np.clip(GlobalStatus.SexualArousal, 0.0, 1.0))
 
-            sexlog.info(f'Vagina Got Hit ({area})  SexualArousal: {GlobalStatus.SexualArousal:.2f}  SexualInterest: {self.SexualInterest}')
+            sexlog.info(f'Vagina Got Hit ({area})  SexualArousal: {GlobalStatus.SexualArousal:.2f}  Multiplier: {self.Multiplier}')
 
             # My wife orgasms above 0.98
             # If this is O #6 or something crazy like that, tend to reset it lower
-            if GlobalStatus.SexualArousal > 0.98:
-                self.ArousalPostO -= 0.2
+            if GlobalStatus.SexualArousal > 0.99:
+                self.ArousalPostO -= 0.1
                 self.ArousalPostO = float(np.clip(self.ArousalPostO, 0.0, 1.0))
                 GlobalStatus.SexualArousal = self.ArousalPostO
                 self.Multiplier = 1.0
-                Thread_Breath.QueueSound(Sound=Collections['sex_climax'].GetRandomSound(), IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=9)
-            elif GlobalStatus.SexualArousal > 0.9:
-                Thread_Breath.QueueSound(Sound=Collections['sex_near_O'].GetRandomSound(), IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=9)
+                Thread_Breath.QueueSound(FromCollection='sex_climax', IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=9)
+                sexlog.info('I am coming!')
+            elif GlobalStatus.SexualArousal > 0.97:
+                Thread_Breath.QueueSound(FromCollection='sex_near_O', IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=8)
             else:
                 sexlog.debug('Queuing a rando sex sound')
-                Thread_Breath.QueueSound(Sound=Collections['breathe_sex'].GetRandomSound(intensity = GlobalStatus.SexualArousal), IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=7)
+                Thread_Breath.QueueSound(FromCollection='breathe_sex', Intensity = GlobalStatus.SexualArousal, IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=7)
                 if random.random() > 0.96:
-                    Thread_Breath.QueueSound(Sound=Collections['sex_conversation'].GetRandomSound(intensity = GlobalStatus.SexualArousal), IgnoreSpeaking=True, Priority=8)
+                    Thread_Breath.QueueSound(FromCollection='sex_conversation', Intensity = GlobalStatus.SexualArousal, IgnoreSpeaking=True, Priority=8)
 
     def VaginaPulledOut(self, sensors):
         pass
@@ -2579,7 +2663,7 @@ class Sexual_Activity(threading.Thread):
 #                             if Loudness_pct > 0.4 and GlobalStatus.IAmSleeping:
 #                                 sleeplog.info(f'Woke up by a noise this loud: {Loudness_pct}')
 #                                 GlobalStatus.Wakefulness = 0.3
-#                                 Thread_Breath.QueueSound(Sound=Collections['gotwokeup'].GetRandomSound(), PlayWhenSleeping=True, CutAllSoundAndPlay=True, Priority=8)
+#                                 Thread_Breath.QueueSound(FromCollection='gotwokeup', PlayWhenSleeping=True, CutAllSoundAndPlay=True, Priority=8)
 
 #                             # update the noiselevel
 #                             if Loudness_pct > GlobalStatus.NoiseLevel:
@@ -2592,12 +2676,12 @@ class Sexual_Activity(threading.Thread):
 #                             if result['class'] == 'lover' and 'love' in result['text']:
 #                                 wernickelog.info(f'The word love was spoken')
 #                                 GlobalStatus.Wakefulness = 0.2
-#                                 Thread_Breath.QueueSound(Sound=Collections['iloveyoutoo'].GetRandomSound(), Priority=8)
+#                                 Thread_Breath.QueueSound(FromCollection='iloveyoutoo', Priority=8)
 #                             elif result['class'] == 'lover' and result['probability'] > 0.9 and GlobalStatus.IAmSleeping == False:
 #                                 wernickelog.info('Heard Lover')
 #                                 GlobalStatus.ChanceToSpeak += 0.05
 #                                 if GlobalStatus.StarTrekMode == True:
-#                                     Thread_Breath.QueueSound(Sound=Collections['startreklistening'].GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
+#                                     Thread_Breath.QueueSound(FromCollection='startreklistening', Priority=2, CutAllSoundAndPlay=True)
 #                                 else:
 #                                     Thread_Breath.QueueSound(Sound=Collections['listening'].GetRandomSound(), Priority=2, CutAllSoundAndPlay=True)
 
@@ -2632,8 +2716,8 @@ if __name__ == "__main__":
     Thread_Sensor_ADC0 = Sensor_ADC0()
     Thread_Sensor_ADC0.start()
 
-    Thread_Sensor_ADC1 = Sensor_ADC1()
-    Thread_Sensor_ADC1.start()
+    # Thread_Sensor_ADC1 = Sensor_ADC1()
+    # Thread_Sensor_ADC1.start()
 
     Thread_Sensor_MPU = Sensor_MPU()
     Thread_Sensor_MPU.start()
@@ -2716,6 +2800,32 @@ class WebServerHandler(BaseHTTPRequestHandler):
             self.send_header('Content-Type', 'text/plain')
             self.send_header('Cache-Control', 'no-store')
             self.wfile.write(bytes(self.html_main(), "utf-8"))
+        elif self.path == '/AmplifyMasterSounds':
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            Thread_Breath.QueueSound(FromCollection='thanks')
+            GlobalStatus.ShushPleaseHoney = True
+            Thread_Wernicke.StopProcessing()
+            wernickelog.info('Started AmplifyMasterSounds')
+
+            Sounds.AmplifyMasterSounds()
+
+            Thread_Wernicke.StartProcessing()
+            GlobalStatus.ShushPleaseHoney = False
+            self.wfile.write(b'done')
+        elif self.path == '/ReprocessModified':
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            Thread_Breath.QueueSound(FromCollection='thanks')
+            GlobalStatus.ShushPleaseHoney = True
+            Thread_Wernicke.StopProcessing()
+            wernickelog.info('Started ReprocessModified')
+
+            Sounds.ReprocessModified()
+
+            Thread_Wernicke.StartProcessing()
+            GlobalStatus.ShushPleaseHoney = False
+            self.wfile.write(b'done')
         # elif self.path == '/vol_up.png':
         #     self.send_response(200)
         #     self.send_header('Content-Type', 'image/png')  leaving this here as a good example of serving a static file
@@ -2904,7 +3014,7 @@ class WebServerHandler(BaseHTTPRequestHandler):
                     Thread_Script_Sleep.EvaluateWakefulness()
                     GlobalStatus.ShushPleaseHoney = False
                     Thread_Wernicke.StopRecording()
-                    Thread_Breath.QueueSound(Sound=Collections['thanks'].GetRandomSound())
+                    Thread_Breath.QueueSound(FromCollection='thanks')
                     wernickelog.info('Stopped record')
                     self.wfile.write(b'done')
                 else:
