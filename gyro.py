@@ -57,6 +57,11 @@ class Gyro(threading.Thread):
 
             while True:
 
+                # graceful shutdown
+                if status.PleaseShutdown:
+                    log.gyro.info('Thread shutting down')
+                    break
+
                 # Get data from sensor at full speed. Doesn't seem to need any sleeps. 
                 # I'm testing with a sleep now. The sleep seems to be a good idea.
                 try:
@@ -143,4 +148,5 @@ class Gyro(threading.Thread):
 
 # Instantiate and start the thread
 thread = Gyro()
+thread.daemon = True
 thread.start()

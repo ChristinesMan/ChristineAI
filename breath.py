@@ -58,6 +58,13 @@ class Breath(threading.Thread):
 
         try:
             while True:
+
+                # graceful shutdown
+                if status.PleaseShutdown:
+                    log.sound.info('Thread shutting down')
+                    self.PipeToShuttlecraft.send('selfdestruct')
+                    break
+
                 # Get everything out of the queue and process it, unless there's already a sound that's been waiting
                 while len(self.Queue_Breath) != 0:
                     IncomingSound = self.Queue_Breath.popleft()
@@ -169,6 +176,12 @@ class Breath(threading.Thread):
                 # So basically, if there's something in the pipe, get it all out
                 if PipeToStarship.poll():
                     WavFile = PipeToStarship.recv()
+
+                    # graceful shutdown
+                    if WavFile == 'selfdestruct':
+                        log.gyro.info('Shuttlecraft self destruct activated')
+                        break
+
                     log.sound.debug(f'Shuttlecraft received: {WavFile}')
 
                     # Normally the pipe will receive a path to a new wav file to start playing, stopping the previous sound
@@ -217,6 +230,7 @@ class Breath(threading.Thread):
 
 # Instantiate and start the thread
 thread = Breath()
+thread.daemon = True
 thread.start()
 
 

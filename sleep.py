@@ -51,6 +51,11 @@ class Sleep(threading.Thread):
 
             while True:
 
+                # graceful shutdown
+                if status.PleaseShutdown:
+                    log.sleep.info('Thread shutting down')
+                    break
+
                 # Get the local time, for everything that follows
                 self.LocalTime = time.localtime()
 
@@ -177,4 +182,5 @@ class Sleep(threading.Thread):
 
 # Instantiate and start the thread
 thread = Sleep()
+thread.daemon = True
 thread.start()

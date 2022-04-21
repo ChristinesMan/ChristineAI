@@ -46,6 +46,10 @@ class Script_Sex(threading.Thread):
         try:
             while True:
 
+                # graceful shutdown
+                if status.PleaseShutdown:
+                    break
+
                 sexlog.debug(f'SexualArousal = {GlobalStatus.SexualArousal:.2f}  Multiplier: {self.Multiplier}')
 
                 # Has sex stopped for a while?

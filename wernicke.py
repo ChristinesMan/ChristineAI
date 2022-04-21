@@ -68,6 +68,16 @@ class Wernicke(threading.Thread):
             self.StartProcessing()
 
             while True:
+
+                # graceful shutdown
+                # this will attempt to close the serial port and shutdown gracefully
+                # if the serial port fails to get closed properly, it often locks up
+                if status.PleaseShutdown:
+                    log.wernicke.info('Thread shutting down')
+                    self.PipeToAwayTeam.send({'msg': 'shutdown'})
+                    time.sleep(1)
+                    break
+
                 # This will block here until the away team sends a message to the enterprise
                 # It may block for a random long time. Basically the messages will be when speaking is heard or when that stops being heard.
                 # The away team will also send the class of audio just heard. 
@@ -182,6 +192,10 @@ class Wernicke(threading.Thread):
             # I want to be able to gracefully stop and start the cpu heavy tasks of audio classification, etc. It's boolean.
             ProcessingState = False
 
+            # This is to signal that the thread should close the serial port and shutdown
+            # we have a status.Shutdown but that's in the main process. This needs something separate
+            Shutdown = False
+
             # This is a queue where the audio data inbound from the serial port gets put
             buffer_queue = queue.Queue(maxsize=10)
 
@@ -189,6 +203,15 @@ class Wernicke(threading.Thread):
             def hey_honey(love):
                 # log.wernicke.info(f'Hey Honey: {love}')
                 PipeToEnterprise.send(love)
+
+
+            # setup signal handlers to attempt to shutdown gracefully
+            def exit_gracefully(*args):
+                global Shutdown
+                Shutdown = True
+                log.main.debug('The Wernicke AwayTeam caught kill signal')
+            signal.signal(signal.SIGINT, exit_gracefully)
+            signal.signal(signal.SIGTERM, exit_gracefully)
 
 
             # speech recognition is much too slow for the pi, by a lot. So I'm running a server and using the gpu
@@ -247,6 +270,7 @@ class Wernicke(threading.Thread):
                 def run(self):
                     nonlocal RecordingState
                     nonlocal ProcessingState
+                    nonlocal Shutdown
 
                     while True:
 
@@ -261,6 +285,10 @@ class Wernicke(threading.Thread):
                             ProcessingState = True
                         elif Comm['msg'] == 'stop_processing':
                             ProcessingState = False
+                        elif Comm['msg'] == 'shutdown':
+                            ProcessingState = False
+                            Shutdown = True
+                            return
                         elif Comm['msg'] == 'disable_server':
                             DisableServer()
 
@@ -284,8 +312,19 @@ class Wernicke(threading.Thread):
 
                     nonlocal buffer_queue
                     nonlocal ProcessingState
+                    nonlocal Shutdown
 
                     while True:
+
+                        # attempt to shutdown normally
+                        # so it seems like something here is getting hung up and it becomes necessary for systemd to sigkill
+                        # but at least we successfully stopped the serial port before that happened, and everything else 
+                        # should be already at rest
+                        if Shutdown:
+                            log.wernicke.info('Closing serial port')
+                            self.SerialPortFromHead.close()
+                            os._exit()
+                            return
 
                         # the arduino sketch is designed to embed into the 16000 bytes of audio data 38 bytes of sensor data
                         data = self.SerialPortFromHead.read(38)
@@ -347,14 +386,20 @@ class Wernicke(threading.Thread):
                                 log.wernicke.warning('Buffer Queue FULL! Resting.')
 
                         else:
+
+
+                            # temporary data collection for model tuning
+                            # RecordTimeStamp = str(round(time.time(), 2)).replace('.', '')
+                            # RecordFileName = 'training_wavs_not_lover_dammit/{0}_notlover.wav'.format(RecordTimeStamp)
+                            # wf = wave.open(RecordFileName, 'wb')
+                            # wf.setnchannels(1)
+                            # wf.setsampwidth(2)
+                            # wf.setframerate(16000)
+                            # wf.writeframes(data)
+                            # wf.close()
+
                             log.wernicke.debug('Discarded audio data.')
                             self.PauseProcessing -= 1
-
-                # hopefully this gets done
-                # sometimes when I restart script the serial port gets hung
-                def destroy(self):
-                    log.wernicke.info('Closed serial port')
-                    self.SerialPortFromHead.close()
 
 
             # instantiate and start the thread
@@ -674,8 +719,13 @@ class Wernicke(threading.Thread):
                     log.wernicke.debug(f'Server_Is_Available: {Server_Is_Available}')
 
             # Start the threads.
-            CheckForMessages().start()
-            SendLoveToServer().start()
+            CheckForMessagesThread = CheckForMessages()
+            CheckForMessagesThread.daemon = True
+            CheckForMessagesThread.start()
+
+            SendLoveToServerThread = SendLoveToServer()
+            SendLoveToServerThread.daemon = True
+            SendLoveToServerThread.start()
 
             # Start all the VAD detection stuff
             audio = Audio()
@@ -685,6 +735,10 @@ class Wernicke(threading.Thread):
 
             # Gets blocks for                                                               ev..                                                                         er.... 
             for block in blocks:
+
+                # Graceful shutdown
+                if Shutdown:
+                    break
 
                 # if the server is available, use that to classify the new audio data, save pi cpu
                 if Server_Is_Available:
@@ -699,7 +753,9 @@ class Wernicke(threading.Thread):
                         Connected_To_Server = True
 
                         # starts a thread
-                        ConnectAndSendAudio().start()
+                        ConnectAndSendAudioThread = ConnectAndSendAudio()
+                        ConnectAndSendAudioThread.daemon = True
+                        ConnectAndSendAudioThread.start()
 
                 # if the server is not available, just do a basic "you spoke, apparently"
                 # else:
@@ -717,4 +773,5 @@ class Wernicke(threading.Thread):
 
 # Instantiate and start the thread
 thread = Wernicke()
+thread.daemon = True
 thread.start()
