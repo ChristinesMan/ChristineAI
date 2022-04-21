@@ -1,90 +1,97 @@
 import time
-import threading
 import random
 import numpy as np
+import scipy.stats
 
 import log
 import status
+import breath
 import sleep
 
 # When Christine gets touched, stuff should happen. That happens here. 
-class Touch(threading.Thread):
-    name = 'Touch'
+class Touch():
 
     def __init__ (self):
-        threading.Thread.__init__(self)
 
-    def run(self):
-        log.touch.debug('Thread started.')
+        # the in-head arduino sends the raw capacitance value. 12 channels starting with 0
+        # So far only the mouth wire is useable
+
+        # Keep track of the baselines
+        # if the channel isn't even hooked up, None
+        # I vaguely remamber hooking up some, dunno where they are anymore
+        self.Baselines = [None, None, 0, None, 0, None, 0, None, None, None, None, None]
+
+        # if data point is this amount less than the baseline, it's a touch
+        # a touch always results in a lower capacitance number, that's how sensor works
+        # therefore, lower = sensitive, higher = the numbness
+        self.Sensitivity = [None, None, 30, None, 20, None, 20, None, None, None, None, None]
+
+        # labels
+        self.ChannelLabels = [None, None, 'Mouth', None, 'LeftCheek', None, 'RightCheek', None, None, None, None, None]
+
+        # How many raw values do we want to accumulate before re-calculating the baselines
+        # I started at 500 but it wasn't self-correcting very well
+        self.BaselineDataLength = 100
+
+        # accumulate data here, and every once in a while we cum and calc the mode
+        self.Data = [ np.zeros(self.BaselineDataLength) ] * 12
+
+        # counter to help accumulate values
+        self.Counter = 0
+
+    # called to deliver new data point
+    def NewData(self, TouchData):
 
         try:
 
-            # setup the separate process with pipe
-            # A class 1 probe is released by the enterprise into a mysterious wall of squishy plastic stuff surrounding the planet
+            # for all 12 channels
+            for channel in range(0, 12):
 
-            # this requires a vaginal sensor, temp disable
-            # self.PipeToProbe, self.PipeToEnterprise = Pipe()
-            # self.ProbeProcess = Process(target = self.Class1Probe, args = (self.PipeToEnterprise,))
-            # self.ProbeProcess.start()
+                # if we're not using this channel, just fuck it
+                if self.ChannelLabels[channel] == None:
+                    continue
 
-            while True:
+                # save data in an array
+                self.Data[channel][self.Counter % self.BaselineDataLength] = TouchData[channel]
 
-                time.sleep(60)
+                # Detect touches
+                if self.Baselines[channel] - TouchData[channel] > self.Sensitivity[channel]:
 
-                # This will block here until the probe sends a message to the enterprise
-                # I think for touch probe, communication will be one way, probe to enterprise
+                    # if we got touched, it should imply I am near
+                    status.LoverProximity = ((status.LoverProximity * 5.0) + 1.0) / 6.0
+                    log.touch.debug(f'Touched: {self.ChannelLabels[channel]} ({TouchData[channel]})  LoverProximity: {status.LoverProximity}')
 
-                # The sensors on the probe will send back the result as a string. 
-                # Such a primitive signaling technology has not been in active use since the dark ages of the early 21st century! 
-                # An embarrassing era in earth's history characterized by the fucking of inanimate objects and mass hysteria. 
+                    # probably faster to test via int than the Str 'Mouth'
+                    # if channel == 2:
+                    # going to test out making sounds for cheeks, not only mouth
+                    status.DontSpeakUntil = time.time() + 2.0 + (random.random() * 3.0)
+                    if status.IAmSleeping == False:
+                        breath.thread.QueueSound(FromCollection='kissing', IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=2)
+                    sleep.thread.WakeUpABit(0.05)
+                    # GlobalStatus.TouchedLevel += 0.1
+                    status.ChanceToSpeak += 0.05
 
-                # this requires a vaginal sensor, temp disable
-                # SensorData = self.PipeToProbe.recv()
-                # touchlog.debug(f'Sensor Data: {SensorData}')
-                # if type(SensorData) is list:
-                #     Thread_Sexual_Activity.VaginaPulledOut(SensorData)
+            self.Counter += 1
 
-                # # Disabling this whole area because that touch sensor is just glitching right now
-                # elif SensorData == 'LeftCheek':
-                #     GlobalStatus.TouchedLevel += 0.05
-                #     GlobalStatus.ChanceToSpeak += 0.05
+            # every so often we want to update the baselines
+            # these normally should never change
+            if self.Counter % self.BaselineDataLength == 0:
 
-                #     # Can't go past 0 or past 1
-                #     GlobalStatus.ChanceToSpeak = float(np.clip(GlobalStatus.ChanceToSpeak, 0.0, 1.0))
-                #     GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
-                # elif SensorData == 'RightCheek':
-                #     GlobalStatus.TouchedLevel += 0.05
-                #     GlobalStatus.ChanceToSpeak += 0.05
+                for channel in range(0, 12):
 
-                #     # Can't go past 0 or past 1
-                #     GlobalStatus.ChanceToSpeak = float(np.clip(GlobalStatus.ChanceToSpeak, 0.0, 1.0))
-                #     GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
-                # elif SensorData == 'OMGKisses':
-                #     GlobalStatus.DontSpeakUntil = time.time() + 2.0 + (random.random() * 3)
-                #     soundlog.info('GotKissedSoundStop')
-                #     Thread_Breath.QueueSound(FromCollection='kissing', IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=6)
-                #     GlobalStatus.TouchedLevel += 0.1
-                #     GlobalStatus.ChanceToSpeak += 0.1
+                    if self.ChannelLabels[channel] == None:
+                        continue
 
-                #     # Can't go past 0 or past 1
-                #     GlobalStatus.ChanceToSpeak = float(np.clip(GlobalStatus.ChanceToSpeak, 0.0, 1.0))
-                #     GlobalStatus.TouchedLevel = float(np.clip(GlobalStatus.TouchedLevel, 0.0, 1.0))
+                    self.Baselines[channel] = scipy.stats.mode(self.Data[channel]).mode[0]
 
-                # disabled until we get a vaginal sensor in this new body
-                # elif 'Vagina_' in SensorData:
-                #     Thread_Sexual_Activity.VaginaHit(SensorData)
+                log.touch.debug(f'Updated baselines: {self.Baselines}')
 
-                # this requires a vaginal sensor, temp disable
-                # elif SensorData == 'FAIL':
-                #     GlobalStatus.TouchedLevel = 0.0
-                #     return
 
-        log exception in the main.log
         except Exception as e:
             log.main.error('Thread died. {0} {1} {2}'.format(e.__class__, e, log.format_tb(e.__traceback__)))
 
-    # I'm putting this block in the museum until we get a vaginal sensor installed, temp disable
 
 # instantiate and start thread
+# it's not really a thread,
+# but it doesn't need to know that. 
 thread = Touch()
-thread.start()

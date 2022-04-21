@@ -5,6 +5,8 @@ import numpy as np
 
 import log
 import status
+import sleep
+import breath
 
 # Poll the Gyro / Accelerometer
 class Gyro(threading.Thread):
@@ -120,12 +122,13 @@ class Gyro(threading.Thread):
                     if self.JostledLevel > 0.15 and status.IAmSleeping == True:
                         log.sleep.info(f'Woke up by being jostled this much: {self.JostledLevel}')
                         sleep.thread.WakeUpABit(0.04)
+                        status.LoverProximity = ((status.LoverProximity * 5.0) + 1.0) / 6.0
                         breath.thread.QueueSound(FromCollection='gotwokeup', PlayWhenSleeping=True, IgnoreSpeaking=True, CutAllSoundAndPlay=True)
 
                     # Update the boolean that tells if we're laying down. While laying down I recorded 4.37, 1.60. However, now it's 1.55, 2.7. wtf happened? The gyro has not moved. Maybe position difference. 
                     # At some point I ought to self-calibrate this. When it's dark, and not jostled for like an hour, that's def laying down, save it. 
                     # This is something I'll need to save in the sqlite db
-                    if abs(self.SmoothXTilt - status.SleepXTilt) < 2 and abs(self.SmoothYTilt - status.SleepYTilt) < 2:
+                    if abs(self.SmoothXTilt - status.SleepXTilt) < 0.2 and abs(self.SmoothYTilt - status.SleepYTilt) < 0.2:
                         status.IAmLayingDown = True
                     else:
                         status.IAmLayingDown = False

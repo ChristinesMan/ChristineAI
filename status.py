@@ -45,9 +45,7 @@ Horny = 0.3
 SexualArousal = 0.0
 
 # I want to be able to attempt detection of closeness
-# I think I'll make this a rolling average. 
 LoverProximity = 0.5
-LoverProximityWindow = 10.0
 
 # Booleans for sleep/wake
 IAmSleeping = False
@@ -73,6 +71,8 @@ BreathIntensity = 0.5
 SleepXTilt = 0.0
 SleepYTilt = 0.0
 
+# Keep track of whether we have switched off the Wernicke processing during sleep
+WernickeSleeping = False
 
 # this is to signal all threads to properly shutdown
 PleaseShutdown = False

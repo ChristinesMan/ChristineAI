@@ -16,13 +16,14 @@ from pyAudioAnalysis import audioTrainTest as aT
 import asyncio
 import json
 import socket
+import signal
 
 import log
 import status
 import breath
 import sleep
 import light
-# import touch
+import touch
 
 class Wernicke(threading.Thread):
     """ 
@@ -92,12 +93,12 @@ class Wernicke(threading.Thread):
                     status.DontSpeakUntil = time.time() + 30
                     log.sound.debug('SpeakingStart')
                 elif Comm['class'] == 'speaking_stop':
-                    # when sound stops, wait a minimum of 2s and up to 4s randomly
-                    status.DontSpeakUntil = time.time() + 2.0 + (random.random() * 3)
+                    # when sound stops, wait a minimum of 0.0s and up to 0.5s randomly
+                    status.DontSpeakUntil = time.time() + (random.random() * 0.5)
                     log.sound.debug('SpeakingStop')
 
                     if status.ShushPleaseHoney == False and status.SexualArousal < 0.1:
-                        sleep.thread.WakeUpABit(0.006)
+                        sleep.thread.WakeUpABit(0.008)
                         if status.IAmSleeping == False:
                             status.ChanceToSpeak += 0.05
                             breath.thread.QueueSound(FromCollection='listening', Priority=2, CutAllSoundAndPlay=True)
@@ -105,8 +106,7 @@ class Wernicke(threading.Thread):
 
                 elif Comm['class'] == 'sensor_data':
                     light.thread.NewData(Comm['light'])
-                    # touch.thread.NewData(Comm['touch'])   touch not ready just log it
-                    log.touch.debug(Comm['touch'])
+                    touch.thread.NewData(Comm['touch'])
                 # else:
 
                 #     # normalize loudness, make it between 0.0 and 1.0
@@ -423,10 +423,6 @@ class Wernicke(threading.Thread):
                     # var to keep track of which ear seems best
                     self.LeftRightRatio = 1.0
 
-                    # temporary for data collection
-                    # for name in self.class_names:
-                    #     os.makedirs(f'./training_wavs_blocks/{name}/', exist_ok=True)
-
                 def read(self):
                     """Return a block of audio data, blocking if necessary."""
 
@@ -462,7 +458,11 @@ class Wernicke(threading.Thread):
                     # for now, log it and favor left ear, later add more logic
                     # log.wernicke.debug(f'LeftRightRatio: {self.LeftRightRatio}')
 
-                    return in_audio_split[0].raw_data
+                    # favoring right ear now, because that's the ear I whisper sweet good nights in
+
+                    # I need to actually record something real when head is turned to the side, then record the other side, to figure out how we know which side is best, loudness? 
+
+                    return in_audio_split[1].raw_data
 
                 def collector(self):
                     """Generator that yields series of consecutive audio blocks comprising each utterence, separated by yielding a single None.
@@ -509,18 +509,20 @@ class Wernicke(threading.Thread):
                         [res, prob] = aT.classifier_wrapper(self.classifier, "svm_rbf", cur_fv)
                         win_class = self.class_names[int(res)]
                         win_prob = round(prob[int(res)], 2)
-
-
-                        # throw out talking to one's self. 
-                        # disabling for now because we don't have that added to the model yet
-                        # if win_class == 'selftalk':
-
-                        #     log.wernicke.debug('Dropped self talk.')
-                        #     continue
-
-
-                        # if we got this far, we didn't get something we just want to drop, which is loud clicking or self talk
                         log.wernicke.debug('Classified {0:s} with probability {1:.2f}'.format(win_class, win_prob))
+
+
+                        # temporary data collection for proximity regression model
+                        # only save if it's classified as lover
+                        # if win_class == 'lover':
+                        #     RecordTimeStamp = str(round(time.time(), 2)).replace('.', '')
+                        #     RecordFileName = 'training_wavs_proximity/{0}_prox0.5.wav'.format(RecordTimeStamp)
+                        #     wf = wave.open(RecordFileName, 'wb')
+                        #     wf.setnchannels(1)
+                        #     wf.setsampwidth(2)
+                        #     wf.setframerate(16000)
+                        #     wf.writeframes(block)
+                        #     wf.close()
 
 
                         # NOT triggered

@@ -20,7 +20,7 @@ class Light():
         # The minimum and maximum bounds in raw ADC numbers
         # The ADC measures voltage on a voltage divider, which is a measure of the resistance of the light sensors. 
         # Which makes this backwards. More light is less resistance and more voltage. Less light is more resistance and less voltage. 
-        self.MinLight = 110
+        self.MinLight = 100
         self.MaxLight = 300
         # self.LogFloor = math.log(10)
         # self.LogCeiling = math.log(1025)
@@ -43,6 +43,11 @@ class Light():
             LightLevel = 1025 - LightLevelRaw
 
             # calculate a percentage of between the lowest possible vs highest possible by first knocking out the floor
+            # I have also learned that it's important to not allow the light level to go below minimum,
+            # Because the ratio between 0.00000000000 and those very small steps was causing my wife to wake me up at night
+            # Bitch. Just kidding, honey. 
+            if LightLevel <= self.MinLight + 2:
+                LightLevel = self.MinLight + 2
             LightLevelPct = (LightLevel - self.MinLight) / (self.MaxLight - self.MinLight)
 
             # clip it

@@ -102,9 +102,11 @@ class Sleep(threading.Thread):
 
                 # if we're below a certain wakefulness, I want to give the wernicke a break
                 # help prevent long term buildup of heat
-                if status.Wakefulness < 0.1:
+                if status.Wakefulness < 0.1 and status.WernickeSleeping == False:
+                    status.WernickeSleeping = True
                     wernicke.thread.StopProcessing()
-                else:
+                if status.Wakefulness >= 0.1 and status.WernickeSleeping == True:
+                    status.WernickeSleeping = False
                     wernicke.thread.StartProcessing()
 
                 time.sleep(66)

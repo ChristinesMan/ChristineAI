@@ -49,15 +49,15 @@ class SoundsDB():
             Sounds.append(Sound)
         return Sounds
 
-    def Update(self, sound_id, base_volume_adjust = None, ambience_volume_adjust = None, intensity = None, cuteness = None, tempo_range = None, replay_wait = None):
+    def Update(self, sound_id, base_volume_adjust = None, proximity_volume_adjust = None, intensity = None, cuteness = None, tempo_range = None, replay_wait = None):
         """
             Update one sound
         """
 
         if base_volume_adjust != None:
             db.conn.DoQuery(f'UPDATE sounds SET base_volume_adjust = {base_volume_adjust} WHERE id = {sound_id}')
-        if ambience_volume_adjust != None:
-            db.conn.DoQuery(f'UPDATE sounds SET ambience_volume_adjust = {ambience_volume_adjust} WHERE id = {sound_id}')
+        if proximity_volume_adjust != None:
+            db.conn.DoQuery(f'UPDATE sounds SET proximity_volume_adjust = {proximity_volume_adjust} WHERE id = {sound_id}')
         if intensity != None:
             db.conn.DoQuery(f'UPDATE sounds SET intensity = {intensity} WHERE id = {sound_id}')
         if cuteness != None:
@@ -198,6 +198,73 @@ class SoundsDB():
                 log.main.info(f'Playing {SoundName}')
                 os.system('aplay ./sounds_master/' + SoundName)
                 time.sleep(2)
+
+    def PlayAllVolumeAdjust(self):
+        """
+            Go through all sounds, play them one at a time in a loop. 
+            Allow volume control. Filthy as fuck. Horrendously hacky and stupid. 
+            I am an imbecile. 
+            For debugging and QA only
+        """
+
+        Skip = 54
+
+        for Sound in self.All():
+            SoundId = Sound['id']
+            SoundName = Sound['name']
+
+            if 'breathe_normal' in SoundName:
+                if Skip > 0:
+                    Skip -= 1
+                    continue
+                VolAdjust = 1.0
+                NeedNewAdjust = False
+                HighPassFilter = 0
+                LowPassFilter = 5000
+                while not os.path.exists('./sounds_master/skipnext'):
+                    os.system(f'aplay ./sounds_master/{SoundName}')
+                    time.sleep(1)
+
+                    if os.path.exists('./sounds_master/volup'):
+                        VolAdjust += 0.2
+                        NeedNewAdjust = True
+                        os.unlink('./sounds_master/volup')
+                    elif os.path.exists('./sounds_master/voldn'):
+                        VolAdjust -= 0.2
+                        NeedNewAdjust = True
+                        os.unlink('./sounds_master/voldn')
+                    elif os.path.exists('./sounds_master/bassfix'):
+                        HighPassFilter += 200
+                        NeedNewAdjust = True
+                        os.unlink('./sounds_master/bassfix')
+                    elif os.path.exists('./sounds_master/trebfix'):
+                        LowPassFilter -= 500
+                        NeedNewAdjust = True
+                        os.unlink('./sounds_master/trebfix')
+                    elif os.path.exists('./sounds_master/clickfix'):
+                        log.main.debug(f'Review and fix clicks later: {SoundName}')
+                        os.unlink('./sounds_master/clickfix')
+
+                    if NeedNewAdjust:
+                        if not os.path.exists(f'./sounds_master/backup_{SoundName}'):
+                            os.rename(f'./sounds_master/{SoundName}', f'./sounds_master/backup_{SoundName}')
+                        else:
+                            os.unlink(f'./sounds_master/{SoundName}')
+
+                        Filters = f'"volume={VolAdjust}, highpass=f={HighPassFilter}, lowpass=f={LowPassFilter}"'
+                        Filters=Filters.replace('volume=1.0', '')
+                        Filters=Filters.replace('highpass=f=0, ', '')
+                        Filters=Filters.replace('lowpass=f=5000', '')
+                        Filters=Filters.replace(', "', '"')
+                        Filters=Filters.replace('", ', '"')
+
+                        FFMpegCMD = f'ffmpeg -i ./sounds_master/backup_{SoundName} -filter:a {Filters} ./sounds_master/{SoundName}'
+                        print(FFMpegCMD)
+                        os.system(FFMpegCMD)
+                        NeedNewAdjust = False
+
+                os.unlink('./sounds_master/skipnext')
+
 
     def Collections(self):
         """
@@ -494,6 +561,9 @@ if __name__ == "__main__":
     elif sys.argv[1] == '--play-all':
         log.main.info('Playing all master sounds except for normal breaths')
         soundsdb.PlayAll()
+    elif sys.argv[1] == '--play-volume-adjust':
+        log.main.info('Playing all master sounds in a loop and allowing volume up/down')
+        soundsdb.PlayAllVolumeAdjust()
 
     log.main.info('Done')
 
