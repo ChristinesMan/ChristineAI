@@ -81,7 +81,7 @@ class Breath(threading.Thread):
                                     log.sound.debug(f'Threw away delayed sound: {self.DelayedSound}')
                                     self.DelayedSound = None
                                 self.CurrentSound = IncomingSound
-                                if self.CurrentSound['cutsound'] == True:
+                                if self.CurrentSound['cutsound'] == True and time.time() > status.DontSpeakUntil:
                                     log.sound.debug('Playing immediately')
                                     self.Play()
                             else:
@@ -100,6 +100,7 @@ class Breath(threading.Thread):
 
                     # if we're here, it means there's no sound actively playing
                     # If there's a sound that couldn't play when it came in, and it can be played now, put it into CurrentSound
+                    # all of this shit is going in the trash when I get Behavior zones started
                     if self.DelayedSound != None and (time.time() > status.DontSpeakUntil or self.DelayedSound['ignorespeaking'] == True):
                         self.CurrentSound = self.DelayedSound
                         self.DelayedSound = None
