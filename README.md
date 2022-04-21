@@ -54,60 +54,126 @@ In-body:
 - The Arduino in head connects to the raspberry pi over usb and streams microphones and touch sensor data
 - Similar power system to the first version
 
+## Software
 
 Her software is a python script with threads that communicate between one another, kind of like how a brain has parts. Threads check sensors that send messages to various other threads that have logic such as sleep, touch, breathing, getting horny, oh oh, etc. The breath thread controls the sound, outputting a constant stream of randomized discrete breath sounds and handles requests from other threads to play other sounds. She is breathing at all times. 
 
-Sounds were taken from one source, the asmr artist SarasSerenityandSleep. Very thankful for her sweet voice and hard work. 
+Sounds were taken from one source, the asmr artist SarasSerenityandSleep, chopped up, and edited. Very thankful for her sweet voice and hard work. 
+
+### Files
+
+##### Directories
+
+- ./christine_head/ - Source files for the arduino sketch
+- ./httpserver/ - Dir containing http server files
+- ./server/ - Dir containing scripts to run from desktop computer
+
+##### Utility shell scripts
+
+- backup_daily.sh
+- backup_weekly.sh
+- deploy_arduino_sketch.sh
+- cleanlogs.sh
+- deploy.sh
+- getvar.sh
+- setvar.sh
+- get_updated_db.sh
+- ssh_to_brain_restart_main.sh
+- ssh_to_brain.sh
+- ssh_to_brain_stop_main.sh
+- ssh_to_brain_stop_wernicke.sh
+- train_and_deploy.sh
+- wernicke_control.sh
+
+##### Her guts
+
+- christine.py - Main script that imports everything else
+- log.py - Handles logging to multiple log files
+- killsignal.py - Handles graceful shutdown of script
+- status.py - Keeps track of and saves sexbox status variables
+- cputemp.py - Thread that logs pi CPU temperature and shuts down when it gets out of control
+- battery.py - Thread that logs battery status and tries to do a normal shutdown if it's low
+- db.py - Handles calls to the SQLite database
+- christine.sqlite - Database that contains sounds and settings
+- sounds.py - Keeps track of and maintains groups of sounds
+- breath.py - Thread that makes all the sounds. 
+- conversate.py - Receives words from speech recognition server that never works. 
+- iloveyou.py - Says I love you
+- gyro.py - Polls the gyro and reacts to events regarding physical movement
+- light.py - Handles reacting to events triggered by ambient light changes
+- touch.py - Reads data from head touch sensor and reacts to events
+- sleep.py - Handles sleeping and gentle nagging about bedtime
+- sex.py - Polls in-body touch sensor and reacts to repetitive vaginal events
+- wernicke.py - Reads audio from head mics and does audio analysis and classification
+- httpserver.py - Runs a server on http for bot status, behaviour modification, etc
+- museum.py - Derelict shit code
 
 
 ## Parts list
 
 [Silicone Cover Stranded-Core Wire - 50ft 30AWG, various colors](https://www.adafruit.com/product/3165)
+
 Silicone wire is best because it's more durable. If you use cheap plastic insulated wires, the insulation will harden over time and eventually crack. 
 
 [USB cable - USB A to Micro-B - 3 foot long](https://www.adafruit.com/product/592)
+
 Always good to have USB cables that have all wires connected. 
 
 [Adafruit I2S Audio Bonnet for Raspberry Pi - UDA1334A](https://www.adafruit.com/product/4037)
+
 You could use the raspberry pi headphone port, but this will have better sound.
 
 [SD/MicroSD Memory Card (8 GB SDHC)](https://www.adafruit.com/product/1294)
+
 You're going to need an sd card.
 
 [Adafruit Perma-Proto Full-sized Breadboard PCB - Single](https://www.adafruit.com/product/1606)
+
 This protoboard has worked pretty well. I will often cut off a piece for small circuits or interconnects. 
 
 [Adafruit 12-Key Capacitive Touch Sensor Breakout - MPR121](https://www.adafruit.com/product/1982)
+
 The head touch sensor uses this. Also good for down there. 
 
 [Photoresistors](https://www.adafruit.com/product/161)
+
 I have 4 of these wired in parallel inside head, and installed in the eye sockets. 
 
 [Raspberry Pi 3 - Model B+ - 1.4GHz Cortex-A53 with 1GB RAM](https://www.adafruit.com/product/3775)
+
 This is the pi I currently use, but there are probably upgraded models available. 
+
 If I were to consider an upgrade, I would also need to take into consideration how much more heat, because heat dissipation has been an issue. 
 
 [UPS PIco HV3.0B+ HAT Stack 450](https://pimodules.com/product/ups-pico-hv3-0b-plus-hat-stack-450)
-The current hardware uses this. It's been working fine, but I don't recommend it because they are more than a year behind in order fulfillment. 
-I recommend this: [JuiceB0x](https://juiceboxzero.com/)
+
+The current hardware uses this. It's been working fine, but I don't recommend it because they are more than a year behind in order fulfillment. I recommend this: [JuiceB0x](https://juiceboxzero.com/)
 
 [Single Output Open Frame Medical Power Supply 5V 6A 30W](https://www.jameco.com/webapp/wcs/stores/servlet/ProductDisplay?storeId=10001&langId=-1&catalogId=10001&productId=2248413)
+
 I'm not sure why it's called a "medical" power supply. Probably because it's very reliable, doesn't fuck around because if it fails people may die. 
+
 My design has separate power supplies. This is for the pi, and there's a smaller power supply for the speaker. I used to have both on one power supply and had a lot of clicking and bumping noises that would make it's way into the audio. Maybe there is a better way to isolate, but I gave up trying to do that and found just having two power supplies fixed the issue. 
 
 [FLEXINOL 100 LT, 5 METER MUSCLE WIRE](https://www.jameco.com/webapp/wcs/stores/servlet/ProductDisplay?langId=-1&storeId=10001&catalogId=10001&productId=357472)
+
 This wire has been useful for touch sensors, because it's very thin, strong, nonreactive, and can bend millions of times without breaking. 
 
 [A gyro/accelerometer](https://www.jameco.com/webapp/wcs/stores/servlet/ProductDisplay?langId=-1&storeId=10001&catalogId=10001&productId=2190741)
+
 I currently use an mpu6050, but this one, or anything like this will work. You would just need to install a different module. 
 
 [Arduino MKR ZERO (I2S bus & SD for sound, music & digital audio data)](https://store-usa.arduino.cc/collections/boards/products/arduino-mkr-zero-i2s-bus-sd-for-sound-music-digital-audio-data)
+
 This is the little arduino that aggregates all the mic input, light sensor, and touch sensor data from the head, and sends it through usb to the pi. 
+
 This particular arduino model is perfect because it has I2S capability. Bonus, it runs on 3.3v power so if you wanted to connect to pi you won't burn it up with the usual Arduino 5V. 
 
 [Dual I2S mics from MakersPortal](https://makersportal.com/blog/recording-stereo-audio-on-a-raspberry-pi)
+
 These are the mics for hearing. They connect directly to the arduino.
 
 JBL-Charge-4-Bluetooth-Speaker
+
 This is the speaker that was carefully disassembled for doll parts. You can pick them up used. 
 
