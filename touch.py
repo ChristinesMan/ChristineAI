@@ -66,7 +66,7 @@ class Touch():
                     # going to test out making sounds for cheeks, not only mouth
                     status.DontSpeakUntil = time.time() + 2.0 + (random.random() * 3.0)
                     if status.IAmSleeping == False:
-                        breath.thread.QueueSound(FromCollection='kissing', IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=2)
+                        breath.thread.QueueSound(FromCollection='kissing', IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=4)
                     sleep.thread.WakeUpABit(0.05)
                     # GlobalStatus.TouchedLevel += 0.1
                     status.ChanceToSpeak += 0.05

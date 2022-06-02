@@ -75,15 +75,16 @@ class Breath(threading.Thread):
                     # Christine was saying two nice things in quick succession which was kind of weird, and this is my fix.
                     if IncomingSound['priority'] > self.CurrentSound['priority']:
                         if status.IAmSleeping == False or IncomingSound['playsleeping']:
-                            if self.DelayedSound == None or IncomingSound['priority'] > self.DelayedSound['priority']:
+                            if IncomingSound['cutsound'] == True and IncomingSound['ignorespeaking'] == True:
+                                self.CurrentSound = IncomingSound
+                                log.sound.debug('Playing immediately')
+                                self.Play()
+                            elif self.DelayedSound == None or IncomingSound['priority'] > self.DelayedSound['priority']:
                                 log.sound.debug('Accepted: %s', IncomingSound)
                                 if self.DelayedSound != None:
                                     log.sound.debug(f'Threw away delayed sound: {self.DelayedSound}')
                                     self.DelayedSound = None
                                 self.CurrentSound = IncomingSound
-                                if self.CurrentSound['cutsound'] == True and time.time() > status.DontSpeakUntil:
-                                    log.sound.debug('Playing immediately')
-                                    self.Play()
                             else:
                                 log.sound.debug('Discarded (delayed sound): %s', IncomingSound)
                         else:

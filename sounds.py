@@ -562,7 +562,7 @@ if __name__ == "__main__":
         log.main.info('Playing all master sounds except for normal breaths')
         soundsdb.PlayAll()
     elif sys.argv[1] == '--play-volume-adjust':
-        log.main.info('Playing all master sounds in a loop and allowing volume up/down')
+        log.main.info('Playing all master sounds in a loop and allowing volume up/down and also filtering')
         soundsdb.PlayAllVolumeAdjust()
 
     log.main.info('Done')

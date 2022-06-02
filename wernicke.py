@@ -725,9 +725,10 @@ class Wernicke(threading.Thread):
             CheckForMessagesThread.daemon = True
             CheckForMessagesThread.start()
 
-            SendLoveToServerThread = SendLoveToServer()
-            SendLoveToServerThread.daemon = True
-            SendLoveToServerThread.start()
+            # Disabled because we gave up on doing speech recognition off-pi for a while
+            # SendLoveToServerThread = SendLoveToServer()
+            # SendLoveToServerThread.daemon = True
+            # SendLoveToServerThread.start()
 
             # Start all the VAD detection stuff
             audio = Audio()

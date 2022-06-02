@@ -28,7 +28,7 @@ class I_Love_You(threading.Thread):
                 if status.ShushPleaseHoney == False and time.time() > self.NextMakeOutSoundsTime and status.ChanceToSpeak > random.random():
                     self.NextMakeOutSoundsTime = time.time() + 10 + int(600*random.random())
                     status.ChanceToSpeak = 0.0
-                    breath.thread.QueueSound(FromCollection='loving')
+                    breath.thread.QueueSound(FromCollection='loving', Priority=3)
                 log.sound.debug('ChanceToSpeak = %.2f', status.ChanceToSpeak)
                 status.ChanceToSpeak -= 0.01
 
