@@ -47,6 +47,7 @@ class Gyro(threading.Thread):
         
             # setup that sensor
             self.sensor = mpu6050(0x68)
+            self.sensor.set_accel_range(mpu6050.ACCEL_RANGE_2G)
 
         except:
 
