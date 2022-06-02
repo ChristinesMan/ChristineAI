@@ -33,8 +33,14 @@ class Touch():
         # I started at 500 but it wasn't self-correcting very well
         self.BaselineDataLength = 100
 
-        # accumulate data here, and every once in a while we cum and calc the mode
-        self.Data = [ np.zeros(self.BaselineDataLength) ] * 12
+        # there are 12 channels, and we only have 3 connected to anything
+        # accumulate data in an array of numpy arrays, and every once in a while we cum and calc the mode
+        self.UsedChannels = []
+        self.Data = [None] * 12
+        for channel in range(0, 12):
+            if self.ChannelLabels[channel] != None:
+                self.UsedChannels.append(channel)
+                self.Data[channel] = np.zeros(self.BaselineDataLength)
 
         # counter to help accumulate values
         self.Counter = 0
@@ -45,11 +51,7 @@ class Touch():
         try:
 
             # for all 12 channels
-            for channel in range(0, 12):
-
-                # if we're not using this channel, just fuck it
-                if self.ChannelLabels[channel] == None:
-                    continue
+            for channel in self.UsedChannels:
 
                 # save data in an array
                 self.Data[channel][self.Counter % self.BaselineDataLength] = TouchData[channel]
@@ -77,10 +79,7 @@ class Touch():
             # these normally should never change
             if self.Counter % self.BaselineDataLength == 0:
 
-                for channel in range(0, 12):
-
-                    if self.ChannelLabels[channel] == None:
-                        continue
+                for channel in self.UsedChannels:
 
                     self.Baselines[channel] = scipy.stats.mode(self.Data[channel]).mode[0]
 

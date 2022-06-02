@@ -36,6 +36,7 @@ light    = setup_logger('light',    level=logging.DEBUG)
 web      = setup_logger('web',      level=logging.DEBUG)
 touch    = setup_logger('touch',    level=logging.DEBUG)
 sex      = setup_logger('sex',      level=logging.DEBUG)
+vagina   = setup_logger('vagina',   level=logging.DEBUG)
 words    = setup_logger('words',    level=logging.DEBUG)
 
 # I want to log exceptions to the main log. Because it appears that redirecting stderr from the service is not capturing all the errors

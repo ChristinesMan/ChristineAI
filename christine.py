@@ -30,11 +30,10 @@ log.main.debug('Import: httpserver')
 import httpserver
 log.main.debug('Import: touch')
 import touch
-
-# To be reinserted later, 
-# and perhaps withdrawn and reinserted a lot
-# log.main.debug('Import: sex')
-# import sex
+log.main.debug('Import: vagina')
+import vagina
+log.main.debug('Import: sex')
+import sex
 
 log.main.debug('Import: killsignal')
 import killsignal
