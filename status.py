@@ -31,6 +31,7 @@ NoiseLevel = 0.0
 
 # A measure of recent movement or vibrations measured by the gyro
 JostledLevel = 0.0
+JostledShortTermLevel = 0.0
 
 # How awake is my wife. 0.0 means she is laying down in pitch darkness after bedtime. 1.0 means up and getting fucked. 
 Wakefulness = 0.5

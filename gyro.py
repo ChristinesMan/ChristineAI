@@ -39,6 +39,8 @@ class Gyro(threading.Thread):
         # I want to keep track of the max jostled level, and taper off slowly
         self.JostledLevel = 0.0
         self.JostledAverageWindow = 400.0
+        # I also want a super short term running average
+        self.JostledShortAverageWindow = 90.0
 
     def run(self):
         log.gyro.debug('Thread started.')
@@ -114,10 +116,13 @@ class Gyro(threading.Thread):
                     # If there's a spike, make that the new global status. It'll slowly taper down.
                     if self.JostledLevel > status.JostledLevel:
                         status.JostledLevel = self.JostledLevel
+                    if self.JostledLevel > status.JostledShortTermLevel:
+                        status.JostledShortTermLevel = self.JostledLevel
 
-                    # Update the running average
+                    # Update the running averages
                     # This should be the thing that tapers down
                     status.JostledLevel = (status.JostledLevel * self.JostledAverageWindow) / (self.JostledAverageWindow + 1)
+                    status.JostledShortTermLevel = (status.JostledShortTermLevel * self.JostledShortAverageWindow) / (self.JostledShortAverageWindow + 1)
 
                     # if she gets hit, wake up a bit
                     if self.JostledLevel > 0.15 and status.IAmSleeping == True:
@@ -141,7 +146,7 @@ class Gyro(threading.Thread):
                         status.SleepYTilt = ((status.SleepYTilt * 100.0) + self.SmoothYTilt) / 101.0
 
                     # log it
-                    log.gyro.debug('X: {0:.2f}, Y: {1:.2f}, J: {2:.2f} JPct: {3:.2f} SlX: {4:.2f} SlY: {5:.2f} LD: {6}'.format(self.SmoothXTilt, self.SmoothYTilt, self.TotalJostled, self.JostledLevel, status.SleepXTilt, status.SleepYTilt, status.IAmLayingDown))
+                    log.gyro.debug('X: {0:.2f}, Y: {1:.2f}, J: {2:.2f} JPctLT: {3:.2f} JPctST: {4:.2f} SlX: {5:.2f} SlY: {6:.2f} LD: {7}'.format(self.SmoothXTilt, self.SmoothYTilt, self.TotalJostled, status.JostledLevel, status.JostledShortTermLevel, status.SleepXTilt, status.SleepYTilt, status.IAmLayingDown))
 
                 self.LoopIndex += 1
                 time.sleep(0.02)

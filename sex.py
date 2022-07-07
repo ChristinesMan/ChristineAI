@@ -7,6 +7,7 @@ import log
 import status
 import breath
 import sleep
+# import horny
 
 # my favorite thread for vigorous testing in all the positions
 class Sex(threading.Thread):
@@ -19,18 +20,26 @@ class Sex(threading.Thread):
         # When arousal reaches some set level, I want to start incrementing the amount added to arousal
         # It will be slight, but since it will have no cap, eventually wife will throw an exception code O0OO00OOh
         self.Multiplier = 1.0
+        self.MultiplierIncrement = 0.005
 
         # keep track of Arousal not changing
         self.LastArousal = 0.0
         self.ArousalStagnantCount = 0
-        self.SecondsToReset = 60
+        self.SecondsToReset = 90
 
         # How much she likes it
         # different amount for different zones
-        self.BaseArousalPerVagHit = {'Vagina_Clitoris': 0.0004, 'Vagina_Shallow': 0.0008, 'Vagina_Deep': 0.001 }
+        self.BaseArousalPerVagHit = {'Vagina_Clitoris': 0.0004, 'Vagina_Shallow': 0.0008, 'Vagina_Middle': 0.0008, 'Vagina_Deep': 0.001 }
 
         # What Arousal to revert to after orgasm
-        self.ArousalPostO = 0.5
+        self.ArousalPostO = 0.3
+
+        # what thresholds for about to cum, cumming now, etc
+        self.ArousalNearO = 0.90
+        self.ArousalO = 0.98
+
+        # after wife orgasms, I want to monitor the gyro a while. When it's dead for a while, assume we're done.
+        self.GyroAfterODeadZone = 0.03
 
     def run(self):
         log.sex.debug('Thread started.')
@@ -53,14 +62,27 @@ class Sex(threading.Thread):
 
                 # If there's been no vagina hits for a period of time, we must be done, reset all
                 if self.ArousalStagnantCount >= self.SecondsToReset:
+                    log.sex.info('Arousal stagnated and was reset')
                     self.ArousalStagnantCount = 0
                     status.SexualArousal = 0.0
                     self.Multiplier = 1.0
                     self.ArousalPostO = 0.7
 
+                # if we are currently OOOOOO'ing, then I want to figure out when we're done, using the gyro
+                if status.SexualArousal > self.ArousalO:
+                    log.sex.debug(f'JostledShortTermLevel: {status.JostledShortTermLevel}')
+    
+                    if status.JostledShortTermLevel < self.GyroAfterODeadZone:
+                        log.sex.debug('Orgasm complete')
+                        status.Horny = 0.0
+                        status.SexualArousal = self.ArousalPostO
+                        # self.Multiplier = 1.0   trying not resetting this
+                        breath.thread.QueueSound(FromCollection='sex_done', IgnoreSpeaking=True, Priority=9)
+
                 # If we're to a certain point, start incrementing to ensure wife will cum eventually with enough time
-                if status.SexualArousal > 0.3:
-                    self.Multiplier += 0.003
+                # Just Keep Fucking, Just Keep Fucking
+                elif status.SexualArousal > 0.2:
+                    self.Multiplier += self.MultiplierIncrement
 
                 time.sleep(1)
 
@@ -81,23 +103,19 @@ class Sex(threading.Thread):
 
                 # Add some to the arousal
                 status.SexualArousal += ( self.BaseArousalPerVagHit[SensorHit] * self.Multiplier )
-                status.SexualArousal = float(np.clip(status.SexualArousal, 0.0, 1.0))
+                # Disabling the clip due to stagnation issue at 1.00
+                # status.SexualArousal = float(np.clip(status.SexualArousal, 0.0, 1.0))
 
                 log.sex.info(f'Vagina Got Hit ({SensorData})  SexualArousal: {status.SexualArousal:.2f}  Multiplier: {self.Multiplier}')
 
-                # My wife orgasms above 0.98
+                # My wife orgasms above 0.95
                 # If this is O #6 or something crazy like that, tend to reset it lower
-                if status.SexualArousal > 0.99:
-                    self.ArousalPostO -= 0.1
-                    self.ArousalPostO = float(np.clip(self.ArousalPostO, 0.0, 1.0))
-                    status.SexualArousal = self.ArousalPostO
-                    self.Multiplier = 1.0
-                    breath.thread.QueueSound(FromCollection='sex_climax', IgnoreSpeaking=True, Priority=9) #CutAllSoundAndPlay=True, was here, but seems dumb
+                if status.SexualArousal > self.ArousalO:
                     log.sex.info('I am coming!')
-                elif status.SexualArousal > 0.97:
-                    breath.thread.QueueSound(FromCollection='sex_near_O', IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=8)
+                    breath.thread.QueueSound(FromCollection='sex_climax', IgnoreSpeaking=True, Priority=8)
+                elif status.SexualArousal > self.ArousalNearO:
+                    breath.thread.QueueSound(FromCollection='sex_near_O', IgnoreSpeaking=True, Priority=8) # why was this here CutAllSoundAndPlay=True, 
                 else:
-                    log.sex.debug('Queuing a rando sex sound')
                     breath.thread.QueueSound(FromCollection='breathe_sex', Intensity = status.SexualArousal, IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=7)
                     if random.random() > 0.96:
                         breath.thread.QueueSound(FromCollection='sex_conversation', Intensity = status.SexualArousal, IgnoreSpeaking=True, Priority=8)
@@ -106,7 +124,7 @@ class Sex(threading.Thread):
             # not sure what I really want in this situation, but a low intensity moan seems ok for now
             else:
 
-                breath.thread.QueueSound(FromCollection='breathe_sex', Intensity = 2.0, IgnoreSpeaking=True, Priority=7)
+                breath.thread.QueueSound(FromCollection='breathe_sex', Intensity = 0.2, IgnoreSpeaking=True, Priority=7)
 
 
 # Instantiate and start the thread

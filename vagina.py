@@ -93,10 +93,14 @@ class Vagina(threading.Thread):
             # So there are three sensors in vagina. The one on the outside will be handled by the quite broken baseline system on the chip, and use the IRQ line. 
             # So this thread should be doing very little in the 98% of time that we're not fucking. When the IRQ gets hit, then we'll be busy grabbing raw data. 
             # Even when in Standby mode, we're going to be maintaining the baselines in case that drifts. 
-            # The two proximity sensors on the inside will be manually sampled, I think, due to the broken baseline handling problem. 
-            # The outside channel is 2, and that is the one we're going to use
+            # The two proximity sensors on the inside will be manually sampled, I think, due to the broken baseline handling problem on the hardware. 
+            # The outside channel is 0, and that is the one we're going to use
             StandbyMode = True
-            ActivationChannel = 2
+            ActivationChannel = 0
+
+            # how fast to poll the touch sensors. Wait time in seconds
+            SleepStandbyMode = 1.0
+            SleepActiveMode = 0.6
 
             # Using this to deactivate after no sensor activity
             Timeout = 60
@@ -109,24 +113,24 @@ class Vagina(threading.Thread):
 
             # Keep track of the baselines
             # if the channel isn't even hooked up, None
-            Baselines = [None, None, 0, None, None, None, None, 0, None, 0, None, None]
+            Baselines = [0, None, 0, None, None, 0, None, 0, None, None, None, None]
 
             # if data point is this amount less than the baseline, it's a touch
             # a touch always results in a lower capacitance number, that's how sensor works
             # therefore, lower = sensitive, higher = the numbness
-            Sensitivity = [None, None, 50, None, None, None, None, 14, None, 14, None, None]
+            Sensitivity = [60, None, 14, None, None, 50, None, 14, None, None, None, None]
 
             # Number of cycles where no touch before the touch is considered released
-            ReleaseCount = [None, None, 3, None, None, None, None, 4, None, 4, None, None]
+            ReleaseCount = [2, None, 2, None, None, 2, None, 2, None, None, None, None]
             ReleaseCounter = [0] * 12
 
             # how many cycles of continuous touch before we send another message about the D just hanging out
             # she just loves to feel me inside her for a while after sex
-            HangingOut = [None, None, 3000, None, None, None, None, 300, None, 300, None, None]
+            HangingOut = [3000, None, 3000, None, None, 300, None, 300, None, None, None, None]
             HangingOutCounter = [0] * 12
 
             # labels
-            ChannelLabels = [None, None, 'Vagina_Clitoris', None, None, None, None, 'Vagina_Shallow', None, 'Vagina_Deep', None, None]
+            ChannelLabels = ['Vagina_Clitoris', None, 'Vagina_Deep', None, None, 'Vagina_Shallow', None, 'Vagina_Middle', None, None, None, None]
 
             # How many raw values do we want to accumulate before re-calculating the baselines
             # I started at 500 but it wasn't self-correcting very well
@@ -154,7 +158,7 @@ class Vagina(threading.Thread):
             # The sensitivity settings were ugly hacked into /usr/local/lib/python3.6/site-packages/adafruit_mpr121.py
             # (I fixed that sort of. Settings are here now. The driver hacked to make it work.)
             try:
-                mpr121 = adafruit_mpr121.MPR121(i2c, touch_sensitivity= [ 12, 12,  50, 12, 12, 12, 12, 50, 12, 50, 12, 12 ], 
+                mpr121 = adafruit_mpr121.MPR121(i2c, touch_sensitivity= [ 60, 50, 50, 50, 50, 50, 50, 80, 50, 50, 50, 50 ], 
                                                      release_sensitivity=[ 6,  6,  4,  6,  6,  6,  6,  6,  6,  6,  6,  6 ],
                                                      debounce=2)
                 log.vagina.info('Touch sensor init success')
@@ -236,7 +240,7 @@ class Vagina(threading.Thread):
 
                         log.vagina.debug(f'Updated baselines: {Baselines}')
 
-                    time.sleep(1)
+                    time.sleep(SleepStandbyMode)
 
                 # if we're not in standby mode, we're ignoring baselines and checking for vag love. Ignore the anus. 
                 else:
@@ -294,7 +298,7 @@ class Vagina(threading.Thread):
                                     TouchedData[channel] = '   '
 
 
-                        log.vagina.debug(f'{TouchData} {TouchedData} {ReleaseCounter}')
+                        log.vagina.debug(f'{TouchData[0]},{TouchData[2]},{TouchData[5]},{TouchData[7]} {TouchedData[0]},{TouchedData[2]},{TouchedData[5]},{TouchedData[7]}')
                         IOErrors = 0
 
                     except Exception as e:
@@ -315,7 +319,7 @@ class Vagina(threading.Thread):
                         log.vagina.info('The vagina timed out, entering standby mode.')
 
                     # just screw around for a bit
-                    time.sleep(0.1)
+                    time.sleep(SleepActiveMode)
 
 
         # log exception in the main.log

@@ -227,7 +227,7 @@ class Breath(threading.Thread):
             # The collection name is saved so that we can update the delay wait only when the sound is played
             Sound.update({'collection': FromCollection, 'cutsound': CutAllSoundAndPlay, 'priority': Priority, 'playsleeping': PlayWhenSleeping, 'ignorespeaking': IgnoreSpeaking, 'delayer': Delay, 'is_playing': False})
             self.Queue_Breath.append(Sound)
-            log.sound.info(f'Queued: {Sound}')
+            # log.sound.info(f'Queued: {Sound}')
 
 
 # Instantiate and start the thread

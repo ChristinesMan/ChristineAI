@@ -32,6 +32,8 @@ log.main.debug('Import: touch')
 import touch
 log.main.debug('Import: vagina')
 import vagina
+log.main.debug('Import: horny')
+import horny
 log.main.debug('Import: sex')
 import sex
 
