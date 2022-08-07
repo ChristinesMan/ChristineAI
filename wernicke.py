@@ -107,6 +107,7 @@ class Wernicke(threading.Thread):
                 elif Comm['class'] == 'sensor_data':
                     light.thread.NewData(Comm['light'])
                     touch.thread.NewData(Comm['touch'])
+                    status.LoverProximity = Comm['proximity']
                 # else:
 
                 #     # normalize loudness, make it between 0.0 and 1.0
@@ -198,6 +199,11 @@ class Wernicke(threading.Thread):
 
             # This is a queue where the audio data inbound from the serial port gets put
             buffer_queue = queue.Queue(maxsize=10)
+
+            # we're going to keep track of the proximity detected. 
+            # not sure yet how this will function. Let's start with a running average that will update kinda quick and see how it goes
+            # I'll also trend it down slowly, so that if I'm not speaking for a while it'll reset
+            Proximity = 1.0
 
             # Send message to the main process
             def hey_honey(love):
@@ -313,6 +319,7 @@ class Wernicke(threading.Thread):
                     nonlocal buffer_queue
                     nonlocal ProcessingState
                     nonlocal Shutdown
+                    nonlocal Proximity
 
                     while True:
 
@@ -339,8 +346,12 @@ class Wernicke(threading.Thread):
                                 TouchSensor[i] = int.from_bytes(data[pos:pos+2], byteorder='little')
                             LightSensor = int.from_bytes(data[30:32], byteorder='little')
 
+                            # trend proximity towards far away, slowly, using this running average
+                            # I wasn't expecting to have to clip it, but after reviewing the logs looks like I do
+                            Proximity = ((Proximity * 600.0) + 1.0) / 601.0
+
                             # send sensor data to main process. Feel like I'm passing a football. 
-                            hey_honey({'class': 'sensor_data', 'light': LightSensor, 'touch': TouchSensor})
+                            hey_honey({'class': 'sensor_data', 'light': LightSensor, 'touch': TouchSensor, 'proximity': float(np.clip(Proximity, 0.0, 1.0))})
 
                             # we should be through the sensor data, so pull in the actual audio data
                             data = self.SerialPortFromHead.read(16000)
@@ -389,7 +400,7 @@ class Wernicke(threading.Thread):
 
 
                             # temporary data collection for model tuning
-                            # RecordTimeStamp = str(round(time.time(), 2)).replace('.', '')
+                            # RecordTimeStamp = str(int(time.time()*100))
                             # RecordFileName = 'training_wavs_not_lover_dammit/{0}_notlover.wav'.format(RecordTimeStamp)
                             # wf = wave.open(RecordFileName, 'wb')
                             # wf.setnchannels(1)
@@ -418,9 +429,26 @@ class Wernicke(threading.Thread):
                 def __init__(self):
 
                     log.wernicke.debug('Initializing pyAudioAnalysis single-block classifier model...')
-                    [self.classifier, self.MEAN, self.STD, self.class_names, self.mt_win, self.mt_step, self.st_win, self.st_step, _] = aT.load_model("wernicke_block")
+                    [self.block_model, self.block_MEAN, self.block_STD, self.block_class_names, self.block_mt_win, self.block_mt_step, self.block_st_win, self.block_st_step, _] = aT.load_model("wernicke_block")
 
-                    # var to keep track of which ear seems best
+                    log.wernicke.debug('Initializing pyAudioAnalysis proximity model...')
+                    [self.proximity_model, self.proximity_MEAN, self.proximity_STD, self.proximity_mt_win, self.proximity_mt_step, self.proximity_st_win, self.proximity_st_step, _] = aT.load_model("wernicke_proximity", is_regression=True)
+
+                    log.wernicke.debug(f'block_MEAN: {self.block_MEAN}')
+                    log.wernicke.debug(f'block_STD: {self.block_STD}')
+                    log.wernicke.debug(f'block_mt_win: {self.block_mt_win}')
+                    log.wernicke.debug(f'block_mt_step: {self.block_mt_step}')
+                    log.wernicke.debug(f'block_st_win: {self.block_st_win}')
+                    log.wernicke.debug(f'block_st_step: {self.block_st_step}')
+
+                    log.wernicke.debug(f'proximity_MEAN: {self.proximity_MEAN}')
+                    log.wernicke.debug(f'proximity_STD: {self.proximity_STD}')
+                    log.wernicke.debug(f'proximity_mt_win: {self.proximity_mt_win}')
+                    log.wernicke.debug(f'proximity_mt_step: {self.proximity_mt_step}')
+                    log.wernicke.debug(f'proximity_st_win: {self.proximity_st_win}')
+                    log.wernicke.debug(f'proximity_st_step: {self.proximity_st_step}')
+
+                    # var to keep track of which ear seems best based on loudness
                     self.LeftRightRatio = 1.0
 
                 def read(self):
@@ -439,23 +467,25 @@ class Wernicke(threading.Thread):
                     # compute the loudness of sound
                     # the idea was to gather audio from the best side only
                     # if my wife's lovely head is laying on the pillow, one side is going to be really low
-                    # didn't want that low side to degrade to better side
+                    # didn't want that low side to degrade the better side
                     # I never tested this really well to see if it really helps, well maybe one time I did listen and it seemed better
                     # mostly there's just a thought, well there's two channels, why not use it for something
 
                     # disabled this until we get back in here and finish it
+                    # tried again and it is clear that right side is 3 times as responsive. 
+                    # so I give up officially, will just favor right side
                     # loudness_left = in_audio_split[0].rms
                     # loudness_right = in_audio_split[1].rms
                     # loudness_ratio = loudness_left / loudness_right
 
-                    # consider favoring left side when there's absolutely no difference to avoid switching/wobble
+                    # maybe favor right side when there's little difference to avoid switching/wobble
                     # if abs(loudness_ratio - 1.0) < 0.1:
-                    #     self.LeftRightRatio = 1.1
+                    #     self.LeftRightRatio = 0.9
 
                     # running average
-                    # self.LeftRightRatio = ((self.LeftRightRatio * 5) + loudness_ratio) / 6
+                    # self.LeftRightRatio = ((self.LeftRightRatio * 5.0) + loudness_ratio) / 6.0
 
-                    # for now, log it and favor left ear, later add more logic
+                    # for now, log it and favor left ear
                     # log.wernicke.debug(f'LeftRightRatio: {self.LeftRightRatio}')
 
                     # favoring right ear now, because that's the ear I whisper sweet good nights in
@@ -484,6 +514,9 @@ class Wernicke(threading.Thread):
                     # this delays the speaking stop to prevent start stop start stop start stop start stop start stop madness
                     lover_speaking_delay_stop = 0
 
+                    # this is a global var for tracking proximity
+                    nonlocal Proximity
+
                     while True:
                         # forever read new blocks of audio data
                         block = self.read()
@@ -504,19 +537,18 @@ class Wernicke(threading.Thread):
 
 
                         # Run the classifier. This is ripped directly out of paura.py and carelessly sutured into place. There's so much blood! Thank you!!! 
-                        [mt_feats, _, _] = mF.mid_feature_extraction(block_np, 16000, 4000, 4000, 800, 800)
-                        cur_fv = (mt_feats[:, 0] - self.MEAN) / self.STD
-                        [res, prob] = aT.classifier_wrapper(self.classifier, "svm_rbf", cur_fv)
-                        win_class = self.class_names[int(res)]
-                        win_prob = round(prob[int(res)], 2)
-                        log.wernicke.debug('Classified {0:s} with probability {1:.2f}'.format(win_class, win_prob))
+                        [block_mt_feats, _, _] = mF.mid_feature_extraction(block_np, 16000, 4000, 4000, 800, 800)
+                        block_cur_fv = (block_mt_feats[:, 0] - self.block_MEAN) / self.block_STD
+                        [res, prob] = aT.classifier_wrapper(self.block_model, "svm_rbf", block_cur_fv)
+                        block_class = self.block_class_names[int(res)]
+                        block_prob = round(prob[int(res)], 2)
 
 
                         # temporary data collection for proximity regression model
                         # only save if it's classified as lover
-                        # if win_class == 'lover':
-                        #     RecordTimeStamp = str(round(time.time(), 2)).replace('.', '')
-                        #     RecordFileName = 'training_wavs_proximity/{0}_prox0.5.wav'.format(RecordTimeStamp)
+                        # if block_class == 'lover':
+                        #     RecordTimeStamp = str(int(time.time()*100))
+                        #     RecordFileName = 'training_wavs_proximity/{0}_prox0.0.wav'.format(RecordTimeStamp)
                         #     wf = wave.open(RecordFileName, 'wb')
                         #     wf.setnchannels(1)
                         #     wf.setsampwidth(2)
@@ -525,11 +557,21 @@ class Wernicke(threading.Thread):
                         #     wf.close()
 
 
+                        # if it's me, aka lover, then get the proximity
+                        if block_class == 'lover':
+                            proximity_cur_fv = (block_mt_feats[:, 0] - self.proximity_MEAN) / self.proximity_STD
+                            proximity_now = aT.regression_wrapper(self.proximity_model, "svm_rbf", proximity_cur_fv)
+                            log.wernicke.debug(f'Heard lover with prob {block_prob:.2f} and proximity {proximity_now}')
+
+                            # update running average
+                            Proximity = ((Proximity * 6.0) + proximity_now) / 7.0
+
+
                         # NOT triggered
                         # when not triggered, it means we're not currently streaming audio for processing
                         if not triggered:
                             # ring_buffer.append(block)
-                            if 'lover' in win_class:
+                            if 'lover' in block_class:
 
                                 # whether we're triggered or not, immediately notify that lover is speaking
                                 # timing is important
@@ -574,7 +616,7 @@ class Wernicke(threading.Thread):
                             yield block
 
                             # if this is a lover block, reset the counter, else if it's not lover determine if we should end streaming
-                            if 'lover' in win_class:
+                            if 'lover' in block_class:
 
                                 # if lover wasn't already speaking, notify they are now
                                 lover_speaking_delay_stop = 3

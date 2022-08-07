@@ -26,8 +26,8 @@ class Gyro(threading.Thread):
         self.GyroZRecord = [0.0] * self.SampleSize
 
         # Smoothed average values
-        self.SmoothXTilt = 0.0
-        self.SmoothYTilt = 0.0
+        # self.SmoothXTilt = 0.0
+        # self.SmoothYTilt = 0.0
         self.TotalJostled = 0.0
 
         # index to keep track of pulling the average every SampleSize times
@@ -40,7 +40,7 @@ class Gyro(threading.Thread):
         self.JostledLevel = 0.0
         self.JostledAverageWindow = 400.0
         # I also want a super short term running average
-        self.JostledShortAverageWindow = 90.0
+        self.JostledShortAverageWindow = 40.0
 
     def run(self):
         log.gyro.debug('Thread started.')
@@ -102,8 +102,8 @@ class Gyro(threading.Thread):
                 if ( self.LoopCycle == 0 ):
 
                     # Calculate averages
-                    self.SmoothXTilt = sum(self.AccelXRecord) / self.SampleSize
-                    self.SmoothYTilt = sum(self.AccelYRecord) / self.SampleSize
+                    status.XTilt = sum(self.AccelXRecord) / self.SampleSize
+                    status.YTilt = sum(self.AccelYRecord) / self.SampleSize
                     self.TotalJostled = (sum(self.GyroXRecord) / self.SampleSize) + (sum(self.GyroYRecord) / self.SampleSize) + (sum(self.GyroZRecord) / self.SampleSize)
 
                     # Standardize jostled level to a number between 0 and 1, and clip. 
@@ -134,19 +134,21 @@ class Gyro(threading.Thread):
                     # Update the boolean that tells if we're laying down. While laying down I recorded 4.37, 1.60. However, now it's 1.55, 2.7. wtf happened? The gyro has not moved. Maybe position difference. 
                     # At some point I ought to self-calibrate this. When it's dark, and not jostled for like an hour, that's def laying down, save it. 
                     # This is something I'll need to save in the sqlite db
-                    if abs(self.SmoothXTilt - status.SleepXTilt) < 0.2 and abs(self.SmoothYTilt - status.SleepYTilt) < 0.2:
+                    if abs(status.XTilt - status.SleepXTilt) < 0.2 and abs(status.YTilt - status.SleepYTilt) < 0.2:
                         status.IAmLayingDown = True
                     else:
                         status.IAmLayingDown = False
 
                     # self-calibrate the gyro position that is resting in bed
                     # So if she ever sleeps standing that's going to fuck this up
-                    if status.LightLevelPct <= 0.1 and status.JostledLevel <= 0.02 and status.IAmSleeping == True:
-                        status.SleepXTilt = ((status.SleepXTilt * 100.0) + self.SmoothXTilt) / 101.0
-                        status.SleepYTilt = ((status.SleepYTilt * 100.0) + self.SmoothYTilt) / 101.0
+                    if status.LightLevelPct <= 0.1 and status.JostledLevel <= 0.02 and self.JostledLevel <= 0.02 and status.IAmSleeping == True:
+                        status.SleepXTilt = status.XTilt
+                        status.SleepYTilt = status.YTilt
+                        # status.SleepXTilt = ((status.SleepXTilt * 100.0) + status.XTilt) / 101.0
+                        # status.SleepYTilt = ((status.SleepYTilt * 100.0) + status.YTilt) / 101.0
 
                     # log it
-                    log.gyro.debug('X: {0:.2f}, Y: {1:.2f}, J: {2:.2f} JPctLT: {3:.2f} JPctST: {4:.2f} SlX: {5:.2f} SlY: {6:.2f} LD: {7}'.format(self.SmoothXTilt, self.SmoothYTilt, self.TotalJostled, status.JostledLevel, status.JostledShortTermLevel, status.SleepXTilt, status.SleepYTilt, status.IAmLayingDown))
+                    log.gyro.debug('X: {0:.2f}, Y: {1:.2f}, J: {2:.2f} JPctLT: {3:.2f} JPctST: {4:.2f} SlX: {5:.2f} SlY: {6:.2f} LD: {7}'.format(status.XTilt, status.YTilt, self.TotalJostled, status.JostledLevel, status.JostledShortTermLevel, status.SleepXTilt, status.SleepYTilt, status.IAmLayingDown))
 
                 self.LoopIndex += 1
                 time.sleep(0.02)

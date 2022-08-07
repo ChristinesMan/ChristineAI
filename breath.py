@@ -57,12 +57,13 @@ class Breath(threading.Thread):
         log.sound.debug('Thread started.')
 
         try:
+
             while True:
 
                 # graceful shutdown
                 if status.PleaseShutdown:
                     log.sound.info('Thread shutting down')
-                    self.PipeToShuttlecraft.send('selfdestruct')
+                    self.PipeToShuttlecraft.send({'wavfile': 'selfdestruct', 'vol': 0})
                     break
 
                 # Get everything out of the queue and process it, unless there's already a sound that's been waiting
@@ -132,7 +133,7 @@ class Breath(threading.Thread):
 
     def ChooseNewBreath(self):
         self.CurrentSound = sounds.collections[self.BreathStyle].GetRandomSound(intensity = status.BreathIntensity)
-        self.CurrentSound.update({'cutsound': False, 'priority': 1, 'playsleeping': True, 'ignorespeaking': True, 'delayer': random.randint(5, 20), 'is_playing': False})
+        self.CurrentSound.update({'cutsound': False, 'priority': 1, 'playsleeping': True, 'ignorespeaking': True, 'delayer': random.randint(3, 7), 'is_playing': False})
         log.sound.debug('Chose breath: %s', self.CurrentSound)
 
     def Play(self):
@@ -142,14 +143,40 @@ class Breath(threading.Thread):
         if self.CurrentSound['replay_wait'] != 0 and self.CurrentSound['collection'] != None:
             sounds.collections[self.CurrentSound['collection']].SetSkipUntil(SoundID = self.CurrentSound['id'])
 
+        # calculate what volume this should play at adjusting for proximity
+        # this was really hard math to figure out for some reason
+        # I was very close to giving up and writing a bunch of rediculous if statements
+        # a proximity_volume_adjust of 1.0 means don't reduce the volume at all
+        volume = int( (1.0 - (1.0 - float(self.CurrentSound['proximity_volume_adjust'])) * (1.0 - status.LoverProximity) ) * 100)
+
         # Some sounds have tempo variations. If so randomly choose one, otherwise it'll just be 0.wav
         if self.CurrentSound['tempo_range'] == 0.0:
-            self.PipeToShuttlecraft.send(f'./sounds_processed/{self.CurrentSound["id"]}/0.wav')
+            self.PipeToShuttlecraft.send({'wavfile': f'./sounds_processed/{self.CurrentSound["id"]}/0.wav', 'vol': volume})
         else:
-            self.PipeToShuttlecraft.send(f'./sounds_processed/{self.CurrentSound["id"]}/{random.choice(self.TempoMultipliers)}.wav')
+            self.PipeToShuttlecraft.send({'wavfile': f'./sounds_processed/{self.CurrentSound["id"]}/{random.choice(self.TempoMultipliers)}.wav', 'vol': volume})
 
         # let stuff know this sound is playing, not just waiting in line
         self.CurrentSound['is_playing'] = True
+
+    # Change the type of automatic breath sounds
+    def BreathChange(self, NewBreathType):
+        self.BreathStyle = NewBreathType
+
+    # Add a sound to the queue to be played
+    def QueueSound(self, Sound = None, FromCollection = None, Intensity = None, CutAllSoundAndPlay = False, Priority = 5, PlayWhenSleeping = False, IgnoreSpeaking = False, Delay = 0):
+
+        # if we're playing a sound from a collection, go fetch that rando
+        if Sound == None and FromCollection != None:
+            Sound = sounds.collections[FromCollection].GetRandomSound(intensity=Intensity)
+
+        # If a collection is empty, or no sounds available at this time, it's possible to get a None sound. Just chuck it. 
+        if Sound != None:
+
+            # Take the Sound and add all the options to it. Merges the two dicts into one. 
+            # The collection name is saved so that we can update the delay wait only when the sound is played
+            Sound.update({'collection': FromCollection, 'cutsound': CutAllSoundAndPlay, 'priority': Priority, 'playsleeping': PlayWhenSleeping, 'ignorespeaking': IgnoreSpeaking, 'delayer': Delay, 'is_playing': False})
+            self.Queue_Breath.append(Sound)
+
 
     # Runs in a separate process for performance reasons. Sounds got crappy and this solved it. 
     def Shuttlecraft(self, PipeToStarship):
@@ -173,22 +200,30 @@ class Breath(threading.Thread):
             # Start up some fucking alsa
             device = alsaaudio.PCM(channels=1, rate=rate, format=alsaaudio.PCM_FORMAT_S16_LE, periodsize=periodsize)
 
+            # init the mixer thing
+            mixer = alsaaudio.Mixer(control='PCM')
+
             while True:
 
                 # So basically, if there's something in the pipe, get it all out
                 if PipeToStarship.poll():
-                    WavFile = PipeToStarship.recv()
+
+                    Comms = PipeToStarship.recv()
+                    log.sound.debug(f'Shuttlecraft received: {Comms}')
 
                     # graceful shutdown
-                    if WavFile == 'selfdestruct':
-                        log.gyro.info('Shuttlecraft self destruct activated')
+                    if Comms['wavfile'] == 'selfdestruct':
+                        log.sound.info('Shuttlecraft self destruct activated.')
                         break
 
-                    log.sound.debug(f'Shuttlecraft received: {WavFile}')
+                    # the volume gets set before each sound is played
+                    mixer.setvolume(Comms['vol'])
 
                     # Normally the pipe will receive a path to a new wav file to start playing, stopping the previous sound
-                    WavData = wave.open(WavFile)
+                    # it used to be just a string with a path, since I started dynamic volume changes this will be a dict
+                    WavData = wave.open(Comms['wavfile'])
                     WavDataFrames = WavData.getnframes()
+
                 else:
 
                     # If there are still frames enough to write without being short
@@ -211,23 +246,6 @@ class Breath(threading.Thread):
         # log exception in the main.log
         except Exception as e:
             log.main.error('Shuttlecraft crashed. {0} {1} {2}'.format(e.__class__, e, log.format_tb(e.__traceback__)))
-
-    # Change the type of automatic breath sounds
-    def BreathChange(self, NewBreathType):
-        self.BreathStyle = NewBreathType
-
-    # Add a sound to the queue to be played
-    def QueueSound(self, Sound = None, FromCollection = None, Intensity = None, CutAllSoundAndPlay = False, Priority = 5, PlayWhenSleeping = False, IgnoreSpeaking = False, Delay = 0):
-        if Sound == None and FromCollection != None:
-            Sound = sounds.collections[FromCollection].GetRandomSound(intensity=Intensity)
-
-        # If a collection is empty, or no sounds available at this time, it's possible to get a None sound. Just chuck it. 
-        if Sound != None:
-            # Take the Sound and add all the options to it. Merges the two dicts into one. 
-            # The collection name is saved so that we can update the delay wait only when the sound is played
-            Sound.update({'collection': FromCollection, 'cutsound': CutAllSoundAndPlay, 'priority': Priority, 'playsleeping': PlayWhenSleeping, 'ignorespeaking': IgnoreSpeaking, 'delayer': Delay, 'is_playing': False})
-            self.Queue_Breath.append(Sound)
-            # log.sound.info(f'Queued: {Sound}')
 
 
 # Instantiate and start the thread

@@ -39,7 +39,7 @@ class ChristineDB():
 
         # log exception in the main.log
         except Exception as e:
-            log.main.error('Database error. {0} {1} {2}'.format(e.__class__, e, log.format_tb(e.__traceback__)))
+            log.main.error('Database error. {0} {1} {2}  Query: {3}'.format(e.__class__, e, log.format_tb(e.__traceback__), query))
             return None
 
 
@@ -64,7 +64,7 @@ class ChristineDB():
 
         # log exception in the main.log
         except Exception as e:
-            log.main.error('Database error. {0} {1} {2}'.format(e.__class__, e, log.format_tb(e.__traceback__)))
+            log.main.error('Database error. {0} {1} {2}  Query: {3}'.format(e.__class__, e, log.format_tb(e.__traceback__), query))
             return None
 
 
@@ -78,7 +78,7 @@ class ChristineDB():
 
         # log exception in the main.log
         except Exception as e:
-            log.main.error('Database error. {0} {1} {2}'.format(e.__class__, e, log.format_tb(e.__traceback__)))
+            log.main.error('Database error. {0} {1} {2}  Query: {3}'.format(e.__class__, e, log.format_tb(e.__traceback__), query))
 
 
 # Instantiate

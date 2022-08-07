@@ -1,4 +1,4 @@
-        function ButtonHit(endpoint, id, val=null) {
+        function ButtonHit(endpoint, data1, val1, data2=null, val2=null) {
           //console.log('ButtonHit');
           var xhttp = new XMLHttpRequest();
           xhttp.onreadystatechange = function() {
@@ -11,10 +11,10 @@
           xhttp.open("POST", endpoint, true);
           xhttp.overrideMimeType('text/plain')
           xhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
-          if ( val == null ) {
-              xhttp.send(id);
+          if ( data2 == null ) {
+              xhttp.send(data1+'='+val1);
           } else {
-              xhttp.send(id + "," + val);
+              xhttp.send(data1+'='+val1+'&'+data2+'='+val2);
           }
         }
 
@@ -59,10 +59,10 @@
           xhttp.open("POST", "/Sound_Detail", true);
           xhttp.overrideMimeType('text/html')
           xhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
-          xhttp.send(sound_id);
+          xhttp.send('sound_id='+sound_id);
         }
 
-        function CollectionHit(endpoint, id, val1=null, val2=null) {
+        function CollectionHit(endpoint, id, name=null, state=null) {
           var xhttp = new XMLHttpRequest();
           xhttp.onreadystatechange = function() {
             if (this.readyState == 4 && this.status == 200) {
@@ -72,7 +72,7 @@
           xhttp.open("POST", endpoint, true);
           xhttp.overrideMimeType('text/plain')
           xhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
-          xhttp.send(id + ',' + val1 + ',' + val2);
+          xhttp.send('sound_id='+id+'&collectionname='+name+'&collectionstate='+state);
         }
 
         function StartRecord() {
@@ -89,20 +89,6 @@
           xhttp.overrideMimeType('text/plain')
           xhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
           xhttp.send(distance + ',' + word);
-        }
-
-        function GetWord() {
-          var wordfield = document.getElementById('word');
-          var xhttp = new XMLHttpRequest();
-          xhttp.onreadystatechange = function() {
-            if (this.readyState == 4 && this.status == 200) {
-              wordfield.value = this.responseText;
-            }
-          };
-          xhttp.open("POST", "/TrainingWordNew", true);
-          xhttp.overrideMimeType('text/plain')
-          xhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
-          xhttp.send();
         }
 
         function StopRecord() {

@@ -1,78 +1,3 @@
-.tabs{
-    width:60%;
-    height:auto;
-    margin:0 auto;
-}
-
-/* tab list item */
-.tabs .tabs-list{
-    list-style:none;
-    margin:0px;
-    padding:0px;
-}
-.tabs .tabs-list li{
-    width:100px;
-    float:left;
-    margin:0px;
-    margin-right:2px;
-    padding:10px 5px;
-    text-align: center;
-    background-color:cornflowerblue;
-    border-radius:3px;
-}
-.tabs .tabs-list li:hover{
-    cursor:pointer;
-}
-.tabs .tabs-list li a{
-    text-decoration: none;
-    color:white;
-}
-
-/* Tab content section */
-.tabs .tab{
-    display:none;
-    width:96%;
-    min-height:250px;
-    height:auto;
-    border-radius:3px;
-    padding:20px 15px;
-    background-color:lavender;
-    color:darkslategray;
-    clear:both;
-}
-.tabs .tab h3{
-    border-bottom:3px solid cornflowerblue;
-    letter-spacing:1px;
-    font-weight:normal;
-    padding:5px;
-}
-.tabs .tab p{
-    line-height:20px;
-    letter-spacing: 1px;
-}
-
-/* When active state */
-.active{
-    display:block !important;
-}
-.tabs .tabs-list li.active{
-    background-color:lavender !important;
-    color:black !important;
-}
-.active a{
-    color:black !important;
-}
-
-/* media query */
-@media screen and (max-width:360px){
-    .tabs{
-        margin:0;
-        width:96%;
-    }
-    .tabs .tabs-list li{
-        width:80px;
-    }
-}
 
 
 /*
@@ -138,7 +63,7 @@
 
 /* Add a background color to the button if it is clicked on (add the .active class with JS), and when you move the mouse over it (hover) */
 .active, .collapsible:hover {
-  background-color: #ccc;
+  background-color: #eee;
 }
 
 /* Style the collapsible content. Note: hidden by default */
@@ -146,10 +71,6 @@
   padding: 32px 32px;
   display: none;
   overflow: hidden;
-}
-
-.statusarea {
-  font-size: 15px;
 }
 
 .loadingspinner {
@@ -167,4 +88,60 @@
   100% {
     transform: rotate(360deg)
   }
+}
+
+/*
+ * Styling for status table
+ */
+
+.statusarea {
+  font-size: 15px;
+}
+
+.statusarea_table  {border-collapse:collapse;border-spacing:0;}
+.statusarea_table td{border-color:black;border-width:1px;font-family:Arial, sans-serif;font-size:12px;
+  overflow:hidden;padding:4px 5px;word-break:normal;}
+.statusarea_table th{border-color:black;border-width:1px;font-family:Arial, sans-serif;font-size:12px;
+  font-weight:normal;overflow:hidden;padding:4px 5px;word-break:normal;}
+.statusarea_table .statusarea_table-value{border-color:#ffffff;text-align:left;vertical-align:top}
+.statusarea_table .statusarea_table-label{border-color:#ffffff;text-align:left;vertical-align:top}
+
+
+/*
+ * Styling for the collections
+ * Borrowed https://css-tricks.com/rotated-table-column-headers/
+ */
+
+
+.table-header-rotated {
+  border-collapse: collapse;
+}
+.csstransforms .table-header-rotated td {
+  width: 30px;
+}
+.no-csstransforms .table-header-rotated th {
+  padding: 5px 10px;
+}
+.table-header-rotated td {
+  text-align: center;
+  padding: 10px 5px;
+  border: 1px solid #ccc;
+}
+th.rotate {
+  height: 140px;
+  white-space: nowrap;
+  top: 0;
+  position: sticky;
+}
+.rotatediv {
+  transform: translate(18px, 51px) rotate(315deg);
+  width: 30px;
+}
+.rotatedivspan {
+  border-bottom: 1px solid #ccc;
+  padding: 3px 0px;
+}
+.table-header-rotated th.row-header {
+  padding: 0 10px;
+  border-bottom: 1px solid #ccc;
 }
