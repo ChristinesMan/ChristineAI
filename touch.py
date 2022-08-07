@@ -24,7 +24,7 @@ class Touch():
         # if data point is this amount less than the baseline, it's a touch
         # a touch always results in a lower capacitance number, that's how sensor works
         # therefore, lower = sensitive, higher = the numbness
-        self.Sensitivity = [None, None, 30, None, 20, None, 20, None, None, None, None, None]
+        self.Sensitivity = [None, None, 100, None, 50, None, 50, None, None, None, None, None]
 
         # labels
         self.ChannelLabels = [None, None, 'Mouth', None, 'LeftCheek', None, 'RightCheek', None, None, None, None, None]

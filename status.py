@@ -57,18 +57,18 @@ BatteryVoltage = 2.148 #typical voltage, will get updated immediately
 PowerState = 'Cable powered'
 ChargingState = 'Not Charging'
 
-# An adhoc party thing, might go away later
-# StarTrekMode = False
-
 # A way to prevent talking, called a shush, not now honey
 ShushPleaseHoney = False
 
 # I was getting woke up a lot with all the cute hmmm sounds that are in half of the sleeping breath sounds
 # And that's how this got here. We may want to refine this later, too.
 # After sex we could ramp this up and taper it down gradually
+# But I need to really tone down the hmms
 BreathIntensity = 0.5
 
 # This is for self calibration of sleeping gyro position
+XTilt = 0.0
+YTilt = 0.0
 SleepXTilt = 0.0
 SleepYTilt = 0.0
 

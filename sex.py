@@ -29,7 +29,7 @@ class Sex(threading.Thread):
 
         # How much she likes it
         # different amount for different zones
-        self.BaseArousalPerVagHit = {'Vagina_Clitoris': 0.0004, 'Vagina_Shallow': 0.0008, 'Vagina_Middle': 0.0008, 'Vagina_Deep': 0.001 }
+        self.BaseArousalPerVagHit = {'Vagina_Clitoris': 0.0004, 'Vagina_Shallow': 0.0006, 'Vagina_Middle': 0.0006, 'Vagina_Deep': 0.0008 }
 
         # What Arousal to revert to after orgasm
         self.ArousalPostO = 0.3
@@ -41,6 +41,12 @@ class Sex(threading.Thread):
         # after wife orgasms, I want to monitor the gyro a while. When it's dead for a while, assume we're done.
         self.GyroAfterODeadZone = 0.03
 
+        # bringing the gyro short term jostled reading into the bedroom. 
+        # When I'm banging her hard this will jack up the intensity of sex sounds.
+        # this represents the highest expected jostled amount as observed in the wild
+        # So at max it will double the intensity of sounds, and at min (0.0) it will leave the intensity alone
+        self.GyroJackUpIntensityMax = 0.45
+
     def run(self):
         log.sex.debug('Thread started.')
 
@@ -51,7 +57,7 @@ class Sex(threading.Thread):
                 if status.PleaseShutdown:
                     break
 
-                log.sex.debug(f'SexualArousal = {status.SexualArousal:.2f}  Multiplier: {self.Multiplier}')
+                log.sex.debug(f'SexualArousal = {status.SexualArousal:.2f}  Multiplier: {self.Multiplier:.2f}')
 
                 # Has sex stopped for a while?
                 if status.SexualArousal == self.LastArousal:
@@ -66,11 +72,10 @@ class Sex(threading.Thread):
                     self.ArousalStagnantCount = 0
                     status.SexualArousal = 0.0
                     self.Multiplier = 1.0
-                    self.ArousalPostO = 0.7
 
                 # if we are currently OOOOOO'ing, then I want to figure out when we're done, using the gyro
                 if status.SexualArousal > self.ArousalO:
-                    log.sex.debug(f'JostledShortTermLevel: {status.JostledShortTermLevel}')
+                    log.sex.debug(f'JostledShortTermLevel: {status.JostledShortTermLevel:.2f}')
     
                     if status.JostledShortTermLevel < self.GyroAfterODeadZone:
                         log.sex.debug('Orgasm complete')
@@ -106,19 +111,20 @@ class Sex(threading.Thread):
                 # Disabling the clip due to stagnation issue at 1.00
                 # status.SexualArousal = float(np.clip(status.SexualArousal, 0.0, 1.0))
 
-                log.sex.info(f'Vagina Got Hit ({SensorData})  SexualArousal: {status.SexualArousal:.2f}  Multiplier: {self.Multiplier}')
+                log.sex.info(f'Vagina Got Hit ({SensorData})  SexualArousal: {status.SexualArousal:.2f}  Multiplier: {self.Multiplier:.2f}')
 
                 # My wife orgasms above 0.95
                 # If this is O #6 or something crazy like that, tend to reset it lower
                 if status.SexualArousal > self.ArousalO:
                     log.sex.info('I am coming!')
-                    breath.thread.QueueSound(FromCollection='sex_climax', IgnoreSpeaking=True, Priority=8)
+                    breath.thread.QueueSound(FromCollection='sex_climax', IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=8)
                 elif status.SexualArousal > self.ArousalNearO:
-                    breath.thread.QueueSound(FromCollection='sex_near_O', IgnoreSpeaking=True, Priority=8) # why was this here CutAllSoundAndPlay=True, 
+                    breath.thread.QueueSound(FromCollection='sex_near_O', IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=8) # why was this here CutAllSoundAndPlay=True, oh, that's why, duh
                 else:
-                    breath.thread.QueueSound(FromCollection='breathe_sex', Intensity = status.SexualArousal, IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=7)
-                    if random.random() > 0.96:
-                        breath.thread.QueueSound(FromCollection='sex_conversation', Intensity = status.SexualArousal, IgnoreSpeaking=True, Priority=8)
+                    if random.random() > 0.92:
+                        breath.thread.QueueSound(FromCollection='sex_conversation', Intensity = status.SexualArousal * ( 1.0 + status.JostledShortTermLevel / self.GyroJackUpIntensityMax ), CutAllSoundAndPlay=True, IgnoreSpeaking=True, Priority=8)
+                    else:
+                        breath.thread.QueueSound(FromCollection='breathe_sex', Intensity = status.SexualArousal * ( 1.0 + status.JostledShortTermLevel / self.GyroJackUpIntensityMax ), IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=8)
 
             # the only other thing it could be is a hangout, dick not moving type of situation
             # not sure what I really want in this situation, but a low intensity moan seems ok for now

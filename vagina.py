@@ -49,7 +49,7 @@ class Vagina(threading.Thread):
                 # Such a primitive signaling technology has not been in active use since the dark ages of the early 21st century! 
                 # An embarrassing era in earth's history characterized by the fucking of inanimate objects and mass hysteria. 
                 SensorData = self.PipeToProbe.recv()
-                log.vagina.debug(f'Sensor Data: {SensorData}')
+                # log.vagina.debug(f'Sensor Data: {SensorData}')
 
                 # if there was a failure, just die
                 if SensorData['msg'] == 'FAIL':
@@ -100,16 +100,16 @@ class Vagina(threading.Thread):
 
             # how fast to poll the touch sensors. Wait time in seconds
             SleepStandbyMode = 1.0
-            SleepActiveMode = 0.6
+            SleepActiveMode = 0.06
 
             # Using this to deactivate after no sensor activity
-            Timeout = 60
+            Timeout = 30
             DeactivationSeconds = None
 
             # Stores one frame of touch data
             # might disable this later but right now I want to log it
             TouchData = [0] * 12
-            TouchedData = ['   '] * 12
+            TouchedData = [' '] * 12
 
             # Keep track of the baselines
             # if the channel isn't even hooked up, None
@@ -257,13 +257,13 @@ class Vagina(threading.Thread):
 
                                 # detect if this is the start of a touch. We want her to moan if it is.
                                 # convert to boolean later, once log visibility isn't needed anymore
-                                if TouchedData[channel] != 'XXX':
+                                if TouchedData[channel] != 'X':
 
                                     # pass a message to the main process
                                     honey_touched({'msg': 'touch', 'data': ChannelLabels[channel]})
 
-                                    # easily seen XXX for in-crack debugging
-                                    TouchedData[channel] = 'XXX'
+                                    # easily seen X for in-crack debugging
+                                    TouchedData[channel] = 'X'
 
                                     # start monitoring for dick left in condition
                                     HangingOutCounter[channel] = 0
@@ -295,10 +295,10 @@ class Vagina(threading.Thread):
                                     honey_touched({'msg': 'release', 'data': ChannelLabels[channel]})
 
                                     # set the channel to released
-                                    TouchedData[channel] = '   '
+                                    TouchedData[channel] = ' '
 
 
-                        log.vagina.debug(f'{TouchData[0]},{TouchData[2]},{TouchData[5]},{TouchData[7]} {TouchedData[0]},{TouchedData[2]},{TouchedData[5]},{TouchedData[7]}')
+                        log.vagina.debug(f'[{TouchedData[0]}|{TouchedData[5]}|{TouchedData[7]}|{TouchedData[2]}] [{int(Baselines[0]-TouchData[0])}][{int(Baselines[5]-TouchData[5])}][{int(Baselines[7]-TouchData[7])}][{int(Baselines[2]-TouchData[2])}]')
                         IOErrors = 0
 
                     except Exception as e:

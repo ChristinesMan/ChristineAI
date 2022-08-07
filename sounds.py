@@ -3,6 +3,7 @@ import sys
 import time
 import random
 import math
+import numpy as np
 
 import log
 import db
@@ -513,6 +514,9 @@ class SoundCollection():
         if intensity == None:
             RandoSound = random.choice(self.SoundsAvailableToPlay)
         else:
+            # it is now possible to get an intensity over 1.0, so we need to clip this
+            intensity = float(np.clip(intensity, 0.0, 1.0))
+
             SoundsNearIntensity = []
             for Sound in self.SoundsAvailableToPlay:
                 if math.isclose(Sound['intensity'], intensity, abs_tol = 0.25):
