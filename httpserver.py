@@ -1,6 +1,6 @@
 import os
 import threading
-from bottle import TEMPLATE_PATH, route, run, template, redirect, request, response, abort, static_file
+from bottle import TEMPLATE_PATH, route, run, template, redirect, request, response, abort, static_file, debug
 import json
 
 import log
@@ -10,23 +10,179 @@ import breath
 import wernicke
 import conversate
 
+debug(True)
+
 TEMPLATE_PATH.append('./httpserver/')
 
 @route('/')
 def index():
-
     return template('root')
 
 
 @route('/<filename:re:.*\.js>')
 def send_js(filename):
     return static_file(filename, root='./httpserver/', mimetype='application/javascript')
+@route('/<filename:re:.*\.html>')
+def send_html(filename):
+    return static_file(filename, root='./httpserver/', mimetype='text/html')
+@route('/<filename:re:.*\.txt>')
+def send_txt(filename):
+    return static_file(filename, root='./httpserver/', mimetype='text/plain')
 @route('/<filename:re:.*\.ico>')
 def send_ico(filename):
     return static_file(filename, root='./httpserver/', mimetype='image/x-icon')
 @route('/<filename:re:.*\.css>')
 def send_css(filename):
     return static_file(filename, root='./httpserver/', mimetype='text/css')
+
+
+@route('/status')
+def getstatus():
+    return template('status', status=status)
+@route('/control')
+def getcontrol():
+    return template('control')
+@route('/sounds')
+def getsounds():
+    return template('sounds', AllSounds=sounds.soundsdb.All())
+@route('/collections')
+def getcollections():
+    return template('collections', sounds=sounds)
+@route('/upload')
+def getupload():
+    return template('upload')
+
+@route('/Honey_Say', method='POST')
+def posthoneysay():
+    sound_id = request.forms.get('sound_id')
+    breath.thread.QueueSound(Sound=sounds.soundsdb.GetSound(sound_id = sound_id), PlayWhenSleeping=True, IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=10)
+    log.web.debug(f'Honey Say Request: {sound_id}')
+    return 'OK'
+
+
+@route('/Sound_Detail', method='POST')
+def postsounddetail():
+    sound_id = request.forms.get('sound_id')
+    return template('sound_detail', Sound=sounds.soundsdb.GetSound(sound_id = sound_id), CollectionsForSound=sounds.soundsdb.CollectionsForSound(sound_id = sound_id))
+
+
+@route('/New_Sound', method='POST')
+def postnewsound():
+    folder = request.forms.get('folder')
+    upload = request.files.get('fileAjax')
+
+    os.makedirs(f'sounds_master/{folder}/', exist_ok=True)
+    newname = f'{folder}/{upload.filename}'
+    upload.save(f'sounds_master/{newname}')
+    new_sound_id = sounds.soundsdb.NewSound(newname)
+    sounds.soundsdb.Reprocess(new_sound_id)
+    breath.thread.QueueSound(Sound=sounds.soundsdb.GetSound(sound_id = new_sound_id), PlayWhenSleeping=True, IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=10)
+    return 'coolthxbai'
+
+
+@route('/ShushPleaseHoney', method='POST')
+def postshushpleasehoney():
+    state = request.forms.get('state')
+    if state == 'on':
+        log.main.info('Shushed On')
+        status.ShushPleaseHoney = True
+    elif state == 'off':
+        log.main.info('Shushed Off')
+        status.ShushPleaseHoney = False
+    return 'done'
+
+@route('/Delete_Sound', method='POST')
+def postdelete_sound():
+    sound_id = request.forms.get('sound_id')
+    sounds.soundsdb.DelSound(sound_id = sound_id)
+    return 'executed'
+
+@route('/BaseVolChange', method='POST')
+def postbasevolchange():
+    sound_id = request.forms.get('sound_id')
+    volume = request.forms.get('volume')
+    log.main.info(f'Base Volume Change: {sound_id} (new volume {volume})')
+    sounds.soundsdb.Update(sound_id = sound_id, base_volume_adjust = volume)
+    sounds.soundsdb.Reprocess(sound_id = sound_id)
+    breath.thread.QueueSound(Sound=sounds.soundsdb.GetSound(sound_id = sound_id), PlayWhenSleeping=True, IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=10)
+    return 'done'
+
+@route('/ProximityVolChange', method='POST')
+def postproximityvolchange():
+    sound_id = request.forms.get('sound_id')
+    volume = request.forms.get('volume')
+    log.main.info(f'Proximity Volume Change: {sound_id} (new volume {volume})')
+    sounds.soundsdb.Update(sound_id = sound_id, proximity_volume_adjust = volume)
+    return 'done'
+
+@route('/IntensityChange', method='POST')
+def postintensitychange():
+    sound_id = request.forms.get('sound_id')
+    intensity = request.forms.get('intensity')
+    log.main.info(f'Intensity change: {sound_id} (new intensity {intensity})')
+    sounds.soundsdb.Update(sound_id = sound_id, intensity = intensity)
+    return 'done'
+
+@route('/CutenessChange', method='POST')
+def postcutenesschange():
+    sound_id = request.forms.get('sound_id')
+    cuteness = request.forms.get('cuteness')
+    log.main.info(f'Cuteness change: {sound_id} (new cuteness {cuteness})')
+    sounds.soundsdb.Update(sound_id = sound_id, cuteness = cuteness)
+    return 'done'
+
+@route('/TempoRangeChange', method='POST')
+def posttemporangechange():
+    sound_id = request.forms.get('sound_id')
+    tempo_range = request.forms.get('tempo_range')
+    log.main.info(f'Tempo Range change: {sound_id} (new range {tempo_range})')
+    sounds.soundsdb.Update(sound_id = sound_id, tempo_range = tempo_range)
+    sounds.soundsdb.Reprocess(sound_id = sound_id)
+    return 'done'
+
+@route('/ReplayWaitChange', method='POST')
+def postreplaywaitchange():
+    sound_id = request.forms.get('sound_id')
+    replay_wait = request.forms.get('replay_wait')
+    log.main.info('Replay Wait change: {sound_id} (new wait {replay_wait})')
+    sounds.soundsdb.Update(sound_id = sound_id, replay_wait = replay_wait)
+    return 'done'
+
+@route('/CollectionUpdate', method='POST')
+def postcollectionupdate():
+    sound_id = request.forms.get('sound_id')
+    collectionname = request.forms.get('collectionname')
+    if request.forms.get('collectionstate') == 'true':
+        collectionstate = True
+    else:
+        collectionstate = False
+    log.main.info(f'Sound ID: {sound_id} Collection name: {collectionname} State: {collectionstate}')
+    sounds.soundsdb.CollectionUpdate(sound_id = sound_id, collection_name = collectionname, state = collectionstate)
+    return 'done'
+
+@route('/RecordingStart', method='POST')
+def postrecordingstart():
+    # post_data_split = post_data.split(',')
+    # SpeakingDistance = post_data_split[0]
+    # Training_Word = post_data_split[1]
+    # if SpeakingDistance == 'close' or SpeakingDistance == 'mid' or SpeakingDistance == 'far':
+    #     pass
+    # else:
+    #     SpeakingDistance = 'undefined'
+    # # status.ShushPleaseHoney = True
+    # Thread_Wernicke.StartRecording(SpeakingDistance, Training_Word)
+    # self.TrainingWordsDel(Training_Word)
+    # log.wernicke.info('Started record: SpeakingDistance: %s Training_Word: %s', SpeakingDistance, Training_Word)
+    return 'done'
+
+@route('/RecordingStop', method='POST')
+def postrecordingstop():
+    # Thread_Script_Sleep.EvaluateWakefulness()
+    # status.ShushPleaseHoney = False
+    # Thread_Wernicke.StopRecording()
+    # breath.thread.QueueSound(FromCollection='thanks')
+    # log.wernicke.info('Stopped record')
+    return 'done'
 
 
 @route('/wernicke/words/<words>')
