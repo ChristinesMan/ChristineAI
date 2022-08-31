@@ -1,4 +1,5 @@
 import time
+from ast import literal_eval
 import argparse
 import threading
 from collections import deque
@@ -98,7 +99,7 @@ class Breath(threading.Thread):
                 # So all this logic here will only run when the shuttlecraft finishes playing the current sound
                 # If there's some urgent sound that must interrupt, that happens up there ^ and that is communicated to the shuttlecraft through the pipe
                 if self.PipeToShuttlecraft.recv() == False:
-                    log.sound.debug('No sound playing')
+                    # log.sound.debug('No sound playing')
 
                     # if we're here, it means there's no sound actively playing
                     # If there's a sound that couldn't play when it came in, and it can be played now, put it into CurrentSound
@@ -149,11 +150,25 @@ class Breath(threading.Thread):
         # a proximity_volume_adjust of 1.0 means don't reduce the volume at all
         volume = int( (1.0 - (1.0 - float(self.CurrentSound['proximity_volume_adjust'])) * (1.0 - status.LoverProximity) ) * 100)
 
-        # Some sounds have tempo variations. If so randomly choose one, otherwise it'll just be 0.wav
-        if self.CurrentSound['tempo_range'] == 0.0:
-            self.PipeToShuttlecraft.send({'wavfile': f'./sounds_processed/{self.CurrentSound["id"]}/0.wav', 'vol': volume})
+        # choose a random interval if the sound has a tempo adjust
+        if self.CurrentSound['tempo_range'] != 0.0:
+            random_tempo = random.randint(0, 8)
+        
         else:
-            self.PipeToShuttlecraft.send({'wavfile': f'./sounds_processed/{self.CurrentSound["id"]}/{random.choice(self.TempoMultipliers)}.wav', 'vol': volume})
+            # if the sound has no tempo adjust, index 4 is the original tempo 0, see the self.TempoMultipliers var
+            random_tempo = 4
+
+        # a list of lists like [[position_pct_float, secondsofsilencefloat], [position_pct_float, secondsofsilencefloat]]
+        # I'm calculating sample position / total samples in the 0.wav original tempo sound
+        # seems to be the best way to find the same position in wav files of varying length
+        try:
+            inter_word_silence = literal_eval(self.CurrentSound['inter_word_silence'])
+
+        except ValueError:
+            inter_word_silence = []
+
+        # Some sounds have tempo variations. If so randomly choose one, otherwise it'll just be 0.wav
+        self.PipeToShuttlecraft.send({'wavfile': f'./sounds_processed/{self.CurrentSound["id"]}/{self.TempoMultipliers[random_tempo]}.wav', 'vol': volume, 'insert_silence_here': inter_word_silence})
 
         # let stuff know this sound is playing, not just waiting in line
         self.CurrentSound['is_playing'] = True
@@ -186,8 +201,11 @@ class Breath(threading.Thread):
             # calculate some stuff
             # All the wav files are forced to the same format during preprocessing, currently stereo 44100
             # chopping the rate into 10 pieces, so that's 10 chunks per second. I might adjust later.
+            # I tried 25 so that this gets called more often, but this is probably not necessary now, setting back to 10
+            # I put it back to 25 so that there will be more variability when inserting silence
             rate = 44100
-            periodsize = rate // 10
+            periodspersecond = 25
+            periodsize = rate // periodspersecond
 
             # The current wav file buffer thing
             # The pump is primed using some default sounds. 
@@ -196,6 +214,14 @@ class Breath(threading.Thread):
 
             # I want to keep track to detect when we're at the last chunk so we can chuck it away and also tell the enterprise to send more sounds. 
             WavDataFrames = WavData.getnframes()
+
+            # one periodsize of 16 bit silence data for stuffing into the buffer when pausing
+            WavDataSilence = b'\x00\x00' * periodsize
+
+            # counters for the silence stuffing
+            SilentBlocks = 0
+            CurrentPosition = 0
+            NextSilence = []
 
             # Start up some fucking alsa
             device = alsaaudio.PCM(channels=1, rate=rate, format=alsaaudio.PCM_FORMAT_S16_LE, periodsize=periodsize)
@@ -223,15 +249,72 @@ class Breath(threading.Thread):
                     # it used to be just a string with a path, since I started dynamic volume changes this will be a dict
                     WavData = wave.open(Comms['wavfile'])
                     WavDataFrames = WavData.getnframes()
+                    SilentBlocks = 0
+                    CurrentPosition = 0
+
+                    # for each insert silence position, now that we have the total length of the wav file, we can calculate the positions in sample number
+                    # The s[1] is how many seconds to play silence, so we can also randomize and blockify that here
+                    for s in Comms['insert_silence_here']:
+                        s[0] = int(s[0] * WavDataFrames)
+                        s[1] = int(random.random() * s[1] * periodspersecond)
+
+                    # pop the first silence out of the list of lists
+                    if len(Comms['insert_silence_here']) > 0:
+                        NextSilence = Comms['insert_silence_here'][0]
+                        Comms['insert_silence_here'].remove(NextSilence)
+
+                    else:
+                        NextSilence = []
 
                 else:
 
+                    # log.sound.debug(f'NextSilence: {NextSilence}  WavDataFrames: {WavDataFrames}  SilentBlocks: {SilentBlocks}  CurrentPosition: {CurrentPosition}')
                     # If there are still frames enough to write without being short
-                    if WavDataFrames >= periodsize:
-                        WavDataFrames = WavDataFrames - periodsize
+                    if CurrentPosition <= WavDataFrames:
 
-                        # write the frames, and if the buffer is full it will block here and provide the delay we need
-                        device.write(WavData.readframes(periodsize))
+                        # if we are at the spot where we need to insert silence, we want to send the samples to get right up to that exact sample,
+                        # then insert a silence immediately after to get it playing
+                        if len(NextSilence) > 0 and CurrentPosition + periodsize > NextSilence[0]:
+
+                            # the second var in the list is the number of seconds of silence to insert, in blocks of periodsize
+                            SilentBlocks = NextSilence[1]
+
+                            # so we're going to write something that is much less than the period size, which the docs warn against doing
+                            # but then immediately writing a full block of silence. So I dunno if it'll handle properly or not, might get mad, flip out
+                            # log.sound.debug('Starting silence')
+                            device.write(WavData.readframes(NextSilence[0] - CurrentPosition))
+                            device.write(WavDataSilence)
+
+                            # increment where in the audio we are now. Which should be, and always will be, by the power of greyskull, the exact position of the silence insert.
+                            CurrentPosition = NextSilence[0]
+
+                            # throw away the silence we just started. We don't need it anymore because we have SilentBlocks to carry it forward. There may be another. It's a list of lists
+                            if len(Comms['insert_silence_here']) > 0:
+                                NextSilence = Comms['insert_silence_here'][0]
+                                Comms['insert_silence_here'].remove(NextSilence)
+
+                            else:
+                                NextSilence = []
+
+                        else:
+
+                            # if we're currently pumping out silence
+                            if SilentBlocks > 0:
+                                # log.sound.debug('Writing silence')
+                                # write silence
+                                device.write(WavDataSilence)
+
+                                # decrement the counter
+                                SilentBlocks -= 1
+
+                            else:
+
+                                # log.sound.debug('Writing wav data')
+                                # write the frames, and if the buffer is full it will block here and provide the delay we need
+                                device.write(WavData.readframes(periodsize))
+
+                                # we are at this sample number
+                                CurrentPosition += periodsize
 
                         # send a signal back to enterprise letting them know something is still being played
                         PipeToStarship.send(True)
@@ -241,7 +324,7 @@ class Breath(threading.Thread):
                         PipeToStarship.send(False)
 
                         # just masturbate for a little while
-                        time.sleep(0.1)
+                        time.sleep(1 / periodspersecond)
 
         # log exception in the main.log
         except Exception as e:
