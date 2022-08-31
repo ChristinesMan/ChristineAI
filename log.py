@@ -37,6 +37,7 @@ web      = setup_logger('web',      level=logging.DEBUG)
 touch    = setup_logger('touch',    level=logging.DEBUG)
 sex      = setup_logger('sex',      level=logging.DEBUG)
 horny    = setup_logger('horny',    level=logging.DEBUG)
+cuddles  = setup_logger('cuddles',  level=logging.DEBUG)
 vagina   = setup_logger('vagina',   level=logging.DEBUG)
 words    = setup_logger('words',    level=logging.DEBUG)
 

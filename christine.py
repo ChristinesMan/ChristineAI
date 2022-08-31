@@ -34,6 +34,8 @@ log.main.debug('Import: vagina')
 import vagina
 log.main.debug('Import: horny')
 import horny
+log.main.debug('Import: cuddles')
+import cuddles
 log.main.debug('Import: sex')
 import sex
 
