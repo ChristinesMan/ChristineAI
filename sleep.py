@@ -29,17 +29,24 @@ class Sleep(threading.Thread):
         self.TrendAverageWindow = 10.0
 
         # Weights
-        self.LightWeight = 10
-        self.GyroWeight = 4
+        self.LightWeight = 7
+        self.GyroWeight = 5
         self.TiltWeight = 3
-        self.TotalWeight = self.LightWeight + self.GyroWeight + self.TiltWeight
+        self.TimeWeight = 9
+        self.TotalWeight = self.LightWeight + self.GyroWeight + self.TiltWeight + self.TimeWeight
 
         # if laying down, 0, if not laying down, 1.         
         self.Tilt = 0.0
 
+        # if it's after bedtime, 0, if after wake up, 1
+        self.Time = 0.0
+
         # At what time should we expect to be in bed or wake up? 
         self.WakeHour = 6
         self.SleepHour = 21
+
+        # at what point are we tired
+        self.MinWakefulnessToBeTired = 0.45
 
         # At what point to STFU at night
         self.MinWakefulnessToBeAwake = 0.25
@@ -65,8 +72,14 @@ class Sleep(threading.Thread):
                 else:
                     self.Tilt = 1.0
 
+                # figure out if we're within the usual awake time
+                if self.LocalTime.tm_hour >= self.WakeHour and self.LocalTime.tm_hour < self.SleepHour:
+                    self.Time = 1.0
+                else:
+                    self.Time = 0.0
+
                 # Calculate current conditions which we're calling Environment
-                self.Environment = ((self.LightWeight * status.LightLevelPct) + (self.GyroWeight * status.JostledLevel) + (self.TiltWeight * self.Tilt)) / self.TotalWeight
+                self.Environment = ((self.LightWeight * status.LightLevelPct) + (self.GyroWeight * status.JostledLevel) + (self.TiltWeight * self.Tilt) + (self.TimeWeight * self.Time)) / self.TotalWeight
 
                 # clip it, can't go below 0 or higher than 1
                 self.Environment = float(np.clip(self.Environment, 0.0, 1.0))
@@ -81,7 +94,7 @@ class Sleep(threading.Thread):
                 self.EvaluateWakefulness()
 
                 # log it
-                log.sleep.debug('Environment = %.2f  LightLevel = %.2f  JostledLevel = %.2f  Wakefulness = %.2f', self.Environment, status.LightLevelPct, status.JostledLevel, status.Wakefulness)
+                log.sleep.debug('LightLevel=%.2f  JostledLevel=%.2f  Tilt=%.2f  Time=%.2f  Environment=%.2f  Wakefulness=%.2f', status.LightLevelPct, status.JostledLevel, self.Tilt, self.Time, self.Environment, status.Wakefulness)
 
                 # If it's getting late, set a future time to "whine" in a cute, endearing way
                 if self.NowItsLate():
@@ -108,6 +121,13 @@ class Sleep(threading.Thread):
                 if status.Wakefulness >= 0.1 and status.WernickeSleeping == True:
                     status.WernickeSleeping = False
                     wernicke.thread.StartProcessing()
+
+                if status.Wakefulness < self.MinWakefulnessToBeTired and status.IAmTired == False:
+                    breath.thread.QueueSound(FromCollection='goodnight', PlayWhenSleeping=True, Priority=8, CutAllSoundAndPlay=True)
+                    status.IAmTired = True
+                    status.Wakefulness -= 0.02
+                if status.Wakefulness >= self.MinWakefulnessToBeTired and status.IAmTired == True:
+                    status.IAmTired = False
 
                 time.sleep(66)
 
@@ -137,13 +157,12 @@ class Sleep(threading.Thread):
             log.sleep.info('JustFellAsleep')
 
             # try to prevent wobble by throwing it further towards sleep
-            status.Wakefulness -= 0.1
+            status.Wakefulness -= 0.02
 
             # start progression from loud to soft sleepy breathing sounds
             # I was getting woke up a lot with all the cute hmmm sounds that are in half of the sleeping breath sounds
             status.BreathIntensity = 1.0
 
-            breath.thread.QueueSound(FromCollection='goodnight', PlayWhenSleeping=True, Priority=8, CutAllSoundAndPlay=True)
             status.IAmSleeping = True
             breath.thread.BreathChange('breathe_sleepy')
 
@@ -151,7 +170,7 @@ class Sleep(threading.Thread):
             log.sleep.info('JustWokeUp')
 
             # try to prevent wobble by throwing it further towards awake
-            status.Wakefulness += 0.1
+            status.Wakefulness += 0.05
             
             status.IAmSleeping = False
             breath.thread.BreathChange('breathe_normal')
@@ -172,7 +191,7 @@ class Sleep(threading.Thread):
     def TimeToWhine(self):
         return self.AnnounceTiredTime != False and time.time() >= self.AnnounceTiredTime
     def Whine(self):
-        breath.thread.QueueSound(FromCollection='tired', Priority=7)
+        breath.thread.QueueSound(FromCollection='bedtime', Priority=7)
         self.AnnounceTiredTime = False
     def StartBreathingSleepy(self):
         breath.thread.BreathChange('breathe_sleepy')

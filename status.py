@@ -1,6 +1,7 @@
 import ctypes
 import time
 import threading
+import numpy as np
 
 import log
 import db
@@ -49,6 +50,7 @@ SexualArousal = 0.0
 LoverProximity = 0.5
 
 # Booleans for sleep/wake
+IAmTired = False
 IAmSleeping = False
 IAmLayingDown = False
 
@@ -105,6 +107,7 @@ class SaveStatus(threading.Thread):
     name = 'SaveStatus'
 
     def __init__ (self):
+
         threading.Thread.__init__(self)
 
     def run(self):
@@ -132,26 +135,37 @@ class SaveStatus(threading.Thread):
         except Exception as e:
             log.main.error('Thread died. {0} {1} {2}'.format(e.__class__, e, log.format_tb(e.__traceback__)))
 
-    # https://www.geeksforgeeks.org/python-different-ways-to-kill-a-thread/
-    # it's a little rediculous how difficult thread killing is
-    def get_id(self):
- 
-        # returns id of the respective thread
-        if hasattr(self, '_thread_id'):
-            return self._thread_id
-        for id, thread in threading._active.items():
-            if thread is self:
-                return id
-  
-    def shutdown(self):
-        thread_id = self.get_id()
-        res = ctypes.pythonapi.PyThreadState_SetAsyncExc(thread_id,
-              ctypes.py_object(SystemExit))
-        if res > 1:
-            ctypes.pythonapi.PyThreadState_SetAsyncExc(thread_id, 0)
-            log.main.warning('Exception raise failure')
 
-# Instantiate and start the thread
+# thread will trend down any status vars that need to gradually drop
+class TrendDown(threading.Thread):
+
+    name = 'TrendDown'
+
+    def __init__ (self):
+
+        threading.Thread.__init__(self)
+
+    def run(self):
+
+        try:
+
+            while True:
+
+                globals()['ChanceToSpeak'] = float(np.clip(globals()['ChanceToSpeak'] - 0.001, 0.0, 1.0))
+
+                time.sleep(1)
+
+
+        # log exception in the main.log
+        except Exception as e:
+            log.main.error('Thread died. {0} {1} {2}'.format(e.__class__, e, log.format_tb(e.__traceback__)))
+
+
+# Instantiate and start the threads
 thread = SaveStatus()
 thread.daemon = True
 thread.start()
+
+thread2 = TrendDown()
+thread2.daemon = True
+thread2.start()

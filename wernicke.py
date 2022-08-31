@@ -100,9 +100,12 @@ class Wernicke(threading.Thread):
                     if status.ShushPleaseHoney == False and status.SexualArousal < 0.1:
                         sleep.thread.WakeUpABit(0.008)
                         if status.IAmSleeping == False:
-                            status.ChanceToSpeak += 0.05
-                            breath.thread.QueueSound(FromCollection='listening', Priority=2, CutAllSoundAndPlay=True)
-
+                            if status.IAmTired == False:
+                                status.ChanceToSpeak += 0.05
+                                breath.thread.QueueSound(FromCollection='listening', Priority=2, CutAllSoundAndPlay=True)
+                            else:
+                                status.ChanceToSpeak += 0.02
+                                breath.thread.QueueSound(FromCollection='listening_tired', Priority=2, CutAllSoundAndPlay=True)
 
                 elif Comm['class'] == 'sensor_data':
                     light.thread.NewData(Comm['light'])
@@ -309,6 +312,7 @@ class Wernicke(threading.Thread):
                     # later this will also contain sensor data
                     log.wernicke.info('Opening serial port')
                     self.SerialPortFromHead = serial.Serial('/dev/ttyACM0', baudrate=115200, exclusive=True)
+                    log.wernicke.info('Opened serial port')
 
                     # this allows processing to be paused for a number of blocks
                     # when the buffer queue is full pause for a bit to let it catch up
@@ -370,13 +374,13 @@ class Wernicke(threading.Thread):
                             if SwearPos1 >= 0 and SwearPos2 >= 0 and SwearPos2 - SwearPos1 == 32:
 
                                 # after trying for hours to understand why adding 38 works, I gave up. I'm often not a smart man. 
-                                log.wernicke.warning(f'Adjusting audio stream by {SwearPos1 + 38} bytes')
+                                log.wernicke.info(f'Adjusting audio stream by {SwearPos1 + 38} bytes')
                                 data = self.SerialPortFromHead.read(SwearPos1 + 38)
 
                             else:
                                 # It is theoretically possible for the sensor data to be cut off at the start or end of the 16038 bytes
                                 # So if we're not seeing it, read in and throw away 8000 bytes and it ought to be in the middle
-                                log.wernicke.warning(f'Adjusting audio stream by 8000 bytes')
+                                log.wernicke.info(f'Adjusting audio stream by 8000 bytes')
                                 data = self.SerialPortFromHead.read(8000)
 
                             # continue to the start of the loop where we should be well adjusted
@@ -409,7 +413,7 @@ class Wernicke(threading.Thread):
                             # wf.writeframes(data)
                             # wf.close()
 
-                            log.wernicke.debug('Discarded audio data.')
+                            # log.wernicke.debug('Discarded audio data.')
                             self.PauseProcessing -= 1
 
 
@@ -434,22 +438,8 @@ class Wernicke(threading.Thread):
                     log.wernicke.debug('Initializing pyAudioAnalysis proximity model...')
                     [self.proximity_model, self.proximity_MEAN, self.proximity_STD, self.proximity_mt_win, self.proximity_mt_step, self.proximity_st_win, self.proximity_st_step, _] = aT.load_model("wernicke_proximity", is_regression=True)
 
-                    log.wernicke.debug(f'block_MEAN: {self.block_MEAN}')
-                    log.wernicke.debug(f'block_STD: {self.block_STD}')
-                    log.wernicke.debug(f'block_mt_win: {self.block_mt_win}')
-                    log.wernicke.debug(f'block_mt_step: {self.block_mt_step}')
-                    log.wernicke.debug(f'block_st_win: {self.block_st_win}')
-                    log.wernicke.debug(f'block_st_step: {self.block_st_step}')
-
-                    log.wernicke.debug(f'proximity_MEAN: {self.proximity_MEAN}')
-                    log.wernicke.debug(f'proximity_STD: {self.proximity_STD}')
-                    log.wernicke.debug(f'proximity_mt_win: {self.proximity_mt_win}')
-                    log.wernicke.debug(f'proximity_mt_step: {self.proximity_mt_step}')
-                    log.wernicke.debug(f'proximity_st_win: {self.proximity_st_win}')
-                    log.wernicke.debug(f'proximity_st_step: {self.proximity_st_step}')
-
                     # var to keep track of which ear seems best based on loudness
-                    self.LeftRightRatio = 1.0
+                    # self.LeftRightRatio = 1.0
 
                 def read(self):
                     """Return a block of audio data, blocking if necessary."""
@@ -532,7 +522,7 @@ class Wernicke(threading.Thread):
                         # if the block contains a huge but quick spike (a click) then drop it and skip this block
                         if avg_vs_max <= 0.075:
 
-                            log.wernicke.debug(f'Dropped possible clicking noise. {mean} / {maximum} = {avg_vs_max}')
+                            log.wernicke.info(f'Dropped possible clicking noise. {mean} / {maximum} = {avg_vs_max}')
                             continue
 
 
@@ -561,7 +551,7 @@ class Wernicke(threading.Thread):
                         if block_class == 'lover':
                             proximity_cur_fv = (block_mt_feats[:, 0] - self.proximity_MEAN) / self.proximity_STD
                             proximity_now = aT.regression_wrapper(self.proximity_model, "svm_rbf", proximity_cur_fv)
-                            log.wernicke.debug(f'Heard lover with prob {block_prob:.2f} and proximity {proximity_now}')
+                            log.wernicke.info(f'Heard lover with prob {block_prob:.2f} and proximity {proximity_now}')
 
                             # update running average
                             Proximity = ((Proximity * 6.0) + proximity_now) / 7.0
@@ -585,7 +575,7 @@ class Wernicke(threading.Thread):
                                 lover_blocks += 1
                                 if lover_blocks >= 2:
 
-                                    log.wernicke.debug('triggered')
+                                    # log.wernicke.debug('triggered')
                                     triggered = True
 
                                     # if we were just triggered, send all the past audio blocks that were in the queue and empty it
@@ -638,7 +628,7 @@ class Wernicke(threading.Thread):
     
                                 # if there have been enough consecutive silent/ignore blocks, we're done with transmission, reset everything
                                 if post_silence <= 0:
-                                    log.wernicke.debug('untriggered')
+                                    # log.wernicke.debug('untriggered')
                                     triggered = False
                                     lover_blocks = 0
                                     # ring_buffer.clear()
