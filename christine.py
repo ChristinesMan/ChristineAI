@@ -79,14 +79,16 @@ if __name__ == "__main__":
     time.sleep(2)
 
     # try to shutdown threads
-    cputemp.thread.shutdown()
-    cputemp.thread.join()
-    battery.thread.shutdown()
-    battery.thread.join()
-    status.thread.shutdown()
-    status.thread.join()
-    iloveyou.thread.shutdown()
-    iloveyou.thread.join()
+    # doesn't work anyway
+    # cputemp.thread.shutdown()
+    # cputemp.thread.join()
+    # battery.thread.shutdown()
+    # battery.thread.join()
+    # status.thread.shutdown()
+    # status.thread.join()
+    # iloveyou.thread.shutdown()
+    # iloveyou.thread.join()
 
     # this is supposed to finish off any daemon threads that may be left over
-    sys.exit()
+    # whatever
+    # sys.exit()

@@ -16,7 +16,7 @@ class Gyro(threading.Thread):
         threading.Thread.__init__(self)
 
         # How many single samples are averaged together to smooth the reading
-        self.SampleSize = 5
+        self.SampleSize = 3
 
         # Varous lists to store single samples. When they're full the values are averaged
         self.AccelXRecord = [0.0] * self.SampleSize
@@ -38,7 +38,7 @@ class Gyro(threading.Thread):
 
         # I want to keep track of the max jostled level, and taper off slowly
         self.JostledLevel = 0.0
-        self.JostledAverageWindow = 400.0
+        self.JostledAverageWindow = 2000.0
         # I also want a super short term running average
         self.JostledShortAverageWindow = 40.0
 
@@ -78,7 +78,7 @@ class Gyro(threading.Thread):
 
                     # if gyro fails 10 times in a row, shut it down
                     self.IOErrors += 1
-                    log.main.warning(f'I/O failure. ({self.IOErrors}) {e.__class__} {e} {log.format_tb(e.__traceback__)}')
+                    log.main.warning(f'I/O failure. ({self.IOErrors}/10)')
 
                     if self.IOErrors >= 10:
                         log.main.critical('The gyro thread has been shutdown.')
@@ -151,7 +151,7 @@ class Gyro(threading.Thread):
                     log.gyro.debug('X: {0:.2f}, Y: {1:.2f}, J: {2:.2f} JPctLT: {3:.2f} JPctST: {4:.2f} SlX: {5:.2f} SlY: {6:.2f} LD: {7}'.format(status.XTilt, status.YTilt, self.TotalJostled, status.JostledLevel, status.JostledShortTermLevel, status.SleepXTilt, status.SleepYTilt, status.IAmLayingDown))
 
                 self.LoopIndex += 1
-                time.sleep(0.02)
+                time.sleep(0.025)
 
         # log exception in the main.log
         except Exception as e:

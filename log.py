@@ -10,7 +10,7 @@ os.makedirs('./logs/', exist_ok=True)
 logging.basicConfig(filename='logs/main.log', filemode='a', format='%(asctime)s - %(levelname)s - %(threadName)s - %(message)s', level=logging.DEBUG)
 
 # Setup logging to multiple files. Based on https://stackoverflow.com/questions/11232230/logging-to-two-files-with-different-settings
-def setup_logger(name, level=logging.INFO, format='%(asctime)s - %(message)s'):
+def setup_logger(name, level=logging.DEBUG, format='%(asctime)s - %(message)s'):
     """Function to setup as many loggers as you want"""
 
     theformat = logging.Formatter(format)
