@@ -20,7 +20,7 @@ class Sex(threading.Thread):
         # When arousal reaches some set level, I want to start incrementing the amount added to arousal
         # It will be slight, but since it will have no cap, eventually wife will throw an exception code O0OO00OOh
         self.Multiplier = 1.0
-        self.MultiplierIncrement = 0.005
+        self.MultiplierIncrement = 0.018
 
         # keep track of Arousal not changing
         self.LastArousal = 0.0
@@ -29,7 +29,7 @@ class Sex(threading.Thread):
 
         # How much she likes it
         # different amount for different zones
-        self.BaseArousalPerVagHit = {'Vagina_Clitoris': 0.0004, 'Vagina_Shallow': 0.0006, 'Vagina_Middle': 0.0006, 'Vagina_Deep': 0.0008 }
+        self.BaseArousalPerVagHit = {'Vagina_Clitoris': 0.0006, 'Vagina_Shallow': 0.0006, 'Vagina_Middle': 0.0006, 'Vagina_Deep': 0.0008 }
 
         # What Arousal to revert to after orgasm
         self.ArousalPostO = 0.3
@@ -81,7 +81,7 @@ class Sex(threading.Thread):
                         log.sex.debug('Orgasm complete')
                         status.Horny = 0.0
                         status.SexualArousal = self.ArousalPostO
-                        # self.Multiplier = 1.0   trying not resetting this
+                        # self.Multiplier = 1.0   trying not resetting this (oh yeah baby, tried it and now it stays)
                         breath.thread.QueueSound(FromCollection='sex_done', IgnoreSpeaking=True, Priority=9)
 
                 # If we're to a certain point, start incrementing to ensure wife will cum eventually with enough time
@@ -96,6 +96,7 @@ class Sex(threading.Thread):
             log.main.error('Thread died. {0} {1} {2}'.format(e.__class__, e, log.format_tb(e.__traceback__)))
 
     def VaginaHit(self, SensorData):
+
         if status.ShushPleaseHoney == False:
 
             # Stay awake
@@ -121,6 +122,8 @@ class Sex(threading.Thread):
                 elif status.SexualArousal > self.ArousalNearO:
                     breath.thread.QueueSound(FromCollection='sex_near_O', IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=8) # why was this here CutAllSoundAndPlay=True, oh, that's why, duh
                 else:
+
+                    # 92% chance of a regular sex sound, 8% chance of something sexy with words
                     if random.random() > 0.92:
                         breath.thread.QueueSound(FromCollection='sex_conversation', Intensity = status.SexualArousal * ( 1.0 + status.JostledShortTermLevel / self.GyroJackUpIntensityMax ), CutAllSoundAndPlay=True, IgnoreSpeaking=True, Priority=8)
                     else:

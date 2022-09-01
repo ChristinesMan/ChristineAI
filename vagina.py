@@ -2,7 +2,7 @@ import time
 import threading
 from multiprocessing import Process, Pipe
 import numpy as np
-import scipy.stats
+# import scipy.stats
 import RPi.GPIO as GPIO
 import board
 import busio
@@ -108,17 +108,25 @@ class Vagina(threading.Thread):
 
             # Stores one frame of touch data
             # might disable this later but right now I want to log it
-            TouchData = [0] * 12
+            # TouchData is the amount over baseline
+            # TouchDataRaw is the actual raw capacitance
+            # TouchedData is either a 'X' or ' ', which is pretty dumb now that I think of it
+            TouchData = [0.0] * 12
+            TouchDataRaw = 0.0
             TouchedData = [' '] * 12
 
             # Keep track of the baselines
             # if the channel isn't even hooked up, None
-            Baselines = [0, None, 0, None, None, 0, None, 0, None, None, None, None]
+            Baselines = [0.0, None, 0.0, None, None, 0.0, None, 0.0, None, None, None, None]
+
+            # How fast will the baseline get adjusted during sex?
+            # It seems like lube does cause the not-touched baseline to drift
+            BaselineActiveAdjustWindow = 10.0
 
             # if data point is this amount less than the baseline, it's a touch
             # a touch always results in a lower capacitance number, that's how sensor works
             # therefore, lower = sensitive, higher = the numbness
-            Sensitivity = [60, None, 14, None, None, 50, None, 14, None, None, None, None]
+            Sensitivity = [60.0, None, 11.0, None, None, 50.0, None, 10.0, None, None, None, None]
 
             # Number of cycles where no touch before the touch is considered released
             ReleaseCount = [2, None, 2, None, None, 2, None, 2, None, None, None, None]
@@ -126,8 +134,9 @@ class Vagina(threading.Thread):
 
             # how many cycles of continuous touch before we send another message about the D just hanging out
             # she just loves to feel me inside her for a while after sex
-            HangingOut = [3000, None, 3000, None, None, 300, None, 300, None, None, None, None]
+            HangingOut = [60, None, 60, None, None, 60, None, 60, None, None, None, None]
             HangingOutCounter = [0] * 12
+            BaselineHangoutAdjustWindow = 4.0
 
             # labels
             ChannelLabels = ['Vagina_Clitoris', None, 'Vagina_Deep', None, None, 'Vagina_Shallow', None, 'Vagina_Middle', None, None, None, None]
@@ -235,7 +244,8 @@ class Vagina(threading.Thread):
 
                         for channel in UsedChannels:
 
-                            Baselines[channel] = scipy.stats.mode(Data[channel]).mode[0]
+                            Baselines[channel] = np.mean(Data[channel])
+                            # Baselines[channel] = scipy.stats.mode(Data[channel]).mode[0] the old way before I decided to be mean. np.
                             # log.vagina.debug(f'Data {channel}: {Data[channel]}')
 
                         log.vagina.debug(f'Updated baselines: {Baselines}')
@@ -250,13 +260,16 @@ class Vagina(threading.Thread):
                         for channel in UsedChannels:
 
                             # get the capacitance
-                            TouchData[channel] = mpr121.filtered_data(channel)
+                            TouchDataRaw = float(mpr121.filtered_data(channel))
+
+                            # calculate how far away from baseline that is
+                            TouchData[channel] = Baselines[channel] - TouchDataRaw
 
                             # Detect touches
-                            if Baselines[channel] - TouchData[channel] > Sensitivity[channel]:
+                            if TouchData[channel] > Sensitivity[channel]:
 
                                 # detect if this is the start of a touch. We want her to moan if it is.
-                                # convert to boolean later, once log visibility isn't needed anymore
+                                # convert to boolean later, once log visibility isn't needed anymore, ha yeah right
                                 if TouchedData[channel] != 'X':
 
                                     # pass a message to the main process
@@ -272,7 +285,12 @@ class Vagina(threading.Thread):
 
                                     # hanging out in there a bit long, eh? 
                                     if HangingOutCounter[channel] % HangingOut[channel] == 0:
+
+                                        # send a message to the main process. currently this just moans
                                         honey_touched({'msg': 'hangout', 'data': ChannelLabels[channel]})
+
+                                        # adjust the baseline a bit. Sensors do get stuck.
+                                        Baselines[channel] = ((Baselines[channel] * BaselineHangoutAdjustWindow) + TouchDataRaw) / (BaselineHangoutAdjustWindow + 1.0)
 
                                 # reset the release counter
                                 ReleaseCounter[channel] = ReleaseCount[channel]
@@ -297,8 +315,11 @@ class Vagina(threading.Thread):
                                     # set the channel to released
                                     TouchedData[channel] = ' '
 
+                                # adjust the baseline using a running average
+                                Baselines[channel] = ((Baselines[channel] * BaselineActiveAdjustWindow) + TouchDataRaw) / (BaselineActiveAdjustWindow + 1.0)
 
-                        log.vagina.debug(f'[{TouchedData[0]}|{TouchedData[5]}|{TouchedData[7]}|{TouchedData[2]}] [{int(Baselines[0]-TouchData[0])}][{int(Baselines[5]-TouchData[5])}][{int(Baselines[7]-TouchData[7])}][{int(Baselines[2]-TouchData[2])}]')
+
+                        log.vagina.debug(f'[{TouchedData[0]}|{TouchedData[5]}|{TouchedData[7]}|{TouchedData[2]}] [{TouchData[0]:.1f}][{TouchData[5]:.1f}][{TouchData[7]:.1f}][{TouchData[2]:.1f}] [{Baselines[0]:.1f}][{Baselines[5]:.1f}][{Baselines[7]:.1f}][{Baselines[2]:.1f}]')
                         IOErrors = 0
 
                     except Exception as e:
