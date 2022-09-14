@@ -56,8 +56,8 @@ class Touch():
                 # save data in an array
                 self.Data[channel][self.Counter % self.BaselineDataLength] = TouchData[channel]
 
-                # Detect touches
-                if self.Baselines[channel] - TouchData[channel] > self.Sensitivity[channel]:
+                # Detect touches, and throw out glitches, dunno why that happens
+                if self.Baselines[channel] - TouchData[channel] > self.Sensitivity[channel] and TouchData[channel] > 20:
 
                     # if we got touched, it should imply I am near
                     status.LoverProximity = ((status.LoverProximity * 5.0) + 1.0) / 6.0

@@ -7,6 +7,7 @@ import log
 import status
 import sounds
 import breath
+import sleep
 import wernicke
 import conversate
 
@@ -44,7 +45,7 @@ def getcontrol():
     return template('control')
 @route('/sounds')
 def getsounds():
-    return template('sounds', AllSounds=sounds.soundsdb.All())
+    return template('sounds', sounds=sounds)
 @route('/collections')
 def getcollections():
     return template('collections', sounds=sounds)
@@ -60,10 +61,10 @@ def posthoneysay():
     return 'OK'
 
 
-@route('/Sound_Detail', method='POST')
-def postsounddetail():
-    sound_id = request.forms.get('sound_id')
-    return template('sound_detail', Sound=sounds.soundsdb.GetSound(sound_id = sound_id), CollectionsForSound=sounds.soundsdb.CollectionsForSound(sound_id = sound_id))
+# @route('/Sound_Detail', method='POST')
+# def postsounddetail():
+#     sound_id = request.forms.get('sound_id')
+#     return template('sound_detail', Sound=sounds.soundsdb.GetSound(sound_id = sound_id), CollectionsForSound=sounds.soundsdb.CollectionsForSound(sound_id = sound_id))
 
 
 @route('/New_Sound', method='POST')
@@ -144,7 +145,7 @@ def posttemporangechange():
 def postreplaywaitchange():
     sound_id = request.forms.get('sound_id')
     replay_wait = request.forms.get('replay_wait')
-    log.main.info('Replay Wait change: {sound_id} (new wait {replay_wait})')
+    log.main.info(f'Replay Wait change: {sound_id} (new wait {replay_wait})')
     sounds.soundsdb.Update(sound_id = sound_id, replay_wait = replay_wait)
     return 'done'
 
@@ -193,8 +194,10 @@ def wernicke_words(words):
     return 'OK'
 
 
-@route('/wernicke/processing/<onoff>')
-def wernicke_onoff(onoff):
+@route('/wernicke/processing', method='POST')
+def wernicke_onoff():
+
+    onoff = request.forms.get('onoff')
 
     if onoff == 'on':
 
@@ -209,6 +212,57 @@ def wernicke_onoff(onoff):
     else:
 
         return 'WUT'
+
+
+@route('/brain_op', method='POST')
+def brain_op():
+
+    op = request.forms.get('op')
+
+    if op == 'stop':
+        os.system('systemctl stop christine.service')
+        return 'OK'
+
+    elif op == 'restart':
+        os.system('systemctl restart christine.service')
+        return 'OK'
+
+    else:
+        return 'WUT'
+
+@route('/pi_op', method='POST')
+def pi_op():
+
+    op = request.forms.get('op')
+
+    if op == 'reboot':
+        os.system('reboot')
+        return 'OK'
+
+    elif op == 'poweroff':
+        os.system('poweroff')
+        return 'OK'
+
+    else:
+        return 'WUT'
+
+@route('/logmark', method='POST')
+def log_mark():
+
+    msg = request.forms.get('msg')
+
+    if len(msg) < 100:
+        log.main.critical(msg)
+        return 'OK'
+
+    else:
+        return 'WTF'
+
+@route('/gotosleep', method='POST')
+def sleep_now_bitch():
+
+    sleep.thread.WakeUpABit(-1000000.0)
+    return 'JEEZ_SORRY_OK'
 
 
 @route('/status/set/<var>', method='POST')
@@ -258,4 +312,4 @@ def getvar(var):
 
 # run(host='0.0.0.0', port=80, debug=True)
 # run the server in a thread, otherwise it blocks here and prevents everything else from happening
-threading.Thread(target=run, daemon=True, kwargs=dict(host='0.0.0.0', port=80)).start()
+threading.Thread(target=run, daemon=True, name='httpserver', kwargs=dict(host='0.0.0.0', port=80)).start()

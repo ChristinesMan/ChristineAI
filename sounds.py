@@ -39,6 +39,7 @@ class SoundsDB():
     def All(self):
         """
             Return a list of all sounds in the database. Called when building the web interface only, pretty much, so far. 
+            But now is probably orphan and unused since I decided to make the sounds tab sorted by collection
         """
 
         Rows = db.conn.DoQuery('SELECT * FROM sounds')
@@ -206,6 +207,9 @@ class SoundsDB():
             Allow volume control. Filthy as fuck. Horrendously hacky and stupid. 
             I am an imbecile. 
             For debugging and QA only
+
+            Reading this months later. OMG this is stupid. 
+            OMG this is awful! 
         """
 
         Skip = 54
@@ -308,6 +312,40 @@ class SoundsDB():
                             break
             CollectionStates.append((Row[0], RowInCollection))
         return CollectionStates
+
+    def AllSoundsByCollection(self):
+        """
+            Returns a list of collections with all the sounds. Used to build web page with all sounds.
+        """
+
+        Rows = db.conn.DoQuery('SELECT name,sound_ids FROM collections')
+
+        Collections = []
+        for Row in Rows:
+            Collection = {}
+            Collection['name'] = Row[0]
+
+            # Unpack the "9-99,999" format into a list of individual sound ids, unless the collection was null
+            SoundIDs = []
+            if Row[1] != None and Row[1] != 'None':
+                for element in Row[1].split(','):
+                    if '-' in element:
+                        id_bounds = element.split('-')
+                        id_min = int(id_bounds[0])
+                        id_max = int(id_bounds[1])
+                        for CollectionID in range(id_min, id_max + 1):
+                            SoundIDs.append(CollectionID)
+                    else:
+                        SoundIDs.append(int(element))
+
+            Sounds = []
+            for SoundID in SoundIDs:
+                Sounds.append(self.GetSound(sound_id = SoundID))
+
+            Collection['sounds'] = Sounds
+
+            Collections.append(Collection)
+        return Collections
 
     def CollectionUpdate(self, sound_id, collection_name, state):
         """

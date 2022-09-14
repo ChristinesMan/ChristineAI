@@ -4,6 +4,7 @@
       <!-- First column header is not rotated -->
       <th></th>
       <!-- Following headers are rotated -->
+        <th class="rotate"><div class="rotatediv"><span class="rotatedivspan">PLAY</span></div></th>
 % for collection in sounds.soundsdb.Collections():
         <th class="rotate"><div class="rotatediv"><span class="rotatedivspan">{{collection}}</span></div></th>
 % end
@@ -17,6 +18,7 @@ for Sound in sounds.soundsdb.All():
 %>
     <tr>
       <th class="row-header">{{SoundName}}</th>
+      <td><button class="btn" onClick="ButtonHit('/Honey_Say', 'sound_id', '{{SoundId}}'); return false;"><i class="fa fa-play-circle-o" aria-hidden="true"></i></button></td>
 <%
   for collection, ischecked in sounds.soundsdb.CollectionsForSound(sound_id = SoundId):
     if ischecked:
