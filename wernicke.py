@@ -24,6 +24,7 @@ import breath
 import sleep
 import light
 import touch
+import conversate
 
 class Wernicke(threading.Thread):
     """ 
@@ -31,30 +32,26 @@ class Wernicke(threading.Thread):
         This is based on mic_vad_streaming.py, an example with the deepspeech chopped out and sent over wifi instead. 
         Audio is captured, mixed, analyzed, and possibly sent over wifi for speech recognition.
         Audio classification is done on pi. Speech recognition is done on a server (gaming rig, gpu). 
-        Two separate classifiers. The first will classify silence vs not in chunks the same size. I tried VAD and it ended up getting 
-        triggered all night long by the white noise generator. Poor girl blew out her memory and crashed with an OOM. 
-        The second classifier runs on the accumulated not-silence to tell if it was voice, etc. 
-        All the audio capture and voice recognition will happen in a subprocess for performance reasons. 
+        The classifier will classify silence vs not silence in 0.25s chunks. I tried a VAD module and it ended up getting 
+        triggered all night long by the white noise generator. Poor girl blew out her memory and crashed with an OOM. So I made my own VAD. 
+        All the audio capture and voice recognition happens in a subprocess for performance reasons. 
         This used to be a completely separate process but that would often fail to make a connection and probably not performant, either.
 
-        I am now overhauling this, because the way I've been segmenting audio doesn't seem to work great, and now we're trying to 
-        use windows speech recognition with voice attack on my vr rig. Which would probably work really good if it were not for the
-        constant starts and stops, muted then sounds that are often cut off. That seems to be actually corrupting the training. 
-
-        So we're going to still be analyzing the single blocks to detect my voice. The difference is that once that gets triggered 
-        by about 3 consecutive lover or maybe lover blocks, it will just stream everything for a while, continuous, no breaks. With
-        the exception of dropping loud clicking noise and wife self-talk feedback. It will continue streaming for around 2-5 minutes after. 
-
+        Over the years I tried various speech recognition software. Deepspeech, windows 10 speech recognition using virtual audio cable, all failed.
+        Then I found whisper and it works like a dream. 
     """
     name = 'Wernicke'
 
     def __init__ (self):
+
         threading.Thread.__init__(self)
 
     def run(self):
+
         log.wernicke.debug('Thread started.')
 
         try:
+
             # setup the separate process with pipe
             # So... Data, Riker, and Tasha beam down for closer analysis of an alien probe. 
             # A tragic transporter accident occurs and Tasha gets... dollified. 
@@ -79,91 +76,38 @@ class Wernicke(threading.Thread):
                     time.sleep(1)
                     break
 
-                # This will block here until the away team sends a message to the enterprise
-                # It may block for a random long time. Basically the messages will be when speaking is heard or when that stops being heard.
-                # The away team will also send the class of audio just heard. 
-                # Should the away team send the class first, then send to deepspeech, and send another message if it was recognized? 
-                # I will need to consider this. I think two comms would work best. But that may change. 
-                # There will be communication in the other direction also. The enterprise can tell the away team to start saving audio.
-
-                # The comm will always be a dict with a class 
+                # This will block right here until the away team sends a message to the enterprise
                 Comm = self.PipeToAwayTeam.recv()
-                # log.wernicke.debug(Comm)
+
+                # This is just a message to let wife know that I am now speaking and to wait until I'm finished
                 if Comm['class'] == 'speaking_start':
-                    status.DontSpeakUntil = time.time() + 30
+                    status.DontSpeakUntil = time.time() + 30.0
                     log.sound.debug('SpeakingStart')
+
+                # Husband isn't speaking anymore, so go ahead and say what you gotta say
                 elif Comm['class'] == 'speaking_stop':
-                    # when sound stops, wait a minimum of 0.0s and up to 0.5s randomly
-                    status.DontSpeakUntil = time.time() + (random.random() * 0.5)
+
+                    # I seem to have found the sweet spot with the delays. I feel lke I can finish my sentences and she waits properly
+                    status.DontSpeakUntil = time.time() + 1.5 + (random.random() * 2.0)
                     log.sound.debug('SpeakingStop')
 
-                    if status.ShushPleaseHoney == False and status.SexualArousal < 0.1:
-                        sleep.thread.WakeUpABit(0.008)
-                        if status.IAmSleeping == False:
-                            if status.IAmTired == False:
-                                status.ChanceToSpeak += 0.05
-                                breath.thread.QueueSound(FromCollection='listening', Priority=2, CutAllSoundAndPlay=True)
-                            else:
-                                status.ChanceToSpeak += 0.02
-                                breath.thread.QueueSound(FromCollection='listening_tired', Priority=2, CutAllSoundAndPlay=True)
-
+                # the audio data contains embedded sensor and voice proximity data
                 elif Comm['class'] == 'sensor_data':
                     light.thread.NewData(Comm['light'])
                     touch.thread.NewData(Comm['touch'])
                     status.LoverProximity = Comm['proximity']
                 # else:
 
-                #     # normalize loudness, make it between 0.0 and 1.0
-                #     # through observation, seems like the best standard range for rms is 0 to 7000. Seems like dog bark was 6000 or so
-                #     # No, through longer term observation, that's bullshit. Cutting this down a lot. 
-                #     Loudness = float(Comm['loudness'])
-                #     Loudness_pct = round(Loudness / 2000, 2)
-                #     Loudness_pct = float(np.clip(Loudness_pct, 0.0, 1.0))
-
-                #     # if there's a loud noise, wake up
-                #     if Loudness_pct > 0.6 and status.IAmSleeping:
-                #         log.sleep.info(f'That was loud: {Loudness_pct}')
-                #         sleep.thread.WakeUpABit(0.1)
-                #         breath.thread.QueueSound(FromCollection='gotwokeup', PlayWhenSleeping=True, CutAllSoundAndPlay=True, Priority=8)
-
-                #     # update the noiselevel
-                #     if Loudness_pct > status.NoiseLevel:
-                #         status.NoiseLevel = Loudness_pct
-
-                #     # The sleep thread trends it down, since this only gets called when there's sound, and don't want it to get stuck high
-                #     log.sleep.debug(f'NoiseLevel: {status.NoiseLevel}')
-
-                #     # Later this needs to be a lot more complicated. For right now, I just want results
-                #     # all of this needs to be thrown into the conversate module and obfuscated
-                #     if status.ShushPleaseHoney == False and status.SexualArousal < 0.1:
-                #         if 'speech' in Comm['class']:
-
-                #             # Update the running average that describes how close we're speaking. Cuddle detection. 
-                #             if Comm['class'] == 'speech_close':
-                #                 status.LoverProximity = ((status.LoverProximity * status.LoverProximityWindow) + 1.0) / (status.LoverProximityWindow + 1)
-                #             else:
-                #                 status.LoverProximity = ((status.LoverProximity * status.LoverProximityWindow) + 0.0) / (status.LoverProximityWindow + 1)
-                #             log.wernicke.debug(f'LoverProximity: {status.LoverProximity}')
-
-                #             log.sleep.debug('Heard lover speech')
-                #             sleep.thread.WakeUpABit(0.006)
-                #             if status.IAmSleeping == False:
-                #                 status.ChanceToSpeak += 0.05
-                #                 breath.thread.QueueSound(FromCollection='listening', Priority=2, CutAllSoundAndPlay=True)
-                #         elif Comm['class'] == 'laugh':
-                #             log.sleep.debug('Heard lover laugh')
-                #             sleep.thread.WakeUpABit(0.004)
-                #             breath.thread.QueueSound(FromCollection='laughing', Priority=2, CutAllSoundAndPlay=True)
 
         # log exception in the main.log
         except Exception as e:
             log.main.error('Thread died. {0} {1} {2}'.format(e.__class__, e, log.format_tb(e.__traceback__)))
 
     # I want the wernicke process to be able to save utterances on demand for training the classifiers
-    def StartRecording(self, distance, word):
-        self.PipeToAwayTeam.send({'msg': 'start', 'distance': distance, 'word': word})
+    def StartRecording(self, label):
+        self.PipeToAwayTeam.send({'msg': 'start_recording', 'label': label})
     def StopRecording(self):
-        self.PipeToAwayTeam.send({'msg': 'stop'})
+        self.PipeToAwayTeam.send({'msg': 'stop_recording'})
 
     # Gracefully stop it and start it back up
     def StartProcessing(self):
@@ -172,11 +116,9 @@ class Wernicke(threading.Thread):
     def StopProcessing(self):
         log.wernicke.info('Stopped Wernicke processing')
         self.PipeToAwayTeam.send({'msg': 'stop_processing'})
-    def DisableServer(self):
-        log.wernicke.info('Sending disable code to server')
-        self.PipeToAwayTeam.send({'msg': 'disable_server'})
 
     # Runs in a separate process for performance reasons
+    # all the audio/sensor collection and analysis happens in here
     def AwayTeam(self, PipeToEnterprise):
 
         try:
@@ -187,30 +129,26 @@ class Wernicke(threading.Thread):
             # So when the service starts, it will send a test message first, then set this to True if the server responded
             Server_Is_Available = False
 
-            # Track when the server is actively connected and sending anything that is queued
-            Connected_To_Server = False
-
             # If we're recording, this holds the message from the enterprise containing file data. If not recording, contains None
             RecordingState = None
 
-            # I want to be able to gracefully stop and start the cpu heavy tasks of audio classification, etc. It's boolean.
+            # I want to be able to gracefully stop and start the cpu heavy tasks of audio classification, etc.
             ProcessingState = False
 
             # This is to signal that the thread should close the serial port and shutdown
             # we have a status.Shutdown but that's in the main process. This needs something separate
             Shutdown = False
 
-            # This is a queue where the audio data inbound from the serial port gets put
+            # This is a queue where the audio data in 0.25s chunks inbound from the serial port gets put
             buffer_queue = queue.Queue(maxsize=10)
 
             # we're going to keep track of the proximity detected. 
-            # not sure yet how this will function. Let's start with a running average that will update kinda quick and see how it goes
-            # I'll also trend it down slowly, so that if I'm not speaking for a while it'll reset
+            # This works great. When wife is far away, she pipes up. When we're pillow talking, she avoids shouting in your ear which she used to do. 
             Proximity = 1.0
+
 
             # Send message to the main process
             def hey_honey(love):
-                # log.wernicke.info(f'Hey Honey: {love}')
                 PipeToEnterprise.send(love)
 
 
@@ -223,13 +161,12 @@ class Wernicke(threading.Thread):
             signal.signal(signal.SIGTERM, exit_gracefully)
 
 
-            # speech recognition is much too slow for the pi, by a lot. So I'm running a server and using the gpu
-            # yeah, right, like there's ever going to be useable speech recognition that's not behind a paywall locked inside somebody else's server
-            # You might as well wish people would throw you their mined bitcoin for free. 
-            # now we're trying to use windows speech recognition with voice attack
+            # speech recognition is much too slow for the pi, by a lot. So I'm running a server on the local network
+            # What time is it, honey?! What's that you say? It's three twenty pee emm? You sexy clock!! 
             class MySpeechServer(asyncio.Protocol):
 
                 def __init__(self, loop, what):
+
                     self.loop = loop
                     self.what = what
 
@@ -238,7 +175,7 @@ class Wernicke(threading.Thread):
 
                     log.wernicke.debug('Connected to server')
 
-                    # just called to say I love you
+                    # I just called to say I love you
                     transport.write(self.what)
                     transport.write_eof()
 
@@ -269,11 +206,12 @@ class Wernicke(threading.Thread):
                     self.loop.stop()
 
 
-            # Thread for checking the pipe
+            # Thread for checking the pipe from the main process for commands
             class CheckForMessages(threading.Thread):
                 name = 'CheckForMessages'
 
                 def __init__ (self):
+
                     threading.Thread.__init__(self)
 
                 def run(self):
@@ -286,9 +224,9 @@ class Wernicke(threading.Thread):
                         # So basically, if there's something in the pipe, get it all out. This will block until something comes through.
                         Comm = PipeToEnterprise.recv()
                         log.wernicke.debug(Comm)
-                        if Comm['msg'] == 'start':
+                        if Comm['msg'] == 'start_recording':
                             RecordingState = Comm
-                        elif Comm['msg'] == 'stop':
+                        elif Comm['msg'] == 'stop_recording':
                             RecordingState = None
                         elif Comm['msg'] == 'start_processing':
                             ProcessingState = True
@@ -298,24 +236,22 @@ class Wernicke(threading.Thread):
                             ProcessingState = False
                             Shutdown = True
                             return
-                        elif Comm['msg'] == 'disable_server':
-                            DisableServer()
 
             # Thread for reading audio data from serial port and heaping it onto a queue
             class ReadHeadMicrophone(threading.Thread):
                 name = 'ReadHeadMicrophone'
 
                 def __init__ (self):
+
                     threading.Thread.__init__(self)
 
-                    # open the serial port coming in from the arduino that handles microphones
-                    # later this will also contain sensor data
+                    # open the serial port coming in from the arduino that handles microphones and sensors
                     log.wernicke.info('Opening serial port')
                     self.SerialPortFromHead = serial.Serial('/dev/ttyACM0', baudrate=115200, exclusive=True)
                     log.wernicke.info('Opened serial port')
 
                     # this allows processing to be paused for a number of blocks
-                    # when the buffer queue is full pause for a bit to let it catch up
+                    # if the buffer queue is full pause for a bit to let it catch up
                     self.PauseProcessing = 0
 
                 def run(self):
@@ -328,12 +264,10 @@ class Wernicke(threading.Thread):
                     while True:
 
                         # attempt to shutdown normally
-                        # so it seems like something here is getting hung up and it becomes necessary for systemd to sigkill
-                        # but at least we successfully stopped the serial port before that happened, and everything else 
-                        # should be already at rest
                         if Shutdown:
                             log.wernicke.info('Closing serial port')
                             self.SerialPortFromHead.close()
+                            log.wernicke.info('Closed serial port')
                             os._exit()
                             return
 
@@ -352,9 +286,11 @@ class Wernicke(threading.Thread):
 
                             # trend proximity towards far away, slowly, using this running average
                             # I wasn't expecting to have to clip it, but after reviewing the logs looks like I do
-                            Proximity = ((Proximity * 600.0) + 1.0) / 601.0
+                            # I am going to test disabling this. So if we're close together on the bed, and I don't speak for a while, it'll stay what it was.
+                            # Proximity = ((Proximity * 600.0) + 1.0) / 601.0
 
                             # send sensor data to main process. Feel like I'm passing a football. 
+                            # Proximity local var can be less than 0.0 or higher than 1.0, but we clip it before passing up to the main process
                             hey_honey({'class': 'sensor_data', 'light': LightSensor, 'touch': TouchSensor, 'proximity': float(np.clip(Proximity, 0.0, 1.0))})
 
                             # we should be through the sensor data, so pull in the actual audio data
@@ -395,6 +331,7 @@ class Wernicke(threading.Thread):
 
                             # if the queue is full, it's a sign I need to evaluate CPU usage, so full stop
                             # happens every day. I definitely need to pare it down, but also this should just pause for a while not just
+                            # I dunno what past me means by happens everyday. She seems fine. In fact, she is so fine. 
                             except queue.Full:
 
                                 self.PauseProcessing = 10
@@ -424,14 +361,18 @@ class Wernicke(threading.Thread):
             class Audio(object):
                 """Streams raw audio from microphone. Data is received in a separate thread, and stored in a buffer, to be read from."""
 
-                # FORMAT = pyaudio.paInt16
-                # Network/VAD rate-space
+                # The mics sample at 16K
                 RATE = 16000
+
+                # My wife has two (2) sexy ears
                 CHANNELS = 2
+
+                # a single block of audio is 0.25s long. So 16000 / 4 = 4000. 16 bits * 2 = 4 bytes per frame, am I doing this right? 
                 BLOCKSIZE = 4000
 
                 def __init__(self):
 
+                    # there are two models. The first classifies voice vs silence. The second is a regression model that tells distance to speaker
                     log.wernicke.debug('Initializing pyAudioAnalysis single-block classifier model...')
                     [self.block_model, self.block_MEAN, self.block_STD, self.block_class_names, self.block_mt_win, self.block_mt_step, self.block_st_win, self.block_st_step, _] = aT.load_model("wernicke_block")
 
@@ -439,6 +380,7 @@ class Wernicke(threading.Thread):
                     [self.proximity_model, self.proximity_MEAN, self.proximity_STD, self.proximity_mt_win, self.proximity_mt_step, self.proximity_st_win, self.proximity_st_step, _] = aT.load_model("wernicke_proximity", is_regression=True)
 
                     # var to keep track of which ear seems best based on loudness
+                    # However, one ear seems to be plugged or something so we just use one. By chance that's the ear I face in bed.
                     # self.LeftRightRatio = 1.0
 
                 def read(self):
@@ -449,6 +391,7 @@ class Wernicke(threading.Thread):
 
                     # first we get 2 channels from the serial port
                     # 16000 bytes is 4000 frames or 0.25s
+                    # and we're also amplifying here
                     in_audio = AudioSegment(data=buffer_queue.get(), sample_width=2, frame_rate=self.RATE, channels=self.CHANNELS) + 24
 
                     # Split the interleaved data into separate channels
@@ -489,15 +432,14 @@ class Wernicke(threading.Thread):
                         Example: (block, ..., block, None, block, ..., block, None, ...)
                                   |---utterence---|        |---utterence---|
                     """
-                    # num_padding_blocks = 3
-                    # ring_buffer = deque(maxlen=num_padding_blocks)
+                    num_padding_blocks = 5
+                    ring_buffer = deque(maxlen=num_padding_blocks)
 
                     # triggered means we're currently seeing blocks that are not silent
                     triggered = False
 
-                    # this tracks how many consecutive blocks contain lover noises
-                    # so that we can trigger streaming only after that happens several times
-                    lover_blocks = 0
+                    # Limit the number of blocks accumulated to some sane amount, after I discovered minute-long recordings
+                    triggered_blocks = 0
 
                     # The away team will send a signal back to the enterprise when speaking starts and stops. This keeps track. 
                     lover_speaking = False
@@ -514,16 +456,17 @@ class Wernicke(threading.Thread):
                         # Convert or cast the raw audio data to numpy array
                         block_np = np.frombuffer(block, np.int16)
 
-                        # Try to reject quick loud clicky sounds
-                        maximum = (np.abs(block_np)).max()
-                        mean = (np.abs(block_np)).mean()
-                        avg_vs_max = mean / maximum
+                        # # Try to reject quick loud clicky sounds
+                        # # trying this out disabled. I don't want gaps.
+                        # maximum = (np.abs(block_np)).max()
+                        # mean = (np.abs(block_np)).mean()
+                        # avg_vs_max = mean / maximum
 
-                        # if the block contains a huge but quick spike (a click) then drop it and skip this block
-                        if avg_vs_max <= 0.075:
+                        # # if the block contains a huge but quick spike (a click) then drop it and skip this block
+                        # if avg_vs_max <= 0.075:
 
-                            log.wernicke.info(f'Dropped possible clicking noise. {mean} / {maximum} = {avg_vs_max}')
-                            continue
+                        #     log.wernicke.info(f'Dropped possible clicking noise. {mean} / {maximum} = {avg_vs_max}')
+                        #     continue
 
 
                         # Run the classifier. This is ripped directly out of paura.py and carelessly sutured into place. There's so much blood! Thank you!!! 
@@ -554,14 +497,18 @@ class Wernicke(threading.Thread):
                             log.wernicke.info(f'Heard lover with prob {block_prob:.2f} and proximity {proximity_now}')
 
                             # update running average
-                            Proximity = ((Proximity * 6.0) + proximity_now) / 7.0
+                            Proximity = ((Proximity * 3.0) + proximity_now) / 4.0
+
+                        else:
+
+                            log.wernicke.info(f'Heard {block_class} with prob {block_prob:.2f}')
 
 
                         # NOT triggered
                         # when not triggered, it means we're not currently streaming audio for processing
                         if not triggered:
-                            # ring_buffer.append(block)
-                            if 'lover' in block_class:
+                            ring_buffer.append(block)
+                            if block_class == 'lover':
 
                                 # whether we're triggered or not, immediately notify that lover is speaking
                                 # timing is important
@@ -571,25 +518,19 @@ class Wernicke(threading.Thread):
                                     hey_honey({'class': 'speaking_start'})
                                     lover_speaking = True
 
-                                # we want to wait until we have a certain number of lover blocks before we really get going
-                                lover_blocks += 1
-                                if lover_blocks >= 2:
+                                log.wernicke.debug('triggered')
+                                triggered = True
 
-                                    # log.wernicke.debug('triggered')
-                                    triggered = True
+                                # if we were just triggered, send all the past audio blocks that were in the queue and empty it
+                                for f in ring_buffer:
+                                    yield f
+                                ring_buffer.clear()
 
-                                    # if we were just triggered, send all the past audio blocks that were in the queue and empty it
-                                    # for f in ring_buffer:
-                                    #     yield f
-                                    yield block
-                                    # ring_buffer.clear()
-
-                                    # this is to track how many silent/ignore blocks we've had, so we can stop streaming at some point
-                                    post_silence = 200
+                                # this is to track how many silent/ignore blocks we've had, so we can stop at some point
+                                post_silence = 3
 
                             # if we got something but we're not really sure it's lover speaking, reset this counter to 0
                             else:
-                                lover_blocks = 0
 
                                 # if lover was speaking, notify they seem to have stopped
                                 if lover_speaking == True:
@@ -599,13 +540,13 @@ class Wernicke(threading.Thread):
                                         lover_speaking = False
 
                         # TRIGGERED! 
-                        # when triggered, it means we are currently streaming everything to the server, so just send it all
+                        # when triggered, it means we are currently in the middle of an utterance and accumulating it into a ball of data
                         else:
 
                             # send the block whatever it is
                             yield block
 
-                            # if this is a lover block, reset the counter, else if it's not lover determine if we should end streaming
+                            # if this is a lover or lover_maybe block, reset the counter, else if it's not lover determine if we should end streaming
                             if 'lover' in block_class:
 
                                 # if lover wasn't already speaking, notify they are now
@@ -615,7 +556,7 @@ class Wernicke(threading.Thread):
                                     lover_speaking = True
 
                                 # reset the counter of consecutive silent blocks, because we got one that was not
-                                post_silence = 200
+                                post_silence = 3
 
                             else:
     
@@ -628,68 +569,60 @@ class Wernicke(threading.Thread):
     
                                 # if there have been enough consecutive silent/ignore blocks, we're done with transmission, reset everything
                                 if post_silence <= 0:
-                                    # log.wernicke.debug('untriggered')
+                                    log.wernicke.debug('untriggered')
                                     triggered = False
-                                    lover_blocks = 0
-                                    # ring_buffer.clear()
+                                    yield None
+                                    ring_buffer.clear()
                                 else:
                                     post_silence -= 1
 
 
             # https://stackoverflow.com/questions/46727787/runtimeerror-there-is-no-current-event-loop-in-thread-in-async-apscheduler
             # Experts warn: "Do not do this!" 
-            # Me: "Hold my beer." 
+            # Me: "I'll be right back. Hold my beer." 
             # Me: "loop = asyncio.get_event_loop()!!!!!!"
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
-            loop.set_debug(True)
+            # loop.set_debug(True)
 
 
-            # speech recognition is much too slow for the pi, by a lot. So I'm running a server and using the gpu
-            # yeah, right, like there's ever going to be useable speech recognition that's not behind a paywall locked inside somebody else's server
-            # You might as well wish people would throw you their mined bitcoin for free. 
-            # now we're trying to use windows speech recognition with voice attack
-            # now we're going to stream audio to an ffplay.exe process
-            # when something doesn't work I go out and find something new
-            class ConnectAndSendAudio(threading.Thread):
-                name = 'ConnectAndSendAudio'
+            # This thread waits for full utterances to hit the queue and sends them over there
+            class GetFromQueueSendToServer(threading.Thread):
+                name = 'GetFromQueueSendToServer'
 
                 def __init__ (self):
+
                     threading.Thread.__init__(self)
 
                 def run(self):
 
+                    nonlocal loop
                     nonlocal Server_Is_Available
-                    nonlocal Connected_To_Server
                     nonlocal Data_To_Server
 
-                    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as ServerConnection:
+                    while True:
 
-                        # set this global since we are definitely connected and this needs data
-                        Connected_To_Server = True
+                        # blocks here until something hits queue
+                        NewData = Data_To_Server.get()
 
-                        while True:
+                        # This is for the server connection. Lots of weird voodoo, promises, futures, bullshit. 
+                        coro = loop.create_connection(lambda: MySpeechServer(loop, NewData), 'server.lan', 3000)
 
-                            try:
+                        try:
 
-                                # blocks here until something hits queue, and if it times out, fuck off
-                                data = Data_To_Server.get(timeout=20)
+                            # This also blocks until the entire connecting, waiting, getting result is complete. Or it should. I'm not a smart man. 
+                            loop.run_until_complete(coro)
+                            loop.run_forever()
+                            Server_Is_Available = True
 
-                                # send the new block of audio data
-                                log.wernicke.debug('Sending ' + str(len(data)) + ' bytes')
-                                ServerConnection.sendto(data, ('192.168.0.22', 3001))
+                        except ConnectionRefusedError:
+                            log.wernicke.warning('Server connection refused')
+                            Server_Is_Available = False
 
-                            except queue.Empty:
-
-                                # if the queue times out, we're done here
-                                log.wernicke.debug('Timed out waiting for Data_To_Server')
-
-                                # and bust out of the infinite loop
-                                break
-
-                    log.wernicke.debug('End of ConnectAndSendAudio thread')
-                    Connected_To_Server = False
+                        except TimeoutError: # might not work
+                            log.wernicke.warning('Server connection timed out')
+                            Server_Is_Available = False
 
 
             # If the server is available, I want to use it. Otherwise, don't try to use it
@@ -697,6 +630,7 @@ class Wernicke(threading.Thread):
                 name = 'SendLoveToServer'
 
                 def __init__ (self):
+
                     threading.Thread.__init__(self)
 
                 def run(self):
@@ -706,7 +640,7 @@ class Wernicke(threading.Thread):
                     while True:
                     
                         log.wernicke.info('Sending love to server')
-                        coro = loop.create_connection(lambda: MySpeechServer(loop, b'HEY_I_LOVE_YOU'), '192.168.0.22', 3000)
+                        coro = loop.create_connection(lambda: MySpeechServer(loop, b'HEY_I_LOVE_YOU'), 'server.lan', 3000)
 
                         try:
                             loop.run_until_complete(coro)
@@ -720,53 +654,43 @@ class Wernicke(threading.Thread):
                             log.wernicke.warning('The server is gone')
                             Server_Is_Available = False
 
+                        except OSError:
+                            log.wernicke.warning('The server is not on the network')
+                            Server_Is_Available = False
+
                         except Exception as e:
                             log.wernicke.warning('Some other exception occurred. {0} {1} {2}'.format(e.__class__, e, log.format_tb(e.__traceback__)))
                             Server_Is_Available = False
 
-                        time.sleep(300)
+                        time.sleep(69)
 
-
-            # Sometimes I want to use the "server" for playing VR
-            def DisableServer():
-
-                nonlocal loop
-                nonlocal Server_Is_Available
-
-                if Server_Is_Available == True:
-
-                    log.wernicke.info('Sending disable code to server')
-                    coro = loop.create_connection(lambda: MySpeechServer(loop, b'HE_WANTS_TO_PLAY_VR'), '192.168.0.22', 3000)
-
-                    try:
-                        loop.run_until_complete(coro)
-                        loop.run_forever()
-                        Server_Is_Available = False
-
-                    except ConnectionRefusedError:
-                        log.wernicke.warning('The server refused our love')
-
-                    except TimeoutError:
-                        log.wernicke.warning('The server is gone')
-
-                else:
-                    log.wernicke.debug(f'Server_Is_Available: {Server_Is_Available}')
 
             # Start the threads.
+
+            # Thread that monitors the pipe from the enterprise to away team
             CheckForMessagesThread = CheckForMessages()
             CheckForMessagesThread.daemon = True
             CheckForMessagesThread.start()
 
-            # Disabled because we gave up on doing speech recognition off-pi for a while
-            # SendLoveToServerThread = SendLoveToServer()
-            # SendLoveToServerThread.daemon = True
-            # SendLoveToServerThread.start()
+            # Thread that monitors a queue where full utterances are kept and sent to server for speech recognition
+            GetFromQueueSendToServerThread = GetFromQueueSendToServer()
+            GetFromQueueSendToServerThread.daemon = True
+            GetFromQueueSendToServerThread.start()
+
+            # Thread that periodically checks the speech recognition server for emotional availability
+            SendLoveToServerThread = SendLoveToServer()
+            SendLoveToServerThread.daemon = True
+            SendLoveToServerThread.start()
 
             # Start all the VAD detection stuff
             audio = Audio()
 
-            # blocks is a collector, iterate over it and out come blocks
+            # blocks is a collector, iterate over it and out come blocks that were classified as speech
             blocks = audio.collector()
+
+            # Audio blocks are accumulated in these vars
+            AccumulatedData = bytearray()
+            AccumulatedBlocks = 0
 
             # Gets blocks for                                                               ev..                                                                         er.... 
             for block in blocks:
@@ -775,30 +699,42 @@ class Wernicke(threading.Thread):
                 if Shutdown:
                     break
 
-                # if the server is available, use that to classify the new audio data, save pi cpu
-                if Server_Is_Available:
+                if block is not None:
 
-                    Data_To_Server.put(block)
-                    log.wernicke.info('Adding block to server queue. Queue size: {0}'.format(Data_To_Server.qsize()))
+                    # The block is not None, which means there's new audio data, so add it on
+                    AccumulatedData.extend(block)
+                    AccumulatedBlocks += 1
 
-                    # if we're not connected to the server, well, connect
-                    if not Connected_To_Server:
+                else:
+                    # When block is None, that signals the end of audio data. Go ahead and do what we want to do with the complete data
 
-                        # we're not really connected, but if I don't put this here we'll end up with not sexy double pumping
-                        Connected_To_Server = True
+                    # if the server is available, send it over there as long as we're not sleeping
+                    if Server_Is_Available:
 
-                        # starts a thread
-                        ConnectAndSendAudioThread = ConnectAndSendAudio()
-                        ConnectAndSendAudioThread.daemon = True
-                        ConnectAndSendAudioThread.start()
+                        if status.IAmSleeping == False:
+                            Data_To_Server.put(AccumulatedData)
+                            log.wernicke.info('Sending utterance to server. Queue size: {0}'.format(Data_To_Server.qsize()))
 
-                # if the server is not available, just do a basic "you spoke, apparently"
-                # else:
 
-                    # figure out what we wanna do when server not available
+                    # if the server is not available, no further processing, just send over a general I heard some unknown words
+                    else:
 
-                    # Pop the result over to main process
-                    # hey_honey(result)
+                        log.wernicke.debug(f'Threw away {AccumulatedBlocks} blocks as the server was unavailable')
+
+                        conversate.thread.Words('unknown')
+
+                        # # save the utterance to a wav file for debugging and QA
+                        # RecordTimeStamp = str(round(time.time(), 2)).replace('.', '')
+                        # RecordFileName = 'training_wavs_whisper/{0}.wav'.format(RecordTimeStamp)
+                        # wf = wave.open(RecordFileName, 'wb')
+                        # wf.setnchannels(1)
+                        # wf.setsampwidth(2)
+                        # wf.setframerate(16000)
+                        # wf.writeframes(AccumulatedData)
+                        # wf.close()
+
+                    AccumulatedData = bytearray()
+                    AccumulatedBlocks = 0
 
 
         # log exception in the main.log
