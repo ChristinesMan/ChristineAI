@@ -44,8 +44,8 @@ import killsignal
 
 if __name__ == "__main__":
 
-    time.sleep(5)
-    status.ShushPleaseHoney = False
+    # time.sleep(5)
+    # status.ShushPleaseHoney = False
 
 
     # for temp data collection

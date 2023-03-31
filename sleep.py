@@ -29,10 +29,10 @@ class Sleep(threading.Thread):
         self.TrendAverageWindow = 10.0
 
         # Weights
-        self.LightWeight = 7
-        self.GyroWeight = 5
+        self.LightWeight = 9
+        self.GyroWeight = 4
         self.TiltWeight = 3
-        self.TimeWeight = 9
+        self.TimeWeight = 5
         self.TotalWeight = self.LightWeight + self.GyroWeight + self.TiltWeight + self.TimeWeight
 
         # if laying down, 0, if not laying down, 1.         
@@ -99,7 +99,6 @@ class Sleep(threading.Thread):
                 # If it's getting late, set a future time to "whine" in a cute, endearing way
                 if self.NowItsLate():
                     self.SetTimeToWhine()
-                    self.StartBreathingSleepy()
                 if self.TimeToWhine():
                     self.Whine()
 
@@ -108,7 +107,7 @@ class Sleep(threading.Thread):
                 if status.IAmSleeping == True:
 
                     # down, down, dooooownnnnn
-                    status.BreathIntensity -= 0.06
+                    status.BreathIntensity -= 0.09
 
                     # clip it
                     status.BreathIntensity = float(np.clip(status.BreathIntensity, 0.0, 1.0))
@@ -123,6 +122,12 @@ class Sleep(threading.Thread):
                     wernicke.thread.StartProcessing()
 
                 if status.Wakefulness < self.MinWakefulnessToBeTired and status.IAmTired == False:
+
+                    # when we're laying next to each other in the dark
+                    # I'm holding your hand and starting to drift off to sleep
+                    # say "goodnight honey", not "GOODNIGHT HONEY!!!!"
+                    status.LoverProximity = 0.0
+
                     breath.thread.QueueSound(FromCollection='goodnight', PlayWhenSleeping=True, Priority=8, CutAllSoundAndPlay=True)
                     status.IAmTired = True
                     status.Wakefulness -= 0.02
@@ -174,6 +179,10 @@ class Sleep(threading.Thread):
             
             status.IAmSleeping = False
             breath.thread.BreathChange('breathe_normal')
+
+            # wake me up gently, my sweet sexy alarm clock
+            status.LoverProximity = 0.0
+
             breath.thread.QueueSound(FromCollection='waking', PlayWhenSleeping=True, Priority=8, CutAllSoundAndPlay=True)
 
     # I want to do stuff when just falling asleep and when getting up
@@ -193,8 +202,6 @@ class Sleep(threading.Thread):
     def Whine(self):
         breath.thread.QueueSound(FromCollection='bedtime', Priority=7)
         self.AnnounceTiredTime = False
-    def StartBreathingSleepy(self):
-        breath.thread.BreathChange('breathe_sleepy')
 
     # returns the time that is a random number of minutes in the future, for scheduled events
     def RandomMinutesLater(self, min, max):

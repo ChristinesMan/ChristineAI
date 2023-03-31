@@ -297,7 +297,7 @@ class SoundsDB():
 
             RowInCollection = False
 
-            if Row[1] != None and Row[1] != 'None':
+            if Row[1] != None and Row[1] != 'None' and Row[1] != '':
                 for element in Row[1].split(','):
                     if '-' in element:
                         id_bounds = element.split('-')
@@ -307,7 +307,7 @@ class SoundsDB():
                             RowInCollection = True
                             break
                     else:
-                        if sound_id == int(element):
+                        if element.isnumeric() and sound_id == int(element):
                             RowInCollection = True
                             break
             CollectionStates.append((Row[0], RowInCollection))
@@ -327,7 +327,7 @@ class SoundsDB():
 
             # Unpack the "9-99,999" format into a list of individual sound ids, unless the collection was null
             SoundIDs = []
-            if Row[1] != None and Row[1] != 'None':
+            if Row[1] != None and Row[1] != 'None' and Row[1] != '':
                 for element in Row[1].split(','):
                     if '-' in element:
                         id_bounds = element.split('-')
@@ -335,7 +335,7 @@ class SoundsDB():
                         id_max = int(id_bounds[1])
                         for CollectionID in range(id_min, id_max + 1):
                             SoundIDs.append(CollectionID)
-                    else:
+                    elif element.isnumeric():
                         SoundIDs.append(int(element))
 
             Sounds = []
@@ -359,7 +359,7 @@ class SoundsDB():
 
         # Unpack the "9-99,999" format into a list of individual sound ids, unless the collection was null
         CollectionIDs = []
-        if Collection != None and Collection != 'None':
+        if Collection != None and Collection != 'None' and Collection != '':
             for element in Collection.split(','):
                 if '-' in element:
                     id_bounds = element.split('-')
@@ -367,7 +367,7 @@ class SoundsDB():
                     id_max = int(id_bounds[1])
                     for CollectionID in range(id_min, id_max + 1):
                         CollectionIDs.append(CollectionID)
-                else:
+                elif element.isnumeric():
                     CollectionIDs.append(int(element))
 
         # Now that we have it in a flat list form, do whatever, add or delete, then sort the list so that it's in integer order again
@@ -514,7 +514,7 @@ class SoundCollection():
                     id_max = int(id_bounds[1])
                     for id in range(id_min, id_max+1):
                         yield id
-                else:
+                elif element.isnumeric():
                     yield int(element)
 
     def UpdateAvailableSounds(self):

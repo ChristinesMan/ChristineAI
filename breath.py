@@ -174,19 +174,25 @@ class Breath(threading.Thread):
         self.CurrentSound['is_playing'] = True
 
     # Change the type of automatic breath sounds
+    # I really ought to just abandon this type stuff anyway and sort them by intensity. Later. 
     def BreathChange(self, NewBreathType):
+
+        log.sound.debug(f'Breath style changed to {NewBreathType}')
         self.BreathStyle = NewBreathType
 
     # Add a sound to the queue to be played
-    def QueueSound(self, Sound = None, FromCollection = None, Intensity = None, CutAllSoundAndPlay = False, Priority = 5, PlayWhenSleeping = False, IgnoreSpeaking = False, Delay = 0):
+    def QueueSound(self, Sound = None, FromCollection = None, AltCollection = None, Intensity = None, CutAllSoundAndPlay = False, Priority = 5, PlayWhenSleeping = False, IgnoreSpeaking = False, Delay = 0):
 
         # if we're playing a sound from a collection, go fetch that rando
         if Sound == None and FromCollection != None:
             Sound = sounds.collections[FromCollection].GetRandomSound(intensity=Intensity)
 
-        # If a collection is empty, or no sounds available at this time, it's possible to get a None sound. Just chuck it. 
-        if Sound != None:
+        # If a collection is empty, or no sounds available at this time, it's possible to get a None sound. So try one more time.
+        if Sound == None and AltCollection != None:
+            Sound = sounds.collections[AltCollection].GetRandomSound(intensity=Intensity)
 
+        # if fail, just chuck it. No sound for you
+        if Sound != None:
             # Take the Sound and add all the options to it. Merges the two dicts into one. 
             # The collection name is saved so that we can update the delay wait only when the sound is played
             Sound.update({'collection': FromCollection, 'cutsound': CutAllSoundAndPlay, 'priority': Priority, 'playsleeping': PlayWhenSleeping, 'ignorespeaking': IgnoreSpeaking, 'delayer': Delay, 'is_playing': False})

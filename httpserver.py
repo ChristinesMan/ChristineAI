@@ -35,6 +35,9 @@ def send_ico(filename):
 @route('/<filename:re:.*\.css>')
 def send_css(filename):
     return static_file(filename, root='./httpserver/', mimetype='text/css')
+@route('/<filename:re:.*\.(wav|mp3|gz|tar\.gz)>')
+def send_css(filename):
+    return static_file(filename, root='./httpserver/', mimetype='application/octet-stream')
 
 
 @route('/status')
@@ -186,10 +189,18 @@ def postrecordingstop():
     return 'done'
 
 
-@route('/wernicke/words/<words>')
-def wernicke_words(words):
+# @route('/wernicke/words/<words>')
+# def wernicke_words(words):
 
-    # pass the incoming words to the locus of word control
+#     # pass the incoming words to the locus of word control
+#     conversate.thread.Words(words)
+#     return 'OK'
+
+
+@route('/wernicke/whisper', method='POST')
+def wernicke_whisper():
+
+    words = request.forms.get('words')
     conversate.thread.Words(words)
     return 'OK'
 

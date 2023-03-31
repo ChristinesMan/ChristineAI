@@ -64,11 +64,11 @@ class CPUTemp(threading.Thread):
                         breath.thread.QueueSound(FromCollection='toohot_l2', PlayWhenSleeping=True)
                         self.TimeToWhineAgain = time.time() + 10
 
-                # elif status.CPU_Temp >= 65:
-                    # log.main.warning(f'It is getting a bit warm in here ({status.CPU_Temp}C)')
-                    # if time.time() > self.TimeToWhineAgain:
-                    #     breath.thread.QueueSound(FromCollection='toohot_l1', PlayWhenSleeping=True)
-                    #     self.TimeToWhineAgain = time.time() + 300
+                elif status.CPU_Temp >= 65:
+                    log.main.warning(f'It is getting a bit warm in here ({status.CPU_Temp}C)')
+                    if time.time() > self.TimeToWhineAgain:
+                        breath.thread.QueueSound(FromCollection='toohot_l1', PlayWhenSleeping=True)
+                        self.TimeToWhineAgain = time.time() + 600
 
                 time.sleep(32)
 

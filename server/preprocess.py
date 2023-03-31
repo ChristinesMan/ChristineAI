@@ -1,29 +1,9 @@
 import os
 import sqlite3
-from enum import Enum
 import logging as log
 
 # Setup the log file
 log.basicConfig(filename='preprocess.log', filemode='a', format='%(asctime)s - %(levelname)s - %(message)s', level=log.DEBUG)
-
-class AutoNumber(Enum):
-    def __new__(cls):
-        # value = len(cls.__members__) + 1   # this is the original that started counting from 1. I started counting from 0 in db, and don't want to fix that. 
-        value = len(cls.__members__)
-        obj = object.__new__(cls)
-        obj._value_ = value
-        return obj
-
-# Will need to be adjusted and also copied to christine.py if columns are changed
-class Col(AutoNumber):
-    id = ()
-    name = ()
-    type = ()
-    base_volume_adjust = ()
-    ambience_volume_adjust = ()
-    intensity = ()
-    cuteness = ()
-    tempo_range = ()
 
 TempoMultipliers = [-1, -0.75, -0.5, -0.25, 0.25, 0.5, 0.75, 1]
 
@@ -32,26 +12,26 @@ conn = sqlite3.connect(database=DBPath, check_same_thread=False)
 
 c = conn.cursor()
 
-SoundTypeNames = []   # for example, currently it's ['conversation', 'kissing', 'laugh', 'whimper', 'sex'] but it changed
-for row in c.execute('select * from sound_types'):
-    SoundTypeNames.append(row[1])
-
 # Delete the old sounds_processed directory
 os.system('rm -rf ./sounds_processed/')
 
-# Get all the sounds out of the database
-for row in c.execute('select * from sounds'):
-    # print(row)
+# Select all the sounds from db
+rows = c.execute('select * from sounds')
 
+# first get the field names
+DBFields = {}
+i = 0
+for field in c.description:
+    DBFields[field[0]] = i
+    i += 1
+
+# then iterate over all the sounds
+for row in rows:
     # Get all the db row stuff into nice neat variables
-    SoundId = str(row[Col.id.value])
-    SoundName = str(row[Col.name.value])
-    SoundType = SoundTypeNames[row[Col.type.value]]
-    SoundBaseVolumeAdjust = row[Col.base_volume_adjust.value]
-    SoundAmbienceVolumeAdjust = row[Col.ambience_volume_adjust.value]
-    SoundIntensity = row[Col.intensity.value]
-    SoundCuteness = row[Col.cuteness.value]
-    SoundTempoRange = row[Col.tempo_range.value]
+    SoundId = str(row[DBFields['id']])
+    SoundName = str(row[DBFields['name']])
+    SoundBaseVolumeAdjust = row[DBFields['base_volume_adjust']]
+    SoundTempoRange = row[DBFields['tempo_range']]
 
     # Output which one we're on
     log.info('SoundId: ' + SoundId + '  SoundName: ' + SoundName)
@@ -61,12 +41,12 @@ for row in c.execute('select * from sounds'):
 
     # If we're adjusting the sound volume, ffmpeg, otherwise just copy the original file to 0.wav, which is the file with original tempo
     if SoundBaseVolumeAdjust != 1.0:
-        exitstatus = os.system('ffmpeg -v 0 -i ./sounds_master/' + SoundType + '_' + SoundName + '.wav -filter:a "volume=' + str(SoundBaseVolumeAdjust) + '" ./sounds_processed/' + SoundId + '/tmp_0.wav')
-        log.info('Jacked up volume for ' + SoundType + '_' + SoundName + '.wav' + ' (' + str(exitstatus) + ')')
+        exitstatus = os.system('ffmpeg -v 0 -i ./sounds_master/' + SoundName + ' -filter:a "volume=' + str(SoundBaseVolumeAdjust) + '" ./sounds_processed/' + SoundId + '/tmp_0.wav')
+        log.info('Jacked up volume for ' + SoundName + ' (' + str(exitstatus) + ')')
         if exitstatus != 0: exit()
     else:
-        exitstatus = os.system('cp ./sounds_master/' + SoundType + '_' + SoundName + '.wav ./sounds_processed/' + SoundId + '/tmp_0.wav')
-        log.info('Copied ' + SoundType + '_' + SoundName + '.wav' + ' (' + str(exitstatus) + ')')
+        exitstatus = os.system('cp ./sounds_master/' + SoundName + ' ./sounds_processed/' + SoundId + '/tmp_0.wav')
+        log.info('Copied ' + SoundName + ' (' + str(exitstatus) + ')')
         if exitstatus != 0: exit()
 
     # If we're adjusting the tempo, use rubberband to adjust 0.wav to various tempos. Otherwise, we just have 0.wav and we're done

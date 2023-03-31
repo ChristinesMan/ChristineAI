@@ -37,9 +37,9 @@ class ChristineDB():
                 return Rows
 
 
-        # log exception in the main.log
+        # log exception in the db.log
         except Exception as e:
-            log.main.error('Database error. {0} {1} {2}  Query: {3}'.format(e.__class__, e, log.format_tb(e.__traceback__), query))
+            log.db.error('Database error. {0} {1} {2}  Query: {3}'.format(e.__class__, e, log.format_tb(e.__traceback__), query))
             return None
 
 
@@ -62,9 +62,9 @@ class ChristineDB():
             return DBFields
 
 
-        # log exception in the main.log
+        # log exception in the db.log
         except Exception as e:
-            log.main.error('Database error. {0} {1} {2}  Query: {3}'.format(e.__class__, e, log.format_tb(e.__traceback__), query))
+            log.db.error('Database error. {0} {1} {2}  Query: {3}'.format(e.__class__, e, log.format_tb(e.__traceback__), query))
             return None
 
 
@@ -76,9 +76,9 @@ class ChristineDB():
         try:
             self.DBConn.commit()
 
-        # log exception in the main.log
+        # log exception in the db.log
         except Exception as e:
-            log.main.error('Database error. {0} {1} {2}  Query: {3}'.format(e.__class__, e, log.format_tb(e.__traceback__), query))
+            log.db.error('Database error. {0} {1} {2}  Query: {3}'.format(e.__class__, e, log.format_tb(e.__traceback__), query))
 
 
 # Instantiate

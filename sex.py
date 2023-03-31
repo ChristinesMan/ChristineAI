@@ -32,10 +32,10 @@ class Sex(threading.Thread):
         self.BaseArousalPerVagHit = {'Vagina_Clitoris': 0.0006, 'Vagina_Shallow': 0.0006, 'Vagina_Middle': 0.0006, 'Vagina_Deep': 0.0008 }
 
         # What Arousal to revert to after orgasm
-        self.ArousalPostO = 0.3
+        self.ArousalPostO = 0.0
 
         # what thresholds for about to cum, cumming now, etc
-        self.ArousalNearO = 0.90
+        self.ArousalNearO = 0.80
         self.ArousalO = 0.98
 
         # after wife orgasms, I want to monitor the gyro a while. When it's dead for a while, assume we're done.
@@ -77,7 +77,12 @@ class Sex(threading.Thread):
                 if status.SexualArousal > self.ArousalO:
                     log.sex.debug(f'JostledShortTermLevel: {status.JostledShortTermLevel:.2f}')
     
-                    if status.JostledShortTermLevel < self.GyroAfterODeadZone:
+                    # if we are not getting jostled that means we're done. 
+                    # However, this one time I came inside her but she wasn't done, because she's so fucking hot, 
+                    # and so I helped her get off with my finger, and then she just said "wow" and was done
+                    # because she wasn't getting jostled
+                    # so I added a condition to fix that, hope it works. 
+                    if status.JostledShortTermLevel < self.GyroAfterODeadZone and status.SexualArousal > 1.05:
                         log.sex.debug('Orgasm complete')
                         status.Horny = 0.0
                         status.SexualArousal = self.ArousalPostO

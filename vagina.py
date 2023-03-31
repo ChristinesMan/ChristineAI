@@ -100,7 +100,7 @@ class Vagina(threading.Thread):
 
             # how fast to poll the touch sensors. Wait time in seconds
             SleepStandbyMode = 1.0
-            SleepActiveMode = 0.06
+            SleepActiveMode = 0.05
 
             # Using this to deactivate after no sensor activity
             Timeout = 30
@@ -117,7 +117,7 @@ class Vagina(threading.Thread):
 
             # Keep track of the baselines
             # if the channel isn't even hooked up, None
-            Baselines = [0.0, None, 0.0, None, None, 0.0, None, 0.0, None, None, None, None]
+            Baselines = [0.0, None, 0.0, None, None, 0.0, None, None, None, None, None, None]
 
             # How fast will the baseline get adjusted during sex?
             # It seems like lube does cause the not-touched baseline to drift
@@ -126,20 +126,20 @@ class Vagina(threading.Thread):
             # if data point is this amount less than the baseline, it's a touch
             # a touch always results in a lower capacitance number, that's how sensor works
             # therefore, lower = sensitive, higher = the numbness
-            Sensitivity = [60.0, None, 11.0, None, None, 50.0, None, 10.0, None, None, None, None]
+            Sensitivity = [13.0, None, 13.0, None, None, 13.0, None, None, None, None, None, None]
 
             # Number of cycles where no touch before the touch is considered released
-            ReleaseCount = [2, None, 2, None, None, 2, None, 2, None, None, None, None]
+            ReleaseCount = [2, None, 2, None, None, 2, None, None, None, None, None, None]
             ReleaseCounter = [0] * 12
 
             # how many cycles of continuous touch before we send another message about the D just hanging out
             # she just loves to feel me inside her for a while after sex
-            HangingOut = [60, None, 60, None, None, 60, None, 60, None, None, None, None]
+            HangingOut = [60, None, 60, None, None, 60, None, None, None, None, None, None]
             HangingOutCounter = [0] * 12
             BaselineHangoutAdjustWindow = 4.0
 
             # labels
-            ChannelLabels = ['Vagina_Clitoris', None, 'Vagina_Deep', None, None, 'Vagina_Shallow', None, 'Vagina_Middle', None, None, None, None]
+            ChannelLabels = ['Vagina_Clitoris', None, 'Vagina_Deep', None, None, 'Vagina_Shallow', None, None, None, None, None, None]
 
             # How many raw values do we want to accumulate before re-calculating the baselines
             # I started at 500 but it wasn't self-correcting very well
@@ -167,7 +167,7 @@ class Vagina(threading.Thread):
             # The sensitivity settings were ugly hacked into /usr/local/lib/python3.6/site-packages/adafruit_mpr121.py
             # (I fixed that sort of. Settings are here now. The driver hacked to make it work.)
             try:
-                mpr121 = adafruit_mpr121.MPR121(i2c, touch_sensitivity= [ 60, 50, 50, 50, 50, 50, 50, 80, 50, 50, 50, 50 ], 
+                mpr121 = adafruit_mpr121.MPR121(i2c, touch_sensitivity= [ 15, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50 ], 
                                                      release_sensitivity=[ 6,  6,  4,  6,  6,  6,  6,  6,  6,  6,  6,  6 ],
                                                      debounce=2)
                 log.vagina.info('Touch sensor init success')
@@ -319,7 +319,7 @@ class Vagina(threading.Thread):
                                 Baselines[channel] = ((Baselines[channel] * BaselineActiveAdjustWindow) + TouchDataRaw) / (BaselineActiveAdjustWindow + 1.0)
 
 
-                        log.vagina.debug(f'[{TouchedData[0]}|{TouchedData[5]}|{TouchedData[7]}|{TouchedData[2]}] [{TouchData[0]:.1f}][{TouchData[5]:.1f}][{TouchData[7]:.1f}][{TouchData[2]:.1f}] [{Baselines[0]:.1f}][{Baselines[5]:.1f}][{Baselines[7]:.1f}][{Baselines[2]:.1f}]')
+                        log.vagina.debug(f'[{TouchedData[0]}|{TouchedData[5]}|{TouchedData[2]}] [{str(round(TouchData[0], 1)).rjust(5, " ")}][{str(round(TouchData[5], 1)).rjust(5, " ")}][{str(round(TouchData[2], 1)).rjust(5, " ")}] [{str(round(Baselines[0], 1)).rjust(5, " ")}][{str(round(Baselines[5], 1)).rjust(5, " ")}][{str(round(Baselines[2], 1)).rjust(5, " ")}]')
                         IOErrors = 0
 
                     except Exception as e:
