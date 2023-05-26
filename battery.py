@@ -1,86 +1,91 @@
-import ctypes
+"""
+Handles monitoring battery voltage
+"""
 import time
 import threading
-import bcd
 import smbus
+import bcd
 
 import log
-import status
+from status import SHARED_STATE
 
-# Poll the Pico for battery voltage every 60s
-# I don't see a point in shutting down from here, because Pico will shutdown when it needs to
+
 class Battery(threading.Thread):
-    name = 'Battery'
+    """
+    Poll the battery status and updates a status variable forever
+    """
 
-    def __init__ (self):
+    name = "Battery"
+
+    def __init__(self):
         threading.Thread.__init__(self)
 
         # init var
-        self.PowerState = 0
-        self.ChargingState = 0
+        self.power_state = 0
+        self.charging_state = 0
 
         # Track and report when power states change
-        self.PowerStatePrev = 1
-        self.PowerStateText = ['Power state undefined', 'Cable powered', 'Battery powered']
-        self.ChargingStateText = ['Not Charging', 'Charging']
+        self.power_state_prev = 1
+        self.power_state_text = [
+            "Power state undefined",
+            "Cable powered",
+            "Battery powered",
+        ]
+        self.charging_state_text = ["Not Charging", "Charging"]
 
-        # I'm not sure why but sometimes I/O errors occur, several times daily, so I'd like to report and gracefully recover from them
+        # I'm not sure why but sometimes I/O errors occur, several times daily
+        # maybe it's the I2C speed, or it could be timing errors
+        # due to different wire lengths of devices on the bus
         # The pico and gyro are very securely connected and hardly any difference in wire lengths
-        self.IOErrors = 0
+        self.io_errors = 0
 
     def run(self):
-        log.battery.debug('Thread started.')
+        log.battery.debug("Thread started.")
 
-        try:
+        # This is for reading and writing stuff from Pico
+        bus = smbus.SMBus(1)  # pylint: disable=c-extension-no-member
 
-            # This is for reading and writing stuff from Pico
-            bus = smbus.SMBus(1)
+        while True:
+            # fetch the readings from the Pico and handle I/O exceptions
+            try:
+                SHARED_STATE.battery_voltage = (
+                    bcd.bcd_to_int(bus.read_word_data(0x69, 0x08)) / 1000
+                )
+                self.power_state = bus.read_byte_data(0x69, 0x00)
+                self.charging_state = bus.read_byte_data(0x69, 0x20)
+                self.io_errors = 0
 
-            while True:
+            except OSError:
+                # if 10 fails in a row, something is fucked, shut it down
+                self.io_errors += 1
+                log.main.warning("I/O failure. (%s/10)", self.io_errors)
 
-                # fetch the readings from the Pico and handle I/O exceptions
-                try:
-                    status.BatteryVoltage = bcd.bcd_to_int(bus.read_word_data(0x69, 0x08))/1000
-                    self.PowerState = bus.read_byte_data(0x69, 0x00)
-                    self.ChargingState = bus.read_byte_data(0x69, 0x20)
-                    self.IOErrors = 0
+                if self.io_errors >= 10:
+                    log.main.critical("The battery thread has been shutdown.")
+                    return
 
-                except Exception as e:
-                    # if 5 fails in a row, something is fucked, shut it down
-                    self.IOErrors += 1
-                    log.main.warning(f'I/O failure. ({self.IOErrors}) {e.__class__} {e} {log.format_tb(e.__traceback__)}')
+            # Log it
+            log.battery.debug(
+                "%sV, %s, %s",
+                SHARED_STATE.battery_voltage,
+                self.power_state_text[self.power_state],
+                self.charging_state_text[self.charging_state],
+            )
 
-                    if self.IOErrors >= 5:
-                        log.main.critical('The battery thread has been shutdown.')
-                        return
+            # if the power state changed, log it in the main log
+            if self.power_state != self.power_state_prev:
+                log.main.info(
+                    "The power state changed from %s to %s",
+                    self.power_state_text[self.power_state_prev],
+                    self.power_state_text[self.power_state],
+                )
+            self.power_state_prev = self.power_state
 
-                # Log it
-                log.battery.debug('%sV, %s, %s', status.BatteryVoltage, self.PowerStateText[self.PowerState], self.ChargingStateText[self.ChargingState])
+            # Copy to Global State
+            SHARED_STATE.power_state = self.power_state_text[self.power_state]
+            SHARED_STATE.charging_state = self.charging_state_text[self.charging_state]
 
-                # if the power state changed, log it in the main log
-                if self.PowerState != self.PowerStatePrev:
-                    log.main.info('The power state changed from %s to %s', self.PowerStateText[self.PowerStatePrev], self.PowerStateText[self.PowerState])
-                self.PowerStatePrev = self.PowerState
-
-                # Copy to Global State
-                status.PowerState = self.PowerStateText[self.PowerState]
-                status.ChargingState = self.ChargingStateText[self.ChargingState]
-
-                # I believe from reading Pico manual that the low battery beeping starts at 3.56V,
-                # because 3.5V is the Pico low battery threshold for LiPO and it says it starts at 0.06V more than that.
-                # But we switched to a lifepo4, so I need to figure out if these are correct or not. The voltage is much lower.
-                # if self.BatteryVoltage <= 3.1:
-                #     log.critical('Critical battery! Voltage: %s volts', self.BatteryVoltage)
-                    # TellBreath(Request=Msg.Say, Data='conversation_no_02.wav')
-                # elif self.BatteryVoltage <= 2.95:
-                #     log.warning('Low battery! Voltage: %s', self.BatteryVoltage)
-                    # TellBreath(Request=Msg.Say, Data='conversation_no_01.wav')
-
-                time.sleep(60)
-
-        # log exception in the main.log
-        except Exception as e:
-            log.main.error('Thread died. {0} {1} {2}'.format(e.__class__, e, log.format_tb(e.__traceback__)))
+            time.sleep(60)
 
 
 # Instantiate and start the thread

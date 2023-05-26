@@ -1,55 +1,36 @@
-import os
-import sys
+"""
+Main script that starts everything else
+"""
 import time
-
 import log
-log.main.info('Script started')
-log.main.debug('Import: status')
-import status
-log.main.debug('Import: cputemp')
-import cputemp
-log.main.debug('Import: battery')
-import battery
-log.main.debug('Import: gyro')
-import gyro
-log.main.debug('Import: sounds')
-import sounds
-log.main.debug('Import: breath')
-import breath
-log.main.debug('Import: iloveyou')
-import iloveyou
-log.main.debug('Import: sleep')
-import sleep
-log.main.debug('Import: light')
-import light
-log.main.debug('Import: wernicke')
-import wernicke
-log.main.debug('Import: conversate')
-import conversate
-log.main.debug('Import: httpserver')
-import httpserver
-log.main.debug('Import: touch')
-import touch
-log.main.debug('Import: vagina')
-import vagina
-log.main.debug('Import: horny')
-import horny
-log.main.debug('Import: cuddles')
-import cuddles
-log.main.debug('Import: sex')
-import sex
 
-log.main.debug('Import: killsignal')
+# pylint: disable=unused-import,wrong-import-position
+log.main.info("Script started")
+from status import SHARED_STATE
+import cputemp
+import battery
+import gyro
+import sounds
+import breath
+import iloveyou
+import sleep
+import light
+import vagina
+import wernicke
+import conversate
+import httpserver
+import touch
+import horny
+import cuddles
+import sex
 import killsignal
 
 if __name__ == "__main__":
-
     # time.sleep(5)
-    # status.ShushPleaseHoney = False
-
+    # SHARED_STATE.ShushPleaseHoney = False
 
     # for temp data collection
-    # status.ShushPleaseHoney = True
+    # SHARED_STATE.ShushPleaseHoney = True
     # time.sleep(15)
     # wernicke.thread.StopProcessing()
 
@@ -62,9 +43,6 @@ if __name__ == "__main__":
     #         breath.thread.QueueSound(Sound = Sound, Priority = 9, PlayWhenSleeping = True, IgnoreSpeaking = True)
     #         time.sleep(5)
 
-
-
-
     # handle getting killed gracefully
     killer = killsignal.GracefulKiller()
 
@@ -72,10 +50,10 @@ if __name__ == "__main__":
     while not killer.kill_now:
         time.sleep(2)
 
-    log.main.info('Caught kill signal')
+    log.main.info("Caught kill signal")
 
     # all the threads monitor this variable and try to shutdown
-    status.PleaseShutdown = True
+    SHARED_STATE.please_shut_down = True
 
     # wait a bit to allow graceful shutdown
     time.sleep(2)

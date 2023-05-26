@@ -1,96 +1,149 @@
+"""
+Handles the touch sensor inside head
+"""
 import time
 import random
 import numpy as np
 import scipy.stats
 
 import log
-import status
+from status import SHARED_STATE
 import breath
 import sleep
 
-# When Christine gets touched, stuff should happen. That happens here. 
-class Touch():
 
-    def __init__ (self):
+class Touch:
+    """
+    When Christine gets touched, stuff should happen. That happens here.
+    """
 
+    def __init__(self):
         # the in-head arduino sends the raw capacitance value. 12 channels starting with 0
         # So far only the mouth wire is useable
 
         # Keep track of the baselines
         # if the channel isn't even hooked up, None
         # I vaguely remamber hooking up some, dunno where they are anymore
-        self.Baselines = [None, None, 0, None, 0, None, 0, None, None, None, None, None]
+        self.baselines = [None, None, 0, None, 0, None, 0, None, None, None, None, None]
 
         # if data point is this amount less than the baseline, it's a touch
         # a touch always results in a lower capacitance number, that's how sensor works
         # therefore, lower = sensitive, higher = the numbness
-        self.Sensitivity = [None, None, 100, None, 50, None, 50, None, None, None, None, None]
+        self.sensitivity = [
+            None,
+            None,
+            100,
+            None,
+            50,
+            None,
+            50,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ]
 
         # labels
-        self.ChannelLabels = [None, None, 'Mouth', None, 'LeftCheek', None, 'RightCheek', None, None, None, None, None]
+        self.channel_labels = [
+            None,
+            None,
+            "Mouth",
+            None,
+            "LeftCheek",
+            None,
+            "RightCheek",
+            None,
+            None,
+            None,
+            None,
+            None,
+        ]
 
         # How many raw values do we want to accumulate before re-calculating the baselines
         # I started at 500 but it wasn't self-correcting very well
-        self.BaselineDataLength = 100
+        self.baseline_data_length = 100
 
         # there are 12 channels, and we only have 3 connected to anything
         # accumulate data in an array of numpy arrays, and every once in a while we cum and calc the mode
-        self.UsedChannels = []
-        self.Data = [None] * 12
+        self.used_channels = []
+        self.data = [None] * 12
         for channel in range(0, 12):
-            if self.ChannelLabels[channel] != None:
-                self.UsedChannels.append(channel)
-                self.Data[channel] = np.zeros(self.BaselineDataLength)
+            if self.channel_labels[channel] is not None:
+                self.used_channels.append(channel)
+                self.data[channel] = np.zeros(self.baseline_data_length)
 
         # counter to help accumulate values
-        self.Counter = 0
+        self.counter = 0
 
-    # called to deliver new data point
-    def NewData(self, TouchData):
+    def new_data(self, touch_data):
+        """
+        Called to deliver new data point
+        """
 
         try:
-
             # for all 12 channels
-            for channel in self.UsedChannels:
-
+            for channel in self.used_channels:
                 # save data in an array
-                self.Data[channel][self.Counter % self.BaselineDataLength] = TouchData[channel]
+                self.data[channel][
+                    self.counter % self.baseline_data_length
+                ] = touch_data[channel]
 
                 # Detect touches, and throw out glitches, dunno why that happens
-                if self.Baselines[channel] - TouchData[channel] > self.Sensitivity[channel] and TouchData[channel] > 20:
-
+                if (
+                    self.baselines[channel] - touch_data[channel]
+                    > self.sensitivity[channel]
+                    and touch_data[channel] > 20
+                ):
                     # if we got touched, it should imply I am near
-                    status.LoverProximity = ((status.LoverProximity * 5.0) + 1.0) / 6.0
-                    log.touch.debug(f'Touched: {self.ChannelLabels[channel]} ({TouchData[channel]})  LoverProximity: {status.LoverProximity}')
+                    SHARED_STATE.lover_proximity = (
+                        (SHARED_STATE.lover_proximity * 5.0) + 1.0
+                    ) / 6.0
+                    log.touch.debug(
+                        "Touched: %s (%s)  LoverProximity: %s",
+                        self.channel_labels[channel],
+                        touch_data[channel],
+                        SHARED_STATE.lover_proximity,
+                    )
 
                     # probably faster to test via int than the Str 'Mouth'
                     # if channel == 2:
                     # going to test out making sounds for cheeks, not only mouth
-                    status.DontSpeakUntil = time.time() + 2.0 + (random.random() * 3.0)
-                    if status.IAmSleeping == False:
-                        breath.thread.QueueSound(FromCollection='kissing', IgnoreSpeaking=True, CutAllSoundAndPlay=True, Priority=4)
-                    sleep.thread.WakeUpABit(0.05)
+                    SHARED_STATE.dont_speak_until = (
+                        time.time() + 2.0 + (random.random() * 3.0)
+                    )
+                    if SHARED_STATE.is_sleeping is False:
+                        breath.thread.queue_sound(
+                            from_collection="kissing",
+                            play_ignore_speaking=True,
+                            play_no_wait=True,
+                            priority=4,
+                        )
+                    sleep.thread.wake_up(0.05)
                     # GlobalStatus.TouchedLevel += 0.1
-                    status.ChanceToSpeak += 0.05
+                    SHARED_STATE.should_speak_chance += 0.05
 
-            self.Counter += 1
+            self.counter += 1
 
             # every so often we want to update the baselines
             # these normally should never change
-            if self.Counter % self.BaselineDataLength == 0:
+            if self.counter % self.baseline_data_length == 0:
+                for channel in self.used_channels:
+                    self.baselines[channel] = scipy.stats.mode(self.data[channel]).mode[
+                        0
+                    ]
 
-                for channel in self.UsedChannels:
+                log.touch.debug("Updated baselines: %s", self.baselines)
 
-                    self.Baselines[channel] = scipy.stats.mode(self.Data[channel]).mode[0]
-
-                log.touch.debug(f'Updated baselines: {self.Baselines}')
-
-
-        except Exception as e:
-            log.main.error('Thread died. {0} {1} {2}'.format(e.__class__, e, log.format_tb(e.__traceback__)))
+        except Exception as ex:
+            log.main.error(
+                "Thread died. {0} {1} {2}".format(
+                    ex.__class__, ex, log.format_tb(ex.__traceback__)
+                )
+            )
 
 
 # instantiate and start thread
 # it's not really a thread,
-# but it doesn't need to know that. 
+# but it doesn't need to know that.
 thread = Touch()

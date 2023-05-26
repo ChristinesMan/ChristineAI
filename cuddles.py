@@ -1,48 +1,40 @@
+"""
+Handles cuddles I guess
+"""
 import time
-import random
 import threading
-import numpy as np
 
 import log
-import status
-import breath
-# import sleep
+from status import SHARED_STATE
 
-# when proximity is real close, we want to start a cycle of saying cuddle-approapriate stuff
+
 class Cuddles(threading.Thread):
+    """
+    when proximity is real close, we want to start a cycle of saying cuddle-approapriate stuff
+    """
 
-    name = 'Cuddles'
+    name = "Cuddles"
 
-    def __init__ (self):
-
+    def __init__(self):
         threading.Thread.__init__(self)
 
-        # are we currently cuddling? 
-        self.CuddleModeOn = False
+        # are we currently cuddling?
+        self.cuddle_mode_on = False
 
         # how long to sleep between iterations in seconds
-        self.SleepSeconds = 5
+        self.sleep_seconds = 5
 
     def run(self):
-        log.cuddles.debug('Thread started.')
+        log.cuddles.debug("Thread started.")
 
-        try:
+        while True:
+            # graceful shutdown
+            if SHARED_STATE.please_shut_down:
+                break
 
-            while True:
+            # if self.CuddleModeOn == True:
 
-                # graceful shutdown
-                if status.PleaseShutdown:
-                    break
-
-                # if self.CuddleModeOn == True:
-
-
-                time.sleep(self.SleepSeconds)
-
-
-        # log exception in the main.log
-        except Exception as e:
-            log.main.error('Thread died. {0} {1} {2}'.format(e.__class__, e, log.format_tb(e.__traceback__)))
+            time.sleep(self.sleep_seconds)
 
 
 # Instantiate and start the thread

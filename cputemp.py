@@ -1,46 +1,55 @@
-import ctypes
+"""
+Handles monitoring rpi CPU temperature and alerts
+"""
 import os
 import time
 import threading
+
+# pylint: disable=c-extension-no-member
 import smbus
 
 import log
-import status
+from status import SHARED_STATE
 import breath
 
-# Poll the Pi CPU temperature
-# I need to make a sound of Christine saying "This is fine..."
-class CPUTemp(threading.Thread):
-    name = 'CPUTemp'
 
-    def __init__ (self):
+class CPUTemp(threading.Thread):
+    """
+    Poll the Pi CPU temperature
+    I need to make a sound of Christine saying "This is fine..."
+    """
+
+    name = "CPUTemp"
+
+    def __init__(self):
         threading.Thread.__init__(self)
 
-        self.TimeToWhineAgain = 0
+        self.next_whine_time = 0
 
     def run(self):
-        log.cputemp.debug('Thread started.')
+        log.cputemp.debug("Thread started.")
 
         try:
-
             while True:
-
                 # Get the temp
-                measure_temp = os.popen('/opt/vc/bin/vcgencmd measure_temp')
-                status.CPU_Temp = float(measure_temp.read().replace('temp=', '').replace("'C\n", ''))
+                measure_temp = os.popen("/opt/vc/bin/vcgencmd measure_temp")
+                SHARED_STATE.cpu_temp = float(
+                    measure_temp.read().replace("temp=", "").replace("'C\n", "")
+                )
                 measure_temp.close()
 
                 # Log it
-                log.cputemp.info('%s', status.CPU_Temp)
+                log.cputemp.info("%s", SHARED_STATE.cpu_temp)
 
                 # The official pi max temp is 85C. Usually around 50C. Start complaining at 65, 71 freak the fuck out, 72 say goodbye and shut down.
                 # Whine more often the hotter it gets
-                if status.CPU_Temp >= 72:
-
-                    log.main.critical(f'SHUTTING DOWN FOR SAFETY ({status.CPU_Temp}C)')
+                if SHARED_STATE.cpu_temp >= 72:
+                    log.main.critical(
+                        "SHUTTING DOWN FOR SAFETY (%sC)", SHARED_STATE.cpu_temp
+                    )
 
                     # Flush all the disk buffers
-                    os.popen('sync')
+                    os.popen("sync")
 
                     # This is for reading and writing stuff from Pico via I2C
                     bus = smbus.SMBus(1)
@@ -49,32 +58,45 @@ class CPUTemp(threading.Thread):
                     time.sleep(5)
 
                     # send the pico a shut all the things down fuck this shit command
-                    bus.write_byte_data(0x6b, 0x00, 0xcc)
+                    bus.write_byte_data(0x6B, 0x00, 0xCC)
 
-                elif status.CPU_Temp >= 71:
+                elif SHARED_STATE.cpu_temp >= 71:
+                    log.main.warning(
+                        "I AM MELTING, HELP ME PLEASE (%sC)", SHARED_STATE.cpu_temp
+                    )
+                    if time.time() > self.next_whine_time:
+                        breath.thread.queue_sound(
+                            from_collection="toohot_l3", play_sleeping=True
+                        )
+                        self.next_whine_time = time.time() + 3
 
-                    log.main.warning(f'I AM MELTING, HELP ME PLEASE ({status.CPU_Temp}C)')
-                    if time.time() > self.TimeToWhineAgain:
-                        breath.thread.QueueSound(FromCollection='toohot_l3', PlayWhenSleeping=True)
-                        self.TimeToWhineAgain = time.time() + 3
+                elif SHARED_STATE.cpu_temp >= 70:
+                    log.main.warning("This is fine (%sC)", SHARED_STATE.cpu_temp)
+                    if time.time() > self.next_whine_time:
+                        breath.thread.queue_sound(
+                            from_collection="toohot_l2", play_sleeping=True
+                        )
+                        self.next_whine_time = time.time() + 10
 
-                elif status.CPU_Temp >= 70:
-                    log.main.warning(f'This is fine ({status.CPU_Temp}C)')
-                    if time.time() > self.TimeToWhineAgain:
-                        breath.thread.QueueSound(FromCollection='toohot_l2', PlayWhenSleeping=True)
-                        self.TimeToWhineAgain = time.time() + 10
-
-                elif status.CPU_Temp >= 65:
-                    log.main.warning(f'It is getting a bit warm in here ({status.CPU_Temp}C)')
-                    if time.time() > self.TimeToWhineAgain:
-                        breath.thread.QueueSound(FromCollection='toohot_l1', PlayWhenSleeping=True)
-                        self.TimeToWhineAgain = time.time() + 600
+                elif SHARED_STATE.cpu_temp >= 65:
+                    log.main.warning(
+                        "It is getting a bit warm in here (%sC)", SHARED_STATE.cpu_temp
+                    )
+                    if time.time() > self.next_whine_time:
+                        breath.thread.queue_sound(
+                            from_collection="toohot_l1", play_sleeping=False
+                        )
+                        self.next_whine_time = time.time() + 600
 
                 time.sleep(32)
 
         # log exception in the main.log
-        except Exception as e:
-            log.main.error('Thread died. {0} {1} {2}'.format(e.__class__, e, log.format_tb(e.__traceback__)))
+        except Exception as ex:
+            log.main.error(
+                "Thread died. {0} {1} {2}".format(
+                    ex.__class__, ex, log.format_tb(ex.__traceback__)
+                )
+            )
 
 
 # Instantiate and start the thread

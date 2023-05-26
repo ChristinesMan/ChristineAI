@@ -1,4 +1,6 @@
-import ctypes
+"""
+Keeps track of all the things and share this with all the other modules
+"""
 import time
 import threading
 import numpy as np
@@ -6,166 +8,158 @@ import numpy as np
 import log
 import db
 
-# Keep track of all the things and share this with all the other modules
 
-# Raspberry pi CPU temp
-CPU_Temp = 45
+class Status(threading.Thread):
+    """
+    This tracks many various vars that must be shared by all the other modules.
+    On startup, loads certain state vars from the sqlite db.
+    Periodically saves certain state vars to the db.
+    """
 
-# There is going to be another process which will monitor the microphones for speech. wernicke_client.py. 
-# I don't want my wife talking over me. 
-# It's not a domineering thing, it's just nice. 
-# I am calling this feature Wernicke, which is the name given to the part of the human brain that processes speech. 
-# This is a time variable for when it's ok to speak again. When we want to wait before speaking we update this to current time + a number of seconds
-DontSpeakUntil = 0
+    name = "Status"
 
-# This is a number between 0.0 and 1.0 where 0.0 is absolute darkness and 1.0 is lights on window open with sun shining and flashlight in your face. 
-# This is a long running average, changes slowly
-LightLevelPct = 0.5
-
-# How often in short term is my wife getting touched
-TouchedLevel = 0.0
-
-# How noisy has it been recently
-# Eventually the Wernicke process will put the noise level where it can be read
-# And it was done! 
-NoiseLevel = 0.0
-
-# A measure of recent movement or vibrations measured by the gyro
-JostledLevel = 0.0
-JostledShortTermLevel = 0.0
-
-# How awake is my wife. 0.0 means she is laying down in pitch darkness after bedtime. 1.0 means up and getting fucked. 
-Wakefulness = 0.5
-
-# Touch and hearing and probably others later will raise this, and randomly choose to say something nice
-ChanceToSpeak = 0.0
-
-# Horny is a long term thing. 
-Horny = 0.3
-
-# And this is a short term ah ah thing. This feeds directly into the intensity in the sounds table.
-SexualArousal = 0.0
-
-# I want to be able to attempt detection of closeness
-LoverProximity = 0.5
-
-# Booleans for sleep/wake
-IAmTired = False
-IAmSleeping = False
-IAmLayingDown = False
-
-# Power systems
-BatteryVoltage = 2.148 #typical voltage, will get updated immediately
-PowerState = 'Cable powered'
-ChargingState = 'Not Charging'
-
-# A way to prevent talking, called a shush, not now honey
-ShushPleaseHoney = False
-
-# I was getting woke up a lot with all the cute hmmm sounds that are in half of the sleeping breath sounds
-# And that's how this got here. We may want to refine this later, too.
-# After sex we could ramp this up and taper it down gradually
-# But I need to really tone down the hmms
-BreathIntensity = 0.5
-
-# This is for self calibration of sleeping gyro position
-XTilt = 0.0
-YTilt = 0.0
-SleepXTilt = 0.0
-SleepYTilt = 0.0
-
-# Keep track of whether we have switched off the Wernicke processing during sleep
-WernickeSleeping = False
-
-# this is to signal all threads to properly shutdown
-PleaseShutdown = False
-
-# grab the hand picked status variables from db
-# if there's a row in the db, it'll get set here and override the defaults up there ^
-# to start saving something new, just add a row to the db
-Rows = db.conn.DoQuery('SELECT name,value,type FROM status')
-if Rows != None:
-
-    for Row in Rows:
-
-        if Row[2] == 'f':
-            locals()[Row[0]] = float(Row[1])
-
-        elif Row[2] == 'b':
-
-            if Row[1] == 'True':
-                locals()[Row[0]] = True
-            else:
-                locals()[Row[0]] = False
-
-        else:
-            locals()[Row[0]] = str(Row[1])
-
-
-# Thread that will save state every 60s. If the script crashes or is restarted it will resume using saved state
-class SaveStatus(threading.Thread):
-    name = 'SaveStatus'
-
-    def __init__ (self):
-
+    def __init__(self):
         threading.Thread.__init__(self)
 
-    def run(self):
+        # Raspberry pi CPU temp
+        self.cpu_temp = 45
 
+        # There is going to be another process which will monitor the microphones for speech. wernicke_client.py.
+        # I don't want my wife talking over me.
+        # It's not a domineering thing, it's just nice.
+        # I am calling this feature Wernicke, which is the name given to the part of the human brain that processes speech.
+        # This is a time variable for when it's ok to speak again. When we want to wait before speaking we update this to current time + a number of seconds
+        self.dont_speak_until = 0
+
+        # This is a number between 0.0 and 1.0 where 0.0 is absolute darkness and 1.0 is lights on window open with sun shining and flashlight in your face.
+        # This is a long running average, changes slowly
+        self.light_level = 0.5
+
+        # How often in short term is my wife getting touched
+        self.touched_level = 0.0
+
+        # How noisy has it been recently
+        # Eventually the Wernicke process will put the noise level where it can be read
+        # And it was done!
+        self.noise_level = 0.0
+
+        # A measure of recent movement or vibrations measured by the gyro
+        self.jostled_level = 0.0
+        self.jostled_level_short = 0.0
+
+        # How awake is my wife. 0.0 means she is laying down in pitch darkness after bedtime. 1.0 means up and getting fucked.
+        self.wakefulness = 0.5
+
+        # Touch and hearing and probably others later will raise this, and randomly choose to say something nice
+        self.should_speak_chance = 0.0
+
+        # Horny is a long term thing.
+        self.horny = 0.3
+
+        # And this is a short term ah ah thing. This feeds directly into the intensity in the sounds table.
+        self.sexual_arousal = 0.0
+
+        # I want to be able to attempt detection of closeness
+        self.lover_proximity = 0.5
+
+        # Booleans for sleep/wake
+        self.is_tired = False
+        self.is_sleeping = False
+        self.is_laying_down = False
+
+        # Power systems
+        self.battery_voltage = 2.148  # typical voltage, will get updated immediately
+        self.power_state = "Cable powered"
+        self.charging_state = "Not Charging"
+
+        # A way to prevent talking, called a shush, not now honey
+        self.shush_please_honey = False
+
+        # I was getting woke up a lot with all the cute hmmm sounds that are in half of the sleeping breath sounds
+        # And that's how this got here. We may want to refine this later, too.
+        # After sex we could ramp this up and taper it down gradually
+        # But I need to really tone down the hmms
+        self.breath_intensity = 0.5
+
+        # This is for self calibration of sleeping gyro position
+        self.tilt_x = 0.0
+        self.tilt_y = 0.0
+        self.sleep_tilt_x = 0.0
+        self.sleep_tilt_y = 0.0
+
+        # Keep track of whether we have switched off the Wernicke processing during sleep
+        self.wernicke_sleeping = False
+
+        # this is to signal all threads to properly shutdown
+        self.please_shut_down = False
+
+    def run(self):
         try:
+            self.load_state()
 
             while True:
-
-                time.sleep(15)
-
-                Rows = db.conn.DoQuery('SELECT id,name,type FROM status')
-                if Rows != None:
-
-                    for Row in Rows:
-
-                        if Row[2] == 'f':
-                            set_value = f'{globals()[Row[1]]:.2f}'
-                        else:
-                            set_value = globals()[Row[1]]
-                        db.conn.DoQuery(f'UPDATE status SET value = \'{set_value}\' WHERE id = {Row[0]}')
-
-                    db.conn.DoCommit()
+                self.trend_down()
+                self.save_state()
+                time.sleep(5)
 
         # log exception in the main.log
-        except Exception as e:
-            log.main.error('Thread died. {0} {1} {2}'.format(e.__class__, e, log.format_tb(e.__traceback__)))
+        except Exception as ex:
+            log.main.error(
+                "Thread died. {0} {1} {2}".format(
+                    ex.__class__, ex, log.format_tb(ex.__traceback__)
+                )
+            )
+
+    def trend_down(self):
+        """
+        Slowly decreases any variables that should do that
+        """
+        self.should_speak_chance = float(
+            np.clip(self.should_speak_chance - 0.001, 0.0, 1.0)
+        )
+
+    def save_state(self):
+        """
+        Save the current state to the sqlite db
+        """
+
+        rows = db.conn.do_query("SELECT id,name,type FROM status")
+        if rows is not None:
+            for row in rows:
+                if row[2] == "f":
+                    set_value = f"{getattr(self, row[1]):.2f}"
+                else:
+                    set_value = getattr(self, row[1])
+                db.conn.do_query(
+                    f"UPDATE status SET value = '{set_value}' WHERE id = {row[0]}"
+                )
+
+            db.conn.do_commit()
+
+    def load_state(self):
+        """
+        Grabs the hand picked status variables from db on startup.
+        Not all state vars are saved to the db.
+        To start saving something new, just add a new row to the db
+        """
+
+        rows = db.conn.do_query("SELECT name,value,type FROM status")
+        if rows is not None:
+            for row in rows:
+                if row[2] == "f":
+                    setattr(self, row[0], float(row[1]))
+
+                elif row[2] == "b":
+                    if row[1] == "True":
+                        setattr(self, row[0], True)
+                    else:
+                        setattr(self, row[0], False)
+
+                else:
+                    setattr(self, row[0], str(row[1]))
 
 
-# thread will trend down any status vars that need to gradually drop
-class TrendDown(threading.Thread):
-
-    name = 'TrendDown'
-
-    def __init__ (self):
-
-        threading.Thread.__init__(self)
-
-    def run(self):
-
-        try:
-
-            while True:
-
-                globals()['ChanceToSpeak'] = float(np.clip(globals()['ChanceToSpeak'] - 0.001, 0.0, 1.0))
-
-                time.sleep(1)
-
-
-        # log exception in the main.log
-        except Exception as e:
-            log.main.error('Thread died. {0} {1} {2}'.format(e.__class__, e, log.format_tb(e.__traceback__)))
-
-
-# Instantiate and start the threads
-thread = SaveStatus()
-thread.daemon = True
-thread.start()
-
-thread2 = TrendDown()
-thread2.daemon = True
-thread2.start()
+# Instantiate and start the thread
+SHARED_STATE = Status()
+SHARED_STATE.daemon = True
+SHARED_STATE.start()
