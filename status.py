@@ -5,7 +5,7 @@ import time
 import threading
 import numpy as np
 
-import log
+# import log
 import db
 
 
@@ -94,21 +94,12 @@ class Status(threading.Thread):
         self.please_shut_down = False
 
     def run(self):
-        try:
-            self.load_state()
+        self.load_state()
 
-            while True:
-                self.trend_down()
-                self.save_state()
-                time.sleep(5)
-
-        # log exception in the main.log
-        except Exception as ex:
-            log.main.error(
-                "Thread died. {0} {1} {2}".format(
-                    ex.__class__, ex, log.format_tb(ex.__traceback__)
-                )
-            )
+        while True:
+            self.trend_down()
+            self.save_state()
+            time.sleep(5)
 
     def trend_down(self):
         """

@@ -5,7 +5,7 @@ import time
 import threading
 import random
 
-import log
+# import log
 from status import SHARED_STATE
 import breath
 
@@ -24,29 +24,21 @@ class ILoveYou(threading.Thread):
         self.next_loving_time = time.time()
 
     def run(self):
-        try:
-            while True:
-                # Randomly say cute things
-                if (
-                    SHARED_STATE.shush_please_honey is False
-                    and time.time() > self.next_loving_time
-                    and SHARED_STATE.should_speak_chance > random.random()
-                ):
-                    self.next_loving_time = (
-                        time.time() + 10 + int(600 * random.random())
-                    )
-                    SHARED_STATE.should_speak_chance = 0.0
-                    breath.thread.queue_sound(from_collection="loving", priority=3)
 
-                time.sleep(5)
-
-        # log exception in the main.log
-        except Exception as ex:
-            log.main.error(
-                "Thread died. {0} {1} {2}".format(
-                    ex.__class__, ex, log.format_tb(ex.__traceback__)
+        while True:
+            # Randomly say cute things
+            if (
+                SHARED_STATE.shush_please_honey is False
+                and time.time() > self.next_loving_time
+                and SHARED_STATE.should_speak_chance > random.random()
+            ):
+                self.next_loving_time = (
+                    time.time() + 10 + int(600 * random.random())
                 )
-            )
+                SHARED_STATE.should_speak_chance = 0.0
+                breath.thread.queue_sound(from_collection="loving", priority=3)
+
+            time.sleep(5)
 
 
 # Instantiate and start the thread

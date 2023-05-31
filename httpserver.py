@@ -13,7 +13,6 @@ import sounds
 import breath
 import sleep
 import wernicke
-import conversate
 
 # debug(True)
 
@@ -61,7 +60,7 @@ def send_file_download(filename):
 
 @route("/status")
 def getstatus():
-    return template("status", status=SHARED_STATE)
+    return template("status", SHARED_STATE=SHARED_STATE)
 
 
 @route("/control")
@@ -94,7 +93,7 @@ def posthoneysay():
         play_no_wait=True,
         priority=10,
     )
-    log.web.debug("Honey Say Request: %s", sound_id)
+    log.http.debug("Honey Say Request: %s", sound_id)
     return "OK"
 
 
@@ -260,10 +259,12 @@ def postrecordingstop():
 #     return 'OK'
 
 
-@route("/wernicke/whisper", method="POST")
-def wernicke_whisper():
-    words = request.forms.get("words")
-    conversate.thread.inbound_words(words)
+@route("/wernicke/hello", method="POST")
+def wernicke_hello():
+    server_name = request.forms.get("server_name")
+    server_host = request.forms.get("server_host")
+    server_rating = request.forms.get("server_rating")
+    wernicke.thread.audio_server_update({"server_name": server_name, "server_host": server_host, "server_rating": int(server_rating)})
     return "OK"
 
 

@@ -29,74 +29,65 @@ class CPUTemp(threading.Thread):
     def run(self):
         log.cputemp.debug("Thread started.")
 
-        try:
-            while True:
-                # Get the temp
-                measure_temp = os.popen("/opt/vc/bin/vcgencmd measure_temp")
-                SHARED_STATE.cpu_temp = float(
-                    measure_temp.read().replace("temp=", "").replace("'C\n", "")
-                )
-                measure_temp.close()
-
-                # Log it
-                log.cputemp.info("%s", SHARED_STATE.cpu_temp)
-
-                # The official pi max temp is 85C. Usually around 50C. Start complaining at 65, 71 freak the fuck out, 72 say goodbye and shut down.
-                # Whine more often the hotter it gets
-                if SHARED_STATE.cpu_temp >= 72:
-                    log.main.critical(
-                        "SHUTTING DOWN FOR SAFETY (%sC)", SHARED_STATE.cpu_temp
-                    )
-
-                    # Flush all the disk buffers
-                    os.popen("sync")
-
-                    # This is for reading and writing stuff from Pico via I2C
-                    bus = smbus.SMBus(1)
-
-                    # wait a sec or 5
-                    time.sleep(5)
-
-                    # send the pico a shut all the things down fuck this shit command
-                    bus.write_byte_data(0x6B, 0x00, 0xCC)
-
-                elif SHARED_STATE.cpu_temp >= 71:
-                    log.main.warning(
-                        "I AM MELTING, HELP ME PLEASE (%sC)", SHARED_STATE.cpu_temp
-                    )
-                    if time.time() > self.next_whine_time:
-                        breath.thread.queue_sound(
-                            from_collection="toohot_l3", play_sleeping=True
-                        )
-                        self.next_whine_time = time.time() + 3
-
-                elif SHARED_STATE.cpu_temp >= 70:
-                    log.main.warning("This is fine (%sC)", SHARED_STATE.cpu_temp)
-                    if time.time() > self.next_whine_time:
-                        breath.thread.queue_sound(
-                            from_collection="toohot_l2", play_sleeping=True
-                        )
-                        self.next_whine_time = time.time() + 10
-
-                elif SHARED_STATE.cpu_temp >= 65:
-                    log.main.warning(
-                        "It is getting a bit warm in here (%sC)", SHARED_STATE.cpu_temp
-                    )
-                    if time.time() > self.next_whine_time:
-                        breath.thread.queue_sound(
-                            from_collection="toohot_l1", play_sleeping=False
-                        )
-                        self.next_whine_time = time.time() + 600
-
-                time.sleep(32)
-
-        # log exception in the main.log
-        except Exception as ex:
-            log.main.error(
-                "Thread died. {0} {1} {2}".format(
-                    ex.__class__, ex, log.format_tb(ex.__traceback__)
-                )
+        while True:
+            # Get the temp
+            measure_temp = os.popen("/opt/vc/bin/vcgencmd measure_temp")
+            SHARED_STATE.cpu_temp = float(
+                measure_temp.read().replace("temp=", "").replace("'C\n", "")
             )
+            measure_temp.close()
+
+            # Log it
+            log.cputemp.info("%s", SHARED_STATE.cpu_temp)
+
+            # The official pi max temp is 85C. Usually around 50C. Start complaining at 65, 71 freak the fuck out, 72 say goodbye and shut down.
+            # Whine more often the hotter it gets
+            if SHARED_STATE.cpu_temp >= 72:
+                log.main.critical(
+                    "SHUTTING DOWN FOR SAFETY (%sC)", SHARED_STATE.cpu_temp
+                )
+
+                # Flush all the disk buffers
+                os.popen("sync")
+
+                # This is for reading and writing stuff from Pico via I2C
+                bus = smbus.SMBus(1)
+
+                # wait a sec or 5
+                time.sleep(5)
+
+                # send the pico a shut all the things down fuck this shit command
+                bus.write_byte_data(0x6B, 0x00, 0xCC)
+
+            elif SHARED_STATE.cpu_temp >= 71:
+                log.main.warning(
+                    "I AM MELTING, HELP ME PLEASE (%sC)", SHARED_STATE.cpu_temp
+                )
+                if time.time() > self.next_whine_time:
+                    breath.thread.queue_sound(
+                        from_collection="toohot_l3", play_sleeping=True
+                    )
+                    self.next_whine_time = time.time() + 3
+
+            elif SHARED_STATE.cpu_temp >= 70:
+                log.main.warning("This is fine (%sC)", SHARED_STATE.cpu_temp)
+                if time.time() > self.next_whine_time:
+                    breath.thread.queue_sound(
+                        from_collection="toohot_l2", play_sleeping=True
+                    )
+                    self.next_whine_time = time.time() + 10
+
+            elif SHARED_STATE.cpu_temp >= 65:
+                log.main.warning(
+                    "It is getting a bit warm in here (%sC)", SHARED_STATE.cpu_temp
+                )
+                if time.time() > self.next_whine_time:
+                    breath.thread.queue_sound(
+                        from_collection="toohot_l1", play_sleeping=False
+                    )
+                    self.next_whine_time = time.time() + 600
+
+            time.sleep(32)
 
 
 # Instantiate and start the thread

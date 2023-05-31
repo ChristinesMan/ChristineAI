@@ -44,10 +44,7 @@ import sleep
 
 
 class Conversate:
-
-    """
-    Handles incoming speech and tries to emulate some sort of intelligent response.
-    """
+    """Handles incoming speech and tries to emulate some sort of intelligent response."""
 
     def __init__(self):
         # After a few months I will forget what this looks like
@@ -74,9 +71,11 @@ class Conversate:
         )
         self.re_hear_me = re.compile("can you hear me", flags=re.IGNORECASE)
 
-    def inbound_words(self, words):
-        """
-        This function gets called by other modules when there are inbound words
+    def inbound_words(self, words: str):
+        """This function gets called by other modules when there are inbound words
+
+        Args:
+            words (str): text of words spoken into wife's ear hole
         """
 
         log.words.info("Heard: %s", words)
@@ -84,7 +83,7 @@ class Conversate:
         if self.re_wake_up.search(words):
             sleep.thread.wake_up(0.2)
             breath.thread.queue_sound(
-                from_collection="uh_huh", play_no_wait=True, priority=7
+                from_collection="uh_huh", play_no_wait=True, priority=7, play_sleeping=True
             )
 
         elif self.re_hear_me.search(words):
