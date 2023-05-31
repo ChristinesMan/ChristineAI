@@ -1,6 +1,8 @@
 """
 Handles hearing
 """
+import sys
+import os
 import time
 import threading
 import random
@@ -151,6 +153,21 @@ class Wernicke(threading.Thread):
             # This is to signal that the thread should close the serial port and shutdown
             # we have a status.Shutdown but that's in the main process. This needs something separate
             shutdown = False
+        # capture any errors
+        sys.stdout = open(
+            f"./logs/{os.getpid()}_wernicke.out",
+            "w",
+            buffering=1,
+            encoding="utf-8",
+            errors="ignore",
+        )
+        sys.stderr = open(
+            f"./logs/{os.getpid()}_wernicke.err",
+            "w",
+            buffering=1,
+            encoding="utf-8",
+            errors="ignore",
+        )
 
             # This is a queue where the audio data in 0.25s chunks inbound from the serial port gets put
             buffer_queue = queue.Queue(maxsize=10)

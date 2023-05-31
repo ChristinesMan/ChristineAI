@@ -1,6 +1,8 @@
 """
 Handles emitting sounds
 """
+import sys
+import os
 import time
 from ast import literal_eval
 import threading
@@ -313,6 +315,11 @@ class Breath(threading.Thread):
         Sounds got crappy and this solved it.
         """
         try:
+
+            # capture any errors
+            sys.stdout = open(f"./logs/{os.getpid()}_breath.out", "w", buffering=1, encoding="utf-8", errors='ignore')
+            sys.stderr = open(f"./logs/{os.getpid()}_breath.err", "w", buffering=1, encoding="utf-8", errors='ignore')
+
             # calculate some stuff
             # All the wav files are forced to the same format during preprocessing, currently stereo 44100
             # chopping the rate into 10 pieces, so that's 10 chunks per second. I might adjust later.
