@@ -5,7 +5,7 @@
       <th></th>
       <!-- Following headers are rotated -->
         <th class="rotate"><div class="rotatediv"><span class="rotatedivspan">PLAY</span></div></th>
-% for collection in sounds.soundsdb.collections():
+% for collection in sounds.soundsdb.collection_names_as_list():
         <th class="rotate"><div class="rotatediv"><span class="rotatedivspan">{{collection}}</span></div></th>
 % end
     </tr> 
