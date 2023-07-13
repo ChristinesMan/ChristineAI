@@ -81,7 +81,7 @@ class Breath(threading.Thread):
         self.shuttlecraft_process.start()
 
     def run(self):
-        log.sound.debug("Thread started.")
+        log.sound.info("Thread started.")
 
         while True:
             # graceful shutdown
@@ -107,30 +107,33 @@ class Breath(threading.Thread):
                         SHARED_STATE.is_sleeping is False
                         or incoming_sound["playsleeping"]
                     ):
-                        if (
-                            incoming_sound["cutsound"] is True
-                            and incoming_sound["ignorespeaking"] is True
-                        ):
-                            self.current_sound = incoming_sound
-                            log.sound.debug("Playing immediately")
-                            self.play()
-                        elif (
-                            self.delayed_sound is None
-                            or incoming_sound["priority"]
-                            > self.delayed_sound["priority"]
-                        ):
-                            log.sound.debug("Accepted: %s", incoming_sound)
-                            if self.delayed_sound is not None:
+                        if ( SHARED_STATE.shush_please_honey is False or incoming_sound["ignoreshush"] ):
+                            if (
+                                incoming_sound["cutsound"] is True
+                                and incoming_sound["ignorespeaking"] is True
+                            ):
+                                log.sound.debug("Playing immediately: %s", incoming_sound)
+                                self.current_sound = incoming_sound
+                                self.play()
+                            elif (
+                                self.delayed_sound is None
+                                or incoming_sound["priority"]
+                                > self.delayed_sound["priority"]
+                            ):
+                                log.sound.debug("Accepted: %s", incoming_sound)
+                                if self.delayed_sound is not None:
+                                    log.sound.debug(
+                                        "Threw away delayed sound: %s",
+                                        self.delayed_sound,
+                                    )
+                                    self.delayed_sound = None
+                                self.current_sound = incoming_sound
+                            else:
                                 log.sound.debug(
-                                    "Threw away delayed sound: %s",
-                                    self.delayed_sound,
+                                    "Discarded (delayed sound): %s", incoming_sound
                                 )
-                                self.delayed_sound = None
-                            self.current_sound = incoming_sound
                         else:
-                            log.sound.debug(
-                                "Discarded (delayed sound): %s", incoming_sound
-                            )
+                            log.sound.debug("Discarded (shush): %s", incoming_sound)
                     else:
                         log.sound.debug("Discarded (sleeping): %s", incoming_sound)
                 else:
@@ -192,6 +195,7 @@ class Breath(threading.Thread):
                 "priority": 1,
                 "playsleeping": True,
                 "ignorespeaking": True,
+                "ignoreshush": True,
                 "delayer": random.randint(3, 7),
                 "is_playing": False,
             }
@@ -202,7 +206,7 @@ class Breath(threading.Thread):
         """
         Start playing that sound
         """
-        log.sound.debug("Playing: %s", self.current_sound)
+        log.sound.info("Playing: %s", self.current_sound)
 
         # Now that we're actually playing the sound,
         # tell the sound collection to not play it for a while
@@ -275,6 +279,7 @@ class Breath(threading.Thread):
         priority=5,
         play_sleeping=False,
         play_ignore_speaking=False,
+        play_ignore_shush=False,
         delay=0,
     ):
         """
@@ -303,6 +308,7 @@ class Breath(threading.Thread):
                     "priority": priority,
                     "playsleeping": play_sleeping,
                     "ignorespeaking": play_ignore_speaking,
+                    "ignoreshush": play_ignore_shush,
                     "delayer": delay,
                     "is_playing": False,
                 }
