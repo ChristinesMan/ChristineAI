@@ -200,32 +200,67 @@ class Wernicke(threading.Thread):
 
             pass  # pylint: disable=unnecessary-pass
 
-        SpeechServerManager.register("get_audio_queue")
-        SpeechServerManager.register("get_result_queue")
-
         class MySpeechServer(threading.Thread):
             """
             speech recognition is much too slow for the pi, by a lot. So I'm running a server on the local network
             What time is it, honey?! What's that you say? It's three twenty pee emm? You sexy clock!!
 
-            This is not instantiated until one of those nice servers contacts us to say hello.
+            This is not doing anything until one of those nice servers contacts us to say hello.
+
+            I had some issues because we're still using python3.6 on this old pi, and python3.9/10/11 on the servers.
+            Python3.6 hashes the challenge response thing using md5. Others use sha256. 
+            So this is my ugly hack:
+            sed -i "s/'md5'/'sha256'/g" /usr/local/lib/python3.6/multiprocessing/connection.py
+            Bitch. 
             """
 
             name = "MySpeechServer"
 
-            def __init__(self, server_name = None, server_host = None, server_rating = 0):
+            def __init__(self):
                 threading.Thread.__init__(self)
 
-                self.server_name = server_name
-                self.server_host = server_host
-                self.server_rating = server_rating
+                # init these to make linter happy
+                self.server_name = None
+                self.server_host = None
+                self.server_rating = 0
+                self.manager = None
+                self.audio_queue = queue.Queue(maxsize=30)
+                self.result_queue = queue.Queue(maxsize=30)
+                self.server_shutdown = False
+                self.is_connected = False
 
-                # if no server info was passed, it's the initial instantiation so just fuck it
-                if server_name is not None:
+            def run(self):
 
+                while True:
+
+                    if self.is_connected is True:
+
+                        # get something out of the queue if there's anything. Don't block.
+                        try:
+                            result = self.result_queue.get_nowait()
+                            hey_honey({"class": "words", "text": result})
+
+                        except (BrokenPipeError, EOFError) as ex:
+                            log.wernicke.warning("Server went away. %s", ex)
+                            self.destroy_manager()
+
+                        except Exception: # pylint: disable=broad-exception-caught
+                            pass
+
+                    time.sleep(0.5)
+
+            def connect_manager(self):
+                """Connect the manager thing"""
+
+                try:
+
+                    log.wernicke.info("Connecting to %s", self.server_host)
                     self.manager = SpeechServerManager(
-                        address=(self.server_host, 3000), authkey=b"fuckme"
+                        address=(self.server_host, 3000), authkey=b'fuckme',
                     )
+                    self.manager.register("get_audio_queue")
+                    self.manager.register("get_result_queue")
+                    self.manager.register("get_server_shutdown")
                     self.manager.connect()
 
                     self.audio_queue = (
@@ -234,22 +269,98 @@ class Wernicke(threading.Thread):
                     self.result_queue = (
                         self.manager.get_result_queue() # pylint: disable=no-member
                     )
+                    self.server_shutdown = (
+                        self.manager.get_server_shutdown() # pylint: disable=no-member
+                    )
+                    log.wernicke.debug("Connected")
+                    self.is_connected = True
 
-            def run(self):
-                while True:
-                    result = self.result_queue.get()
-                    if result == "DISCONNECT":
-                        return
-                    hey_honey({"class": "words", "text": result})
+                except Exception as ex: # pylint: disable=broad-exception-caught
+
+                    log.wernicke.error("Connect failed. %s", ex)
+                    self.destroy_manager()
+
+            def destroy_manager(self):
+                """Disconnect and utterly destroy the manager"""
+
+                self.is_connected = False
+
+                try:
+                    del self.result_queue
+                except AttributeError:
+                    pass
+
+                try:
+                    del self.audio_queue
+                except AttributeError:
+                    pass
+
+                try:
+                    del self.manager
+                except AttributeError:
+                    pass
+
+                self.server_name = None
+                self.server_host = None
+                self.server_rating = 0
+                self.manager = None
+
+            def server_update(self, server_name: str, server_host: str, server_rating: int):
+                """This is called when another machine other than myself says hi"""
+
+                if server_rating > self.server_rating:
+
+                    if self.is_connected is True:
+                        self.destroy_manager()
+
+                    self.server_name = server_name
+                    self.server_host = server_host
+                    self.server_rating = server_rating
+
+                    self.connect_manager()
 
             def transcribe(self, audio_data):
                 """Accepts new audio data to be shipped over to the server for transcription"""
 
-                self.audio_queue.put(audio_data, block=False)
+                try:
+                    self.audio_queue.put(audio_data, block=False)
+                    log.wernicke.debug("Audio put. Queue sizes: %s / %s", self.audio_queue.qsize(), self.result_queue.qsize())
+                except queue.Full:
+                    log.wernicke.error("The remote queue is full, wtf")
+                    self.server_shutdown = True
+                    time.sleep(1)
+                    self.destroy_manager()
+                except (BrokenPipeError, EOFError) as ex:
+                    log.wernicke.error("Server error. %s", ex)
+                    self.destroy_manager()
+                except AttributeError:
+                    pass
 
-        # This will start out at just a BS empty object that is not is_alive()
+
+        # This will start out at just a BS empty object
         # once a server has contacted, this will be a thread class that will communicate with the server
         audio_server = MySpeechServer()
+        audio_server.daemon = True
+        audio_server.start()
+
+                        #         log.wernicke.debug("Is audio_server alive: %s", audio_server.is_alive())
+                        # log.wernicke.debug("audio_server rating: %s", audio_server.server_rating)
+                        # log.wernicke.debug("audio_server name: %s", audio_server.server_name)
+                        # log.wernicke.debug("new rating: %s", comm["server_info"]["server_rating"])
+                        # if (
+                        #     audio_server.is_alive() is not True
+                        #     or audio_server.server_rating
+                        #     < comm["server_info"]["server_rating"]
+                        # ):
+                        #     log.wernicke.debug("got in here 1")
+                        #     if audio_server.is_alive():
+                        #         log.wernicke.debug("got in here 2")
+                        #         audio_server.result_queue.put("DISCONNECT")
+                        #         audio_server.join()
+                        #         log.wernicke.debug("got in here 3")
+                        #     audio_server.daemon = True
+                        #     audio_server.start()
+
 
         class CheckForMessages(threading.Thread):
             """
@@ -281,21 +392,12 @@ class Wernicke(threading.Thread):
                     elif comm["msg"] == "stop_processing":
                         processing_state = False
                     elif comm["msg"] == "server_update":
-                        if (
-                            audio_server.is_alive() is not True
-                            or audio_server.server_rating
-                            < comm["server_info"]["server_rating"]
-                        ):
-                            if audio_server.is_alive():
-                                audio_server.result_queue.put("DISCONNECT")
-                                audio_server.join()
-                            audio_server = MySpeechServer(
-                                server_name=comm["server_info"]["server_name"],
-                                server_host=comm["server_info"]["server_host"],
-                                server_rating=comm["server_info"]["server_rating"],
-                            )
-                            audio_server.daemon = True
-                            audio_server.start()
+                        audio_server.server_update(
+                            server_name=comm["server_info"]["server_name"],
+                            server_host=comm["server_info"]["server_host"],
+                            server_rating=comm["server_info"]["server_rating"],
+                        )
+
                     elif comm["msg"] == "shutdown":
                         processing_state = False
                         shutdown = True
@@ -329,6 +431,10 @@ class Wernicke(threading.Thread):
                 nonlocal proximity
 
                 while True:
+
+                    # A cron job will check this log to ensure this is still running
+                    log.imhere.info("")
+
                     # attempt to shutdown normally
                     if shutdown:
                         log.wernicke.info("Closing serial port")
@@ -616,7 +722,7 @@ class Wernicke(threading.Thread):
                         proximity = ((proximity * 3.0) + proximity_now) / 4.0
 
                     else:
-                        log.wernicke.info(
+                        log.wernicke.debug(
                             "Heard %s with prob %.2f", block_class, block_prob
                         )
 
@@ -736,36 +842,42 @@ class Wernicke(threading.Thread):
                 # When block is None, that signals the end of audio data. Go ahead and do what we want to do with the complete data
 
                 # if the server is available, send it over there as long as we're not sleeping
-                if audio_server.is_alive():
-                    if SHARED_STATE.is_sleeping is False:
-                        audio_server.transcribe(accumulated_data)
-                        log.wernicke.debug("Sending utterance to server.")
+                try:
+                    if audio_server.is_connected is True:
+                        log.wernicke.debug("The server appears to be still alive")
+                        if SHARED_STATE.is_sleeping is False:
+                            log.wernicke.debug("Sending utterance to server.")
+                            audio_server.transcribe(accumulated_data)
 
+                        else:
+                            log.wernicke.debug(
+                                "Threw away %s blocks as I am sleeping",
+                                accumulated_blocks,
+                            )
+
+                    # if the server is not available, no further processing, just send over a general I heard some unknown words
                     else:
                         log.wernicke.debug(
-                            "Threw away %s blocks as I am sleeping",
+                            "Threw away %s blocks as the server was unavailable",
                             accumulated_blocks,
                         )
 
-                # if the server is not available, no further processing, just send over a general I heard some unknown words
-                else:
-                    log.wernicke.debug(
-                        "Threw away %s blocks as the server was unavailable",
-                        accumulated_blocks,
-                    )
+                        hey_honey({"class": "heard_unknown"})
+                        # conversate.thread.Words('unknown') derp
 
-                    hey_honey({"class": "heard_unknown"})
-                    # conversate.thread.Words('unknown') derp
+                        # # save the utterance to a wav file for debugging and QA
+                        # RecordTimeStamp = str(round(time.time(), 2)).replace('.', '')
+                        # RecordFileName = 'training_wavs_whisper/{0}.wav'.format(RecordTimeStamp)
+                        # wf = wave.open(RecordFileName, 'wb')
+                        # wf.setnchannels(1)
+                        # wf.setsampwidth(2)
+                        # wf.setframerate(16000)
+                        # wf.writeframes(AccumulatedData)
+                        # wf.close()
 
-                    # # save the utterance to a wav file for debugging and QA
-                    # RecordTimeStamp = str(round(time.time(), 2)).replace('.', '')
-                    # RecordFileName = 'training_wavs_whisper/{0}.wav'.format(RecordTimeStamp)
-                    # wf = wave.open(RecordFileName, 'wb')
-                    # wf.setnchannels(1)
-                    # wf.setsampwidth(2)
-                    # wf.setframerate(16000)
-                    # wf.writeframes(AccumulatedData)
-                    # wf.close()
+                except EOFError:
+                    log.wernicke.debug("Caught an EOFError. Killing everything dead.")
+                    audio_server.destroy_manager()
 
                 accumulated_data = bytearray()
                 accumulated_blocks = 0
