@@ -33,11 +33,11 @@ class SoundsDB:
         rows = db.conn.do_query(f"SELECT * FROM sounds WHERE id = {sound_id}")
         if rows is None:
             return None
-        else:
-            sound = {}
-            for field_name, field_id in self.db_field_names.items():
-                sound[field_name] = rows[0][field_id]
-            return sound
+
+        sound = {}
+        for field_name, field_id in self.db_field_names.items():
+            sound[field_name] = rows[0][field_id]
+        return sound
 
     def all(self):
         """

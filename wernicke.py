@@ -23,7 +23,6 @@ import log
 from status import SHARED_STATE
 import light
 import touch
-import conversate
 
 
 class Wernicke(threading.Thread):
@@ -95,15 +94,15 @@ class Wernicke(threading.Thread):
 
             # Words from the speech recognition server
             elif comm["class"] == "words":
-                conversate.thread.inbound_words(comm["text"])
+                SHARED_STATE.behaviour_zone.notify_words(comm["text"])
 
             # The speech recognition server is unavailable, so we heard something unknown
             elif comm["class"] == "heard_unknown":
-                conversate.thread.inbound_words("unknown")
+                SHARED_STATE.behaviour_zone.notify_words("unknown")
 
             # the audio data contains embedded sensor and voice proximity data
             elif comm["class"] == "sensor_data":
-                light.thread.incoming_data(comm["light"])
+                light.thread.new_data(comm["light"])
                 touch.thread.new_data(comm["touch"])
                 SHARED_STATE.lover_proximity = comm["proximity"]
 

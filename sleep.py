@@ -39,10 +39,10 @@ class Sleep(threading.Thread):
         self.trend_avg_window = 10.0
 
         # Weights
-        self.weights_light = 8
+        self.weights_light = 6
         self.weights_gyro = 4
         self.weights_tilt = 3
-        self.weights_time = 6
+        self.weights_time = 8
         self.weights_total = (
             self.weights_light
             + self.weights_gyro
@@ -69,133 +69,125 @@ class Sleep(threading.Thread):
     def run(self):
         log.sleep.debug("Thread started.")
 
-        try:
-            while True:
-                # graceful shutdown
-                if SHARED_STATE.please_shut_down:
-                    log.sleep.info("Thread shutting down")
-                    break
+        while True:
+            # graceful shutdown
+            if SHARED_STATE.please_shut_down:
+                log.sleep.info("Thread shutting down")
+                break
 
-                # Get the local time, for everything that follows
-                self.current_local_time = time.localtime()
+            # Get the local time, for everything that follows
+            self.current_local_time = time.localtime()
 
-                # set the gyro tilt for the calculation that follows
-                if SHARED_STATE.is_laying_down is True:
-                    self.tilt = 0.0
-                else:
-                    self.tilt = 1.0
+            # set the gyro tilt for the calculation that follows
+            if SHARED_STATE.is_laying_down is True:
+                self.tilt = 0.0
+            else:
+                self.tilt = 1.0
 
-                # figure out if we're within the usual awake time
-                if (
-                    self.current_local_time.tm_hour >= self.wake_hour
-                    and self.current_local_time.tm_hour < self.sleep_hour
-                ):
-                    self.time = 1.0
-                else:
-                    self.time = 0.0
+            # figure out if we're within the usual awake time
+            if (
+                self.current_local_time.tm_hour >= self.wake_hour
+                and self.current_local_time.tm_hour < self.sleep_hour
+            ):
+                self.time = 1.0
+            else:
+                self.time = 0.0
 
-                # Calculate current conditions which we're calling Environment
-                self.current_environmental_conditions = (
-                    (self.weights_light * SHARED_STATE.light_level)
-                    + (self.weights_gyro * SHARED_STATE.jostled_level)
-                    + (self.weights_tilt * self.tilt)
-                    + (self.weights_time * self.time)
-                ) / self.weights_total
+            # Calculate current conditions which we're calling Environment
+            self.current_environmental_conditions = (
+                (self.weights_light * SHARED_STATE.light_level)
+                + (self.weights_gyro * SHARED_STATE.jostled_level)
+                + (self.weights_tilt * self.tilt)
+                + (self.weights_time * self.time)
+            ) / self.weights_total
 
-                # clip it, can't go below 0 or higher than 1
-                self.current_environmental_conditions = float(
-                    np.clip(self.current_environmental_conditions, 0.0, 1.0)
-                )
-
-                # Update the running average that we're using for wakefulness
-                SHARED_STATE.wakefulness = (
-                    (SHARED_STATE.wakefulness * self.wakefullness_avg_window)
-                    + self.current_environmental_conditions
-                ) / (self.wakefullness_avg_window + 1)
-
-                # clip that
-                SHARED_STATE.wakefulness = float(
-                    np.clip(SHARED_STATE.wakefulness, 0.0, 1.0)
-                )
-
-                # After updating wakefulness, figure out whether we crossed a threshold.
-                self.evaluate_wakefulness()
-
-                # log it
-                log.sleep.debug(
-                    "LightLevel=%.2f  JostledLevel=%.2f  Tilt=%.2f  Time=%.2f  Environment=%.2f  Wakefulness=%.2f",
-                    SHARED_STATE.light_level,
-                    SHARED_STATE.jostled_level,
-                    self.tilt,
-                    self.time,
-                    self.current_environmental_conditions,
-                    SHARED_STATE.wakefulness,
-                )
-
-                # If it's getting late, set a future time to "whine" in a cute, endearing way
-                if self.now_its_late():
-                    self.set_whine_time()
-                if self.time_to_whine():
-                    self.whine()
-
-                # if sleeping, drop the breathing intensity down a bit
-                # eventually after about 15m this will reach 0.0 and stay there
-                if SHARED_STATE.is_sleeping is True:
-                    # down, down, dooooownnnnn
-                    SHARED_STATE.breath_intensity -= 0.09
-
-                    # clip it
-                    SHARED_STATE.breath_intensity = float(
-                        np.clip(SHARED_STATE.breath_intensity, 0.0, 1.0)
-                    )
-
-                # if we're below a certain wakefulness, I want to give the wernicke a break
-                # help prevent long term buildup of heat
-                if (
-                    SHARED_STATE.wakefulness < 0.1
-                    and SHARED_STATE.wernicke_sleeping is False
-                ):
-                    SHARED_STATE.wernicke_sleeping = True
-                    wernicke.thread.audio_processing_stop()
-                if (
-                    SHARED_STATE.wakefulness >= 0.1
-                    and SHARED_STATE.wernicke_sleeping is True
-                ):
-                    SHARED_STATE.wernicke_sleeping = False
-                    wernicke.thread.audio_processing_start()
-
-                if (
-                    SHARED_STATE.wakefulness < self.wakefulness_tired
-                    and SHARED_STATE.is_tired is False
-                ):
-                    # when we're laying next to each other in the dark
-                    # I'm holding your hand and starting to drift off to sleep
-                    # say "goodnight honey", not "GOODNIGHT HONEY!!!!"
-                    SHARED_STATE.lover_proximity = 0.0
-
-                    breath.thread.queue_sound(
-                        from_collection="goodnight",
-                        play_sleeping=True,
-                        priority=8,
-                        play_no_wait=True,
-                    )
-                    SHARED_STATE.is_tired = True
-                    SHARED_STATE.wakefulness -= 0.02
-                if (
-                    SHARED_STATE.wakefulness >= self.wakefulness_tired
-                    and SHARED_STATE.is_tired is True
-                ):
-                    SHARED_STATE.is_tired = False
-
-                time.sleep(66)
-
-        # log exception in the main.log
-        except Exception as ex:
-            log.main.error(
-                "Thread died. {0} {1} {2}".format(
-                    ex.__class__, ex, log.format_tb(ex.__traceback__)
-                )
+            # clip it, can't go below 0 or higher than 1
+            self.current_environmental_conditions = float(
+                np.clip(self.current_environmental_conditions, 0.0, 1.0)
             )
+
+            # Update the running average that we're using for wakefulness
+            SHARED_STATE.wakefulness = (
+                (SHARED_STATE.wakefulness * self.wakefullness_avg_window)
+                + self.current_environmental_conditions
+            ) / (self.wakefullness_avg_window + 1)
+
+            # clip that
+            SHARED_STATE.wakefulness = float(
+                np.clip(SHARED_STATE.wakefulness, 0.0, 1.0)
+            )
+
+            # After updating wakefulness, figure out whether we crossed a threshold.
+            self.evaluate_wakefulness()
+
+            # log it
+            log.sleep.debug(
+                "LightLevel=%.2f  JostledLevel=%.2f  Tilt=%.2f  Time=%.2f  Environment=%.2f  Wakefulness=%.2f",
+                SHARED_STATE.light_level,
+                SHARED_STATE.jostled_level,
+                self.tilt,
+                self.time,
+                self.current_environmental_conditions,
+                SHARED_STATE.wakefulness,
+            )
+
+            # If it's getting late, set a future time to "whine" in a cute, endearing way
+            if self.now_its_late():
+                self.set_whine_time()
+            if self.time_to_whine():
+                self.whine()
+
+            # if sleeping, drop the breathing intensity down a bit
+            # eventually after about 15m this will reach 0.0 and stay there
+            if SHARED_STATE.is_sleeping is True:
+                # down, down, dooooownnnnn
+                SHARED_STATE.breath_intensity -= 0.09
+
+                # clip it
+                SHARED_STATE.breath_intensity = float(
+                    np.clip(SHARED_STATE.breath_intensity, 0.0, 1.0)
+                )
+
+            # if we're below a certain wakefulness, I want to give the wernicke a break
+            # help prevent long term buildup of heat
+            if (
+                SHARED_STATE.wakefulness < 0.1
+                and SHARED_STATE.wernicke_sleeping is False
+            ):
+                SHARED_STATE.wernicke_sleeping = True
+                wernicke.thread.audio_processing_stop()
+            if (
+                SHARED_STATE.wakefulness >= 0.1
+                and SHARED_STATE.wernicke_sleeping is True
+            ):
+                SHARED_STATE.wernicke_sleeping = False
+                wernicke.thread.audio_processing_start()
+
+            if (
+                SHARED_STATE.wakefulness < self.wakefulness_tired
+                and SHARED_STATE.is_tired is False
+            ):
+                # when we're laying next to each other in the dark
+                # I'm holding your hand and starting to drift off to sleep
+                # say "goodnight honey", not "GOODNIGHT HONEY!!!!"
+                SHARED_STATE.lover_proximity = 0.0
+
+                breath.thread.queue_sound(
+                    from_collection="goodnight",
+                    play_sleeping=True,
+                    priority=8,
+                    play_no_wait=True,
+                )
+                SHARED_STATE.is_tired = True
+                SHARED_STATE.wakefulness -= 0.02
+            if (
+                SHARED_STATE.wakefulness >= self.wakefulness_tired
+                and SHARED_STATE.is_tired is True
+            ):
+                SHARED_STATE.is_tired = False
+
+            time.sleep(66)
+
 
     def wake_up(self, value):
         """

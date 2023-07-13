@@ -7,6 +7,7 @@ import numpy as np
 
 # import log
 import db
+import behaviour_class
 
 
 class Status(threading.Thread):
@@ -89,6 +90,11 @@ class Status(threading.Thread):
 
         # Keep track of whether we have switched off the Wernicke processing during sleep
         self.wernicke_sleeping = False
+
+        # This is a reference to a thread that controls whatever is going on right meow
+        self.behaviour_zone = behaviour_class.Behaviour()
+        # This is the default behaviour
+        self.behaviour_zone_name = "abnormal"
 
         # this is to signal all threads to properly shutdown
         self.please_shut_down = False

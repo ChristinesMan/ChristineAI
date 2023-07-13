@@ -32,7 +32,7 @@ class Light:
         # this controls how fast the average will change
         self.light_avg_window = 100.0
 
-    def incoming_data(self, light_adc_raw):
+    def new_data(self, light_adc_raw):
         """
         called to deliver new data point
         """

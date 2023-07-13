@@ -8,8 +8,6 @@ from mpu6050 import mpu6050
 
 import log
 from status import SHARED_STATE
-import sleep
-import breath
 
 
 class Gyro(threading.Thread):
@@ -137,20 +135,9 @@ class Gyro(threading.Thread):
                 ) / (self.jostled_avg_window_short + 1)
 
                 # if she gets hit, wake up a bit
-                if self.jostled_level > 0.15 and SHARED_STATE.is_sleeping is True:
-                    log.sleep.info(
-                        "Woke up by being jostled this much: %s", self.jostled_level
-                    )
-                    sleep.thread.wake_up(0.04)
-                    SHARED_STATE.lover_proximity = (
-                        (SHARED_STATE.lover_proximity * 5.0) + 1.0
-                    ) / 6.0
-                    breath.thread.queue_sound(
-                        from_collection="gotwokeup",
-                        play_sleeping=True,
-                        play_ignore_speaking=True,
-                        play_no_wait=True,
-                    )
+                if self.jostled_level > 0.20:
+                    self.jostled_level = 0.20
+                    SHARED_STATE.behaviour_zone.notify_jostled()
 
                 # Update the boolean that tells if we're laying down. While laying down I recorded 4.37, 1.60. However, now it's 1.55, 2.7. wtf happened? The gyro has not moved. Maybe position difference.
                 # At some point I ought to self-calibrate this. When it's dark, and not jostled for like an hour, that's def laying down, save it.
