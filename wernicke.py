@@ -56,6 +56,7 @@ class Wernicke(threading.Thread):
 
     def run(self):
         log.wernicke.debug("Thread started.")
+        log.imhere.info("")
 
         # start the process
         self.away_team_process.start()

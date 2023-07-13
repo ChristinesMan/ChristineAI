@@ -42,10 +42,10 @@ main = setup_logger(
 gyro = setup_logger("gyro", level=logging.INFO)
 cputemp = setup_logger("cputemp", level=logging.DEBUG)
 battery = setup_logger("battery", level=logging.DEBUG)
-sleep = setup_logger("sleep", level=logging.DEBUG)
+sleep = setup_logger("sleep", level=logging.INFO)
 db = setup_logger("db", level=logging.INFO)
-sound = setup_logger("sound", level=logging.DEBUG)
-wernicke = setup_logger("wernicke", level=logging.DEBUG)
+sound = setup_logger("sound", level=logging.INFO)
+wernicke = setup_logger("wernicke", level=logging.INFO)
 light = setup_logger("light", level=logging.INFO)
 http = setup_logger("http", level=logging.DEBUG)
 touch = setup_logger("touch", level=logging.DEBUG)
@@ -54,6 +54,8 @@ horny = setup_logger("horny", level=logging.DEBUG)
 cuddles = setup_logger("cuddles", level=logging.DEBUG)
 vagina = setup_logger("vagina", level=logging.DEBUG)
 words = setup_logger("words", level=logging.DEBUG)
+behaviour = setup_logger("behaviour", level=logging.DEBUG)
+imhere = setup_logger("imhere", level=logging.DEBUG, msg_format="%(module)s.%(funcName)s.%(created)d")
 
 
 def log_exception(_, value, trace_back):
