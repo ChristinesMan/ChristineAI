@@ -643,7 +643,11 @@ class SoundCollection:
                 sound["SkipUntil"] = time.time() + (
                     sound["replay_wait"] * random.uniform(0.8, 1.2)
                 )
-                self.sounds_available_to_play.remove(sound)
+                # adding this try in response to a random exception
+                try:
+                    self.sounds_available_to_play.remove(sound)
+                except ValueError:
+                    log.sound.warning("ValueError happened when removing this sound: %s", sound)
                 break
 
 

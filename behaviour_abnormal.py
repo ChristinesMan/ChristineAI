@@ -35,11 +35,13 @@ class Behaviour(threading.Thread):
         """When words are spoken and processed, they should end up here.
         This is a mess and needs to be fixed, obfuscated, nltk'd, etc"""
 
-        log.behaviour.info("Heard: %s", words)
 
         # there are certain garbage phrases that are frequently detected
         if re_garbage.search(words):
+            log.behaviour.info("Heard: %s (discarded)", words)
             return
+
+        log.behaviour.info("Heard: %s", words)
 
         if re_wake_up.search(words):
             SHARED_STATE.should_speak_chance += 0.03
@@ -166,7 +168,7 @@ class Behaviour(threading.Thread):
             #     breath.thread.QueueSound(FromCollection='', CutAllSoundAndPlay=True, Priority=7)
 
             else:
-                log.words.debug("Unmatched: %s", words)
+                log.behaviour.debug("Unmatched: %s", words)
 
                 if SHARED_STATE.is_tired is False:
                     SHARED_STATE.should_speak_chance += 0.04

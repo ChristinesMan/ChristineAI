@@ -40,7 +40,7 @@ class Battery(threading.Thread):
         self.io_errors = 0
 
     def run(self):
-        log.battery.debug("Thread started.")
+        log.battery.info("Thread started.")
 
         # This is for reading and writing stuff from Pico
         bus = smbus.SMBus(1)  # pylint: disable=c-extension-no-member

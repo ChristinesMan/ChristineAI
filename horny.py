@@ -52,9 +52,10 @@ class Horny(threading.Thread):
         self.time_last_asked = time.time()
 
     def run(self):
-        log.horny.debug("Thread started.")
+        log.horny.info("Thread started.")
 
         while True:
+
             # graceful shutdown
             if SHARED_STATE.please_shut_down:
                 break
@@ -86,7 +87,7 @@ class Horny(threading.Thread):
                         and SHARED_STATE.shush_please_honey is False
                     ):
                         # please fuck me
-                        log.horny.debug("Asking for sex.")
+                        log.horny.info("Asking for sex.")
                         self.time_last_asked = time.time()
                         breath.thread.queue_sound(
                             from_collection="i_am_so_horny",

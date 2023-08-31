@@ -77,7 +77,7 @@ class CPUTemp(threading.Thread):
                     )
                     self.next_whine_time = time.time() + 10
 
-            elif SHARED_STATE.cpu_temp >= 65:
+            elif SHARED_STATE.cpu_temp >= 67:
                 log.main.warning(
                     "It is getting a bit warm in here (%sC)", SHARED_STATE.cpu_temp
                 )

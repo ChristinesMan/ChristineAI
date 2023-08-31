@@ -342,24 +342,6 @@ class Wernicke(threading.Thread):
         audio_server.daemon = True
         audio_server.start()
 
-                        #         log.wernicke.debug("Is audio_server alive: %s", audio_server.is_alive())
-                        # log.wernicke.debug("audio_server rating: %s", audio_server.server_rating)
-                        # log.wernicke.debug("audio_server name: %s", audio_server.server_name)
-                        # log.wernicke.debug("new rating: %s", comm["server_info"]["server_rating"])
-                        # if (
-                        #     audio_server.is_alive() is not True
-                        #     or audio_server.server_rating
-                        #     < comm["server_info"]["server_rating"]
-                        # ):
-                        #     log.wernicke.debug("got in here 1")
-                        #     if audio_server.is_alive():
-                        #         log.wernicke.debug("got in here 2")
-                        #         audio_server.result_queue.put("DISCONNECT")
-                        #         audio_server.join()
-                        #         log.wernicke.debug("got in here 3")
-                        #     audio_server.daemon = True
-                        #     audio_server.start()
-
 
         class CheckForMessages(threading.Thread):
             """
@@ -693,15 +675,16 @@ class Wernicke(threading.Thread):
 
                     # temporary data collection for proximity regression model
                     # only save if it's classified as lover
-                    # if block_class == 'lover':
-                    #     RecordTimeStamp = str(int(time.time()*100))
-                    #     RecordFileName = 'training_wavs_proximity/{0}_prox0.0.wav'.format(RecordTimeStamp)
-                    #     wf = wave.open(RecordFileName, 'wb')
-                    #     wf.setnchannels(1)
-                    #     wf.setsampwidth(2)
-                    #     wf.setframerate(16000)
-                    #     wf.writeframes(block)
-                    #     wf.close()
+                    # And now we're saving blocks that are not lover but with a low silence probability
+                    # for fine tuning
+                    # tired of running over to the bed to yell in your ear
+                    # if block_class == 'ignore' and block_prob < 0.96:
+                    #     wav_file = wave.open(f'training_wavs_finetune/{int(time.time()*100)}_finetune.wav', 'wb')
+                    #     wav_file.setnchannels(1)
+                    #     wav_file.setsampwidth(2)
+                    #     wav_file.setframerate(16000)
+                    #     wav_file.writeframes(block)
+                    #     wav_file.close()
 
                     # if it's me, aka lover, then get the proximity
                     if block_class == "lover":
@@ -864,15 +847,14 @@ class Wernicke(threading.Thread):
                         hey_honey({"class": "heard_unknown"})
                         # conversate.thread.Words('unknown') derp
 
-                        # # save the utterance to a wav file for debugging and QA
-                        # RecordTimeStamp = str(round(time.time(), 2)).replace('.', '')
-                        # RecordFileName = 'training_wavs_whisper/{0}.wav'.format(RecordTimeStamp)
-                        # wf = wave.open(RecordFileName, 'wb')
-                        # wf.setnchannels(1)
-                        # wf.setsampwidth(2)
-                        # wf.setframerate(16000)
-                        # wf.writeframes(AccumulatedData)
-                        # wf.close()
+                    # # save the utterance to a wav file for debugging and QA
+                    # os.makedirs(f'training_wavs_whisper/{time.strftime("%d")}/', exist_ok=True)
+                    # wav_file = wave.open(f'training_wavs_whisper/{time.strftime("%d")}/{int(time.time()*100)}.wav', 'wb')
+                    # wav_file.setnchannels(1)
+                    # wav_file.setsampwidth(2)
+                    # wav_file.setframerate(16000)
+                    # wav_file.writeframes(accumulated_data)
+                    # wav_file.close()
 
                 except EOFError:
                     log.wernicke.debug("Caught an EOFError. Killing everything dead.")

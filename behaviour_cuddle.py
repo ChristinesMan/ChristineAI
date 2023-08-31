@@ -158,7 +158,7 @@ class Behaviour(threading.Thread):
             #     breath.thread.QueueSound(FromCollection='', CutAllSoundAndPlay=True, Priority=7)
 
             else:
-                log.words.debug("Unmatched: %s", words)
+                log.behaviour.debug("Unmatched: %s", words)
 
                 SHARED_STATE.should_speak_chance += 0.04
                 breath.thread.queue_sound(

@@ -81,66 +81,58 @@ class Touch:
         Called to deliver new data point
         """
 
-        try:
-            # for all 12 channels
-            for channel in self.used_channels:
-                # save data in an array
-                self.data[channel][
-                    self.counter % self.baseline_data_length
-                ] = touch_data[channel]
+        # for all 12 channels
+        for channel in self.used_channels:
+            # save data in an array
+            self.data[channel][
+                self.counter % self.baseline_data_length
+            ] = touch_data[channel]
 
-                # Detect touches, and throw out glitches, dunno why that happens
-                if (
-                    self.baselines[channel] - touch_data[channel]
-                    > self.sensitivity[channel]
-                    and touch_data[channel] > 20
-                ):
-                    # if we got touched, it should imply I am near
-                    SHARED_STATE.lover_proximity = (
-                        (SHARED_STATE.lover_proximity * 5.0) + 1.0
-                    ) / 6.0
-                    log.touch.debug(
-                        "Touched: %s (%s)  LoverProximity: %s",
-                        self.channel_labels[channel],
-                        touch_data[channel],
-                        SHARED_STATE.lover_proximity,
-                    )
-
-                    # probably faster to test via int than the Str 'Mouth'
-                    # if channel == 2:
-                    # going to test out making sounds for cheeks, not only mouth
-                    SHARED_STATE.dont_speak_until = (
-                        time.time() + 2.0 + (random.random() * 3.0)
-                    )
-                    if SHARED_STATE.is_sleeping is False:
-                        breath.thread.queue_sound(
-                            from_collection="kissing",
-                            play_ignore_speaking=True,
-                            play_no_wait=True,
-                            priority=4,
-                        )
-                    sleep.thread.wake_up(0.05)
-                    # GlobalStatus.TouchedLevel += 0.1
-                    SHARED_STATE.should_speak_chance += 0.05
-
-            self.counter += 1
-
-            # every so often we want to update the baselines
-            # these normally should never change
-            if self.counter % self.baseline_data_length == 0:
-                for channel in self.used_channels:
-                    self.baselines[channel] = scipy.stats.mode(self.data[channel]).mode[
-                        0
-                    ]
-
-                log.touch.debug("Updated baselines: %s", self.baselines)
-
-        except Exception as ex:
-            log.main.error(
-                "Thread died. {0} {1} {2}".format(
-                    ex.__class__, ex, log.format_tb(ex.__traceback__)
+            # Detect touches, and throw out glitches, dunno why that happens
+            if (
+                self.baselines[channel] - touch_data[channel]
+                > self.sensitivity[channel]
+                and touch_data[channel] > 20
+            ):
+                # if we got touched, it should imply I am near
+                SHARED_STATE.lover_proximity = (
+                    (SHARED_STATE.lover_proximity * 5.0) + 1.0
+                ) / 6.0
+                log.touch.info(
+                    "Touched: %s (%s)  LoverProximity: %s",
+                    self.channel_labels[channel],
+                    touch_data[channel],
+                    SHARED_STATE.lover_proximity,
                 )
-            )
+
+                # probably faster to test via int than the Str 'Mouth'
+                # if channel == 2:
+                # going to test out making sounds for cheeks, not only mouth
+                SHARED_STATE.dont_speak_until = (
+                    time.time() + 2.0 + (random.random() * 3.0)
+                )
+                if SHARED_STATE.is_sleeping is False:
+                    breath.thread.queue_sound(
+                        from_collection="kissing",
+                        play_ignore_speaking=True,
+                        play_no_wait=True,
+                        priority=4,
+                    )
+                sleep.thread.wake_up(0.05)
+                # GlobalStatus.TouchedLevel += 0.1
+                SHARED_STATE.should_speak_chance += 0.05
+
+        self.counter += 1
+
+        # every so often we want to update the baselines
+        # these normally should never change
+        if self.counter % self.baseline_data_length == 0:
+            for channel in self.used_channels:
+                self.baselines[channel] = scipy.stats.mode(self.data[channel]).mode[
+                    0
+                ]
+
+            log.touch.debug("Updated baselines: %s", self.baselines)
 
 
 # instantiate and start thread

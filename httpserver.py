@@ -93,7 +93,7 @@ def posthoneysay():
         play_no_wait=True,
         priority=10,
     )
-    log.http.debug("Honey Say Request: %s", sound_id)
+    log.http.info("Honey Say Request: %s", sound_id)
     return "OK"
 
 

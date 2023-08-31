@@ -36,7 +36,7 @@ class Sleep(threading.Thread):
         self.wakefullness_avg_window = 5.0
 
         # How quickly should the daily hourly wakefulness trend change
-        self.trend_avg_window = 10.0
+        # self.trend_avg_window = 10.0
 
         # Weights
         self.weights_light = 6
@@ -121,7 +121,7 @@ class Sleep(threading.Thread):
             self.evaluate_wakefulness()
 
             # log it
-            log.sleep.debug(
+            log.sleep.info(
                 "LightLevel=%.2f  JostledLevel=%.2f  Tilt=%.2f  Time=%.2f  Environment=%.2f  Wakefulness=%.2f",
                 SHARED_STATE.light_level,
                 SHARED_STATE.jostled_level,
@@ -201,7 +201,7 @@ class Sleep(threading.Thread):
         SHARED_STATE.wakefulness = float(np.clip(SHARED_STATE.wakefulness, 0.0, 1.0))
 
         # log it
-        log.sleep.debug(
+        log.sleep.info(
             "Woke up a bit: %s  Wakefulness: %s", value, SHARED_STATE.wakefulness
         )
 
