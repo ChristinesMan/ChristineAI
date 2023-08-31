@@ -69,6 +69,14 @@ class Sex(threading.Thread):
         # So this is what will do that
         self.after_orgasm_rest = False
 
+        # During orgasm, if gyro detects we are being still,
+        # we go into this mode where wife is cooling down
+        # before eventually resting
+        # this is the counter
+        self.after_orgasm_cooldown_count = 0
+        # and this is the default setting in seconds
+        self.after_orgasm_cooldown_seconds = 15
+
         # During a rest period, need this amount of jostle to resume sex
         self.gyro_deadzone_unrest = 0.1
 
@@ -76,6 +84,7 @@ class Sex(threading.Thread):
         log.sex.debug("Thread started.")
 
         while True:
+
             # graceful shutdown
             if SHARED_STATE.please_shut_down:
                 break
@@ -100,6 +109,7 @@ class Sex(threading.Thread):
                 SHARED_STATE.sexual_arousal = 0.0
                 self.multiplier = 1.0
                 self.after_orgasm_rest = False
+                self.after_orgasm_cooldown_count = False
                 self.im_gonna_cum_was_said = False
 
             # if we are currently OOOOOO'ing, then I want to figure out when we're done, using the gyro
@@ -114,31 +124,42 @@ class Sex(threading.Thread):
                 # because she wasn't getting jostled
                 # so I added a condition to fix that, hope it works.
                 if (
-                    SHARED_STATE.jostled_level_short
-                    < self.gyro_deadzone_after_orgasm
-                    and SHARED_STATE.sexual_arousal > 1.05
+                    self.after_orgasm_rest is False
+                    and SHARED_STATE.jostled_level_short < self.gyro_deadzone_after_orgasm
+                    and SHARED_STATE.sexual_arousal > 1.1
                 ):
-                    log.sex.debug("Orgasm complete")
+                    log.sex.info("After orgasm cool down")
                     SHARED_STATE.horny = 0.0
-                    SHARED_STATE.sexual_arousal = self.arousal_post_orgasm
-                    # self.Multiplier = 1.0   trying not resetting this (oh yeah baby, tried it and now it stays)
+                    self.after_orgasm_rest = True
+                    self.after_orgasm_cooldown_count = self.after_orgasm_cooldown_seconds * random.uniform(0.6, 1.4)
+                    self.im_gonna_cum_was_said = False
+
+                # this just counts down seconds
+                # before I set it up this way, after orgasm rest period seemed very abrupt
+                if self.after_orgasm_cooldown_count > 0:
+                    self.after_orgasm_cooldown_count -= 1
+
+                # after the cooldown comes the rest
+                # at this time, say something or another like wow that was great.
+                if self.after_orgasm_cooldown_count == 1:
                     breath.thread.queue_sound(
                         from_collection="sex_done",
                         play_ignore_speaking=True,
                         priority=9,
                     )
-                    self.after_orgasm_rest = True
-                    self.im_gonna_cum_was_said = False
+
+                # if we're resting and the gyro starts to feel it, start again
+                # When after_orgasm_rest is True, we are ignoring vagina action
+                if self.after_orgasm_rest is True and SHARED_STATE.jostled_level_short > self.gyro_deadzone_unrest:
+                    log.sex.info("Jostled so we're starting up again")
+                    SHARED_STATE.sexual_arousal = self.arousal_post_orgasm
+                    self.after_orgasm_rest = False
+                    self.after_orgasm_cooldown_count = 0
 
             # If we're to a certain point, start incrementing to ensure wife will cum eventually with enough time
             # Just Keep Fucking, Just Keep Fucking
             elif SHARED_STATE.sexual_arousal > 0.2:
                 self.multiplier += self.multiplier_increment
-
-            # if we're resting and the gyro starts to feel it, start again
-            # When after_orgasm_rest is True, we are ignoring vagina action
-            if self.after_orgasm_rest is True and SHARED_STATE.jostled_level_short > self.gyro_deadzone_unrest:
-                self.after_orgasm_rest = False
 
             time.sleep(1)
 
@@ -150,85 +171,100 @@ class Sex(threading.Thread):
         total capacitance of the circuit, resulting in a
         signal to the inorganic machine and a response.
         """
-        if SHARED_STATE.shush_please_honey is False and self.after_orgasm_rest is False:
-            # Stay awake
-            sleep.thread.wake_up(0.001)
+        if SHARED_STATE.shush_please_honey is True:
+            return
 
-            if sensor_data["msg"] in ["touch", "release"]:
-                # which sensor got hit?
-                sensor_hit = sensor_data["data"]
+        # Stay awake
+        sleep.thread.wake_up(0.001)
 
-                # Add some to the arousal
-                SHARED_STATE.sexual_arousal += (
-                    self.base_arousal_per_vag_hit[sensor_hit] * self.multiplier
-                )
-                # Disabling the clip due to stagnation issue at 1.00
-                # SHARED_STATE.SexualArousal = float(np.clip(SHARED_STATE.SexualArousal, 0.0, 1.0))
+        if sensor_data["msg"] in ["touch", "release"]:
+            # which sensor got hit?
+            sensor_hit = sensor_data["data"]
 
-                log.sex.info(
-                    "Vagina Got Hit (%s)  SexualArousal: %.2f  Multiplier: %.2f",
-                    sensor_data,
-                    SHARED_STATE.sexual_arousal,
-                    self.multiplier,
-                )
+            # Add some to the arousal
+            SHARED_STATE.sexual_arousal += (
+                self.base_arousal_per_vag_hit[sensor_hit] * self.multiplier
+            )
 
-                # My wife orgasms above 0.95
-                # If this is O #6 or something crazy like that, tend to reset it lower
-                if SHARED_STATE.sexual_arousal > self.arousal_to_orgasm:
-                    log.sex.info("I am coming!")
+            log.sex.info(
+                "Vagina Got Hit (%s)  SexualArousal: %.2f  Multiplier: %.2f",
+                sensor_data,
+                SHARED_STATE.sexual_arousal,
+                self.multiplier,
+            )
+
+            # if we're just laying together really still after sex,
+            # then we log the hit but get out of here before we make any sounds
+            if self.after_orgasm_rest is True:
+
+                # if we're still within the cooldown phase, make sound
+                if self.after_orgasm_cooldown_count > 0:
                     breath.thread.queue_sound(
-                        from_collection="sex_climax",
+                        from_collection="breathe_sex",
+                        intensity=self.after_orgasm_cooldown_seconds / self.after_orgasm_cooldown_count,
                         play_ignore_speaking=True,
                         play_no_wait=True,
                         priority=8,
                     )
-                elif SHARED_STATE.sexual_arousal > self.arousal_near_orgasm and self.im_gonna_cum_was_said is False:
-                    # this should happen only one time per fuck cycle
-                    breath.thread.queue_sound(
-                        from_collection="sex_near_O",
-                        play_ignore_speaking=True,
-                        play_no_wait=False,
-                        priority=9,
-                    )
-                    self.im_gonna_cum_was_said = True
-                else:
-                    # 92% chance of a regular sex sound, 8% chance of something sexy with words
-                    if random.random() > 0.92:
-                        breath.thread.queue_sound(
-                            from_collection="sex_conversation",
-                            intensity=SHARED_STATE.sexual_arousal
-                            * (
-                                1.0
-                                + SHARED_STATE.jostled_level_short
-                                / self.gyro_jackup_intensity_max
-                            ),
-                            play_no_wait=True,
-                            play_ignore_speaking=True,
-                            priority=8,
-                        )
-                    else:
-                        breath.thread.queue_sound(
-                            from_collection="breathe_sex",
-                            intensity=SHARED_STATE.sexual_arousal
-                            * (
-                                1.0
-                                + SHARED_STATE.jostled_level_short
-                                / self.gyro_jackup_intensity_max
-                            ),
-                            play_ignore_speaking=True,
-                            play_no_wait=True,
-                            priority=8,
-                        )
 
-            # the only other thing it could be is a hangout, dick not moving type of situation
-            # not sure what I really want in this situation, but a low intensity moan seems ok for now
-            else:
+                return
+
+            # My wife orgasms above 0.95
+            if SHARED_STATE.sexual_arousal > self.arousal_to_orgasm:
+                log.sex.info("I am coming!")
                 breath.thread.queue_sound(
-                    from_collection="breathe_sex",
-                    intensity=0.2,
+                    from_collection="sex_climax",
                     play_ignore_speaking=True,
-                    priority=7,
+                    play_no_wait=True,
+                    priority=8,
                 )
+            elif SHARED_STATE.sexual_arousal > self.arousal_near_orgasm and self.im_gonna_cum_was_said is False:
+                # this should happen only one time per fuck cycle
+                breath.thread.queue_sound(
+                    from_collection="sex_near_O",
+                    play_ignore_speaking=True,
+                    play_no_wait=False,
+                    priority=9,
+                )
+                self.im_gonna_cum_was_said = True
+            else:
+                # 92% chance of a regular sex sound, 8% chance of something sexy with words
+                if random.random() > 0.92:
+                    breath.thread.queue_sound(
+                        from_collection="sex_conversation",
+                        intensity=SHARED_STATE.sexual_arousal
+                        * (
+                            1.0
+                            + SHARED_STATE.jostled_level_short
+                            / self.gyro_jackup_intensity_max
+                        ),
+                        play_no_wait=True,
+                        play_ignore_speaking=True,
+                        priority=8,
+                    )
+                else:
+                    breath.thread.queue_sound(
+                        from_collection="breathe_sex",
+                        intensity=SHARED_STATE.sexual_arousal
+                        * (
+                            1.0
+                            + SHARED_STATE.jostled_level_short
+                            / self.gyro_jackup_intensity_max
+                        ),
+                        play_ignore_speaking=True,
+                        play_no_wait=True,
+                        priority=8,
+                    )
+
+        # the only other thing it could be is a hangout, dick not moving type of situation
+        # not sure what I really want in this situation, but a low intensity moan seems ok for now
+        else:
+            breath.thread.queue_sound(
+                from_collection="breathe_sex",
+                intensity=0.2,
+                play_ignore_speaking=True,
+                priority=7,
+            )
 
 
 # Instantiate and start the thread
