@@ -16,6 +16,9 @@ re_wake_up = re.compile(
 re_sleep = re.compile(
     "go to sleep", flags=re.IGNORECASE
 )
+re_stoplistening = re.compile(
+    "stop listening", flags=re.IGNORECASE
+)
 re_rusleeping = re.compile(
     "are you (asleep|sleeping)", flags=re.IGNORECASE
 )
@@ -46,11 +49,14 @@ re_cuddle = re.compile(
 # openai whisper seems to have been trained using a lot of youtube videos that always say thanks for watching
 # and for some reason it's also very knowledgeable about anime
 re_garbage = re.compile(
-    "thank.+watching|Satsang|Mooji", flags=re.IGNORECASE
+    r"thank.+watching|Satsang|Mooji|^ \.$|^ Bark!$|PissedConsumer\.com|Beadaholique\.com|^ you$|^ re$|^ GASP$|^ I'll see you in the next video\.$|thevenusproject", flags=re.IGNORECASE
 )
 re_sad = re.compile(
     "i.+sorry|i.+tired|i.+sad", flags=re.IGNORECASE
 )
 re_thanks = re.compile(
     "thank you|thanks", flags=re.IGNORECASE
+)
+re_shutdown = re.compile(
+    "(shutdown|shut down|turn off) your (brain|pie|pi)", flags=re.IGNORECASE
 )

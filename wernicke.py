@@ -88,7 +88,7 @@ class Wernicke(threading.Thread):
             elif comm["class"] == "speaking_stop":
                 # I seem to have found the sweet spot with the delays. I feel lke I can finish my sentences and she waits properly
                 SHARED_STATE.dont_speak_until = (
-                    time.time() + 1.5 + (random.random() * 2.0)
+                    time.time() + 0.5 + (random.random() * 2.0)
                 )
                 log.sound.debug("SpeakingStop")
 
@@ -137,6 +137,13 @@ class Wernicke(threading.Thread):
         """
         log.wernicke.info("Stopped Wernicke processing")
         self.to_away_team.send({"msg": "stop_processing"})
+
+    def audio_processing_pause(self, num_of_blocks):
+        """
+        Pause the processing of new audio data for a specified number of 0.25s blocks
+        """
+        log.wernicke.info("Pausing Wernicke processing")
+        self.to_away_team.send({"msg": "pause_processing", "num_of_blocks": num_of_blocks})
 
     def away_team(self, to_enterprise):
         """
@@ -372,6 +379,8 @@ class Wernicke(threading.Thread):
                         processing_state = True
                     elif comm["msg"] == "stop_processing":
                         processing_state = False
+                    elif comm["msg"] == "pause_processing":
+                        head_mic.pause_processing = comm["num_of_blocks"]
                     elif comm["msg"] == "server_update":
                         audio_server.server_update(
                             server_name=comm["server_info"]["server_name"],
@@ -442,7 +451,7 @@ class Wernicke(threading.Thread):
                         # trend proximity towards far away, slowly, using this running average
                         # I am going to test disabling this. So if we're close together on the bed, and I don't speak for a while, it'll stay what it was.
                         # After a long time I wondered why she was always so quiet, so trying it back on
-                        proximity = ((proximity * 800.0) + 1.0) / 801.0
+                        proximity = ((proximity * 900.0) + 1.0) / 901.0
 
                         # send sensor data to main process. Feel like I'm passing a football.
                         # Proximity local var can be less than 0.0 or higher than 1.0, but we clip it before passing up to the main process
@@ -701,7 +710,7 @@ class Wernicke(threading.Thread):
                         )
 
                         # update running average
-                        proximity = ((proximity * 3.0) + proximity_now) / 4.0
+                        proximity = ((proximity * 2.0) + proximity_now) / 3.0
 
                     else:
                         log.wernicke.debug(
@@ -827,15 +836,15 @@ class Wernicke(threading.Thread):
                 try:
                     if audio_server.is_connected is True:
                         log.wernicke.debug("The server appears to be still alive")
-                        if SHARED_STATE.is_sleeping is False:
-                            log.wernicke.debug("Sending utterance to server.")
-                            audio_server.transcribe(accumulated_data)
+                        # if SHARED_STATE.is_sleeping is False:
+                        log.wernicke.debug("Sending utterance to server.")
+                        audio_server.transcribe(accumulated_data)
 
-                        else:
-                            log.wernicke.debug(
-                                "Threw away %s blocks as I am sleeping",
-                                accumulated_blocks,
-                            )
+                        # else:
+                        #     log.wernicke.debug(
+                        #         "Threw away %s blocks as I am sleeping",
+                        #         accumulated_blocks,
+                        #     )
 
                     # if the server is not available, no further processing, just send over a general I heard some unknown words
                     else:

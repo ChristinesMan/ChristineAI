@@ -1,5 +1,6 @@
 """The behaviour when nothing much is going on."""
 
+import os
 import time
 import threading
 
@@ -7,6 +8,7 @@ import log
 from status import SHARED_STATE
 import breath
 import sleep
+import wernicke
 # pylint: disable=wildcard-import,unused-wildcard-import
 from behaviour_ree import *
 
@@ -58,6 +60,18 @@ class Behaviour(threading.Thread):
             breath.thread.queue_sound(
                 from_collection="yes", play_no_wait=True, priority=7
             )
+
+        elif re_shutdown.search(words):
+            breath.thread.queue_sound(
+                from_collection="shutting_down",
+                play_no_wait=True,
+                priority=9,
+                play_sleeping=True,
+                play_ignore_speaking=True,
+                play_ignore_shush=True,
+            )
+            time.sleep(4)
+            os.system("poweroff")
 
         elif re_ruawake.search(words):
             if SHARED_STATE.is_sleeping is False:
@@ -119,18 +133,23 @@ class Behaviour(threading.Thread):
                 self.next_behaviour = "cuddle"
 
             elif re_sleep.search(words):
+                SHARED_STATE.wernicke_sleeping = True
+                wernicke.thread.audio_processing_stop()
                 sleep.thread.wake_up(-100.0)
+                breath.thread.queue_sound(
+                    from_collection="goodnight",
+                    play_no_wait=True,
+                    play_sleeping=True,
+                    priority=9,
+                )
+
+            elif re_stoplistening.search(words):
+                wernicke.thread.audio_processing_stop()
                 breath.thread.queue_sound(
                     from_collection="uh_huh",
                     play_no_wait=True,
                     play_sleeping=True,
                     priority=9,
-                )
-                breath.thread.queue_sound(
-                    from_collection="goodnight",
-                    play_no_wait=True,
-                    play_sleeping=True,
-                    priority=8,
                 )
 
             elif re_rutired.search(words):
@@ -144,7 +163,7 @@ class Behaviour(threading.Thread):
                     )
 
             elif re_ru_ok.search(words):
-                if SHARED_STATE.cpu_temp >= 62:
+                if SHARED_STATE.cpu_temp >= 67:
                     breath.thread.queue_sound(
                         from_collection="no", play_no_wait=True, priority=7
                     )

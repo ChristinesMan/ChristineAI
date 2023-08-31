@@ -57,7 +57,7 @@ class Sleep(threading.Thread):
         self.time = 0.0
 
         # At what time should we expect to be in bed or wake up?
-        self.wake_hour = 6
+        self.wake_hour = 8
         self.sleep_hour = 21
 
         # at what point are we tired

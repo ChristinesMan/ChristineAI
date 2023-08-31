@@ -10,6 +10,7 @@ from collections import deque
 import random
 from multiprocessing import Process, Pipe
 import wave
+from math import ceil
 
 # Note: I installed the latest version from the repo, not using pip
 # pylint: disable=c-extension-no-member
@@ -18,6 +19,7 @@ import alsaaudio
 import log
 from status import SHARED_STATE
 import sounds
+import wernicke
 
 
 class Breath(threading.Thread):
@@ -250,9 +252,17 @@ class Breath(threading.Thread):
             inter_word_silence = []
 
         # Some sounds have tempo variations. If so randomly choose one, otherwise it'll just be 0.wav
+        wav_file = f'./sounds_processed/{self.current_sound["id"]}/{self.tempo_multipliers[random_tempo]}.wav'
+
+        # let the ears know that the mouth is going to emit noises
+        # this is a temporary kludge. I need to make this better.
+        if not "breathe_" in self.current_sound["name"]:
+            wernicke.thread.audio_processing_pause(ceil(( os.stat(wav_file).st_size / 88272 ) / 0.25))
+
+        # send the message to the subprocess
         self.to_shuttlecraft.send(
             {
-                "wavfile": f'./sounds_processed/{self.current_sound["id"]}/{self.tempo_multipliers[random_tempo]}.wav',
+                "wavfile": wav_file,
                 "vol": volume,
                 "insert_silence_here": inter_word_silence,
             }
