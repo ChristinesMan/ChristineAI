@@ -143,7 +143,7 @@ class SausageFactory(threading.Thread):
             # "Go to Beadaholique.com for all of your beading supplies needs!"
             # Um, I would never say such ridiculous things.
             for transcribe_segment in transcribe_result["segments"]:
-                if transcribe_segment["no_speech_prob"] > 35.0:
+                if transcribe_segment["no_speech_prob"] > 0.5:
                     log.info(
                         "DROP due to no_speech_prob %s%%: %s",
                         int(transcribe_segment["no_speech_prob"] * 100),
