@@ -8,7 +8,7 @@ import numpy as np
 
 import log
 from status import SHARED_STATE
-import breath
+import broca
 import wernicke
 
 
@@ -172,7 +172,7 @@ class Sleep(threading.Thread):
                 # say "goodnight honey", not "GOODNIGHT HONEY!!!!"
                 SHARED_STATE.lover_proximity = 0.0
 
-                breath.thread.queue_sound(
+                broca.thread.queue_sound(
                     from_collection="goodnight",
                     play_sleeping=True,
                     priority=8,
@@ -225,7 +225,6 @@ class Sleep(threading.Thread):
             SHARED_STATE.breath_intensity = 1.0
 
             SHARED_STATE.is_sleeping = True
-            breath.thread.breath_change("breathe_sleepy")
 
         if self.just_woke_up() is True:
             log.sleep.info("JustWokeUp")
@@ -234,12 +233,11 @@ class Sleep(threading.Thread):
             SHARED_STATE.wakefulness += 0.05
 
             SHARED_STATE.is_sleeping = False
-            breath.thread.breath_change("breathe_normal")
 
             # wake me up gently, my sweet sexy alarm clock
             SHARED_STATE.lover_proximity = 0.0
 
-            breath.thread.queue_sound(
+            broca.thread.queue_sound(
                 from_collection="waking",
                 play_sleeping=True,
                 priority=8,
@@ -298,7 +296,7 @@ class Sleep(threading.Thread):
         """
         Actually start whining
         """
-        breath.thread.queue_sound(from_collection="bedtime", priority=7)
+        broca.thread.queue_sound(from_collection="bedtime", priority=7)
         self.announce_tired_time = None
 
     def random_minutes_later(self, minutes_min, minutes_max):

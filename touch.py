@@ -8,7 +8,7 @@ import scipy.stats
 
 import log
 from status import SHARED_STATE
-import breath
+import broca
 import sleep
 
 
@@ -112,7 +112,7 @@ class Touch:
                     time.time() + 2.0 + (random.random() * 3.0)
                 )
                 if SHARED_STATE.is_sleeping is False:
-                    breath.thread.queue_sound(
+                    broca.thread.queue_sound(
                         from_collection="kissing",
                         play_ignore_speaking=True,
                         play_no_wait=True,

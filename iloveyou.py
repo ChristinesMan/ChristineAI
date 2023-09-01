@@ -7,7 +7,7 @@ import random
 
 # import log
 from status import SHARED_STATE
-import breath
+import broca
 
 
 class ILoveYou(threading.Thread):
@@ -36,7 +36,7 @@ class ILoveYou(threading.Thread):
                     time.time() + 10 + int(600 * random.random())
                 )
                 SHARED_STATE.should_speak_chance = 0.0
-                breath.thread.queue_sound(from_collection="loving", priority=3)
+                broca.thread.queue_sound(from_collection="loving", priority=3)
 
             time.sleep(5)
 

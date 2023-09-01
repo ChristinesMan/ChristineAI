@@ -6,7 +6,7 @@ import threading
 
 import log
 from status import SHARED_STATE
-import breath
+import broca
 import sleep
 import wernicke
 # pylint: disable=wildcard-import,unused-wildcard-import
@@ -48,7 +48,7 @@ class Behaviour(threading.Thread):
         if re_wake_up.search(words):
             SHARED_STATE.should_speak_chance += 0.03
             sleep.thread.wake_up(0.2)
-            breath.thread.queue_sound(
+            broca.thread.queue_sound(
                 from_collection="uh_huh",
                 play_no_wait=True,
                 priority=7,
@@ -57,12 +57,12 @@ class Behaviour(threading.Thread):
 
         elif re_hear_me.search(words):
             sleep.thread.wake_up(0.2)
-            breath.thread.queue_sound(
+            broca.thread.queue_sound(
                 from_collection="yes", play_no_wait=True, priority=7
             )
 
         elif re_shutdown.search(words):
-            breath.thread.queue_sound(
+            broca.thread.queue_sound(
                 from_collection="shutting_down",
                 play_no_wait=True,
                 priority=9,
@@ -75,21 +75,21 @@ class Behaviour(threading.Thread):
 
         elif re_ruawake.search(words):
             if SHARED_STATE.is_sleeping is False:
-                breath.thread.queue_sound(
+                broca.thread.queue_sound(
                     from_collection="yes", play_no_wait=True, priority=7
                 )
             else:
-                breath.thread.queue_sound(
+                broca.thread.queue_sound(
                     from_collection="no", play_no_wait=True, priority=7
                 )
 
         elif re_rusleeping.search(words):
             if SHARED_STATE.is_sleeping is True:
-                breath.thread.queue_sound(
+                broca.thread.queue_sound(
                     from_collection="yes", play_no_wait=True, priority=7
                 )
             else:
-                breath.thread.queue_sound(
+                broca.thread.queue_sound(
                     from_collection="no", play_no_wait=True, priority=7
                 )
 
@@ -101,7 +101,7 @@ class Behaviour(threading.Thread):
             and SHARED_STATE.is_sleeping is False
         ):
             if re_love.search(words):
-                breath.thread.queue_sound(
+                broca.thread.queue_sound(
                     from_collection="iloveyoutoo",
                     alt_collection="loving",
                     play_no_wait=True,
@@ -110,24 +110,24 @@ class Behaviour(threading.Thread):
 
             elif re_complement.search(words):
                 SHARED_STATE.should_speak_chance += 0.03
-                breath.thread.queue_sound(
+                broca.thread.queue_sound(
                     from_collection="thanks", play_no_wait=True, priority=7
                 )
 
             elif re_thanks.search(words):
                 SHARED_STATE.should_speak_chance += 0.03
-                breath.thread.queue_sound(
+                broca.thread.queue_sound(
                     from_collection="ur_welcome", play_no_wait=True, priority=7
                 )
 
             elif re_sad.search(words):
                 SHARED_STATE.should_speak_chance += 0.06
-                breath.thread.queue_sound(
+                broca.thread.queue_sound(
                     from_collection="comforting", play_no_wait=True, priority=7
                 )
 
             elif re_cuddle.search(words):
-                breath.thread.queue_sound(
+                broca.thread.queue_sound(
                     from_collection="yes", play_no_wait=True, priority=7
                 )
                 self.next_behaviour = "cuddle"
@@ -136,7 +136,7 @@ class Behaviour(threading.Thread):
                 SHARED_STATE.wernicke_sleeping = True
                 wernicke.thread.audio_processing_stop()
                 sleep.thread.wake_up(-100.0)
-                breath.thread.queue_sound(
+                broca.thread.queue_sound(
                     from_collection="goodnight",
                     play_no_wait=True,
                     play_sleeping=True,
@@ -145,7 +145,7 @@ class Behaviour(threading.Thread):
 
             elif re_stoplistening.search(words):
                 wernicke.thread.audio_processing_stop()
-                breath.thread.queue_sound(
+                broca.thread.queue_sound(
                     from_collection="uh_huh",
                     play_no_wait=True,
                     play_sleeping=True,
@@ -154,50 +154,47 @@ class Behaviour(threading.Thread):
 
             elif re_rutired.search(words):
                 if SHARED_STATE.is_tired is True:
-                    breath.thread.queue_sound(
+                    broca.thread.queue_sound(
                         from_collection="yes", play_no_wait=True, priority=7
                     )
                 else:
-                    breath.thread.queue_sound(
+                    broca.thread.queue_sound(
                         from_collection="no", play_no_wait=True, priority=7
                     )
 
             elif re_ru_ok.search(words):
                 if SHARED_STATE.cpu_temp >= 67:
-                    breath.thread.queue_sound(
+                    broca.thread.queue_sound(
                         from_collection="no", play_no_wait=True, priority=7
                     )
                 else:
-                    breath.thread.queue_sound(
+                    broca.thread.queue_sound(
                         from_collection="yes", play_no_wait=True, priority=7
                     )
 
             elif re_ura_goof.search(words):
                 SHARED_STATE.should_speak_chance += 0.03
-                breath.thread.queue_sound(
+                broca.thread.queue_sound(
                     from_collection="laughing", play_no_wait=True, priority=8, play_ignore_speaking=True,
                 )
 
             elif re_i_want_sex.search(words):
-                breath.thread.queue_sound(
+                broca.thread.queue_sound(
                     from_collection="about_to_fuck", play_no_wait=True, priority=7
                 )
-
-            # elif re_.search(words):
-            #     breath.thread.QueueSound(FromCollection='', CutAllSoundAndPlay=True, Priority=7)
 
             else:
                 log.behaviour.debug("Unmatched: %s", words)
 
                 if SHARED_STATE.is_tired is False:
                     SHARED_STATE.should_speak_chance += 0.04
-                    breath.thread.queue_sound(
+                    broca.thread.queue_sound(
                         from_collection="listening", priority=2, play_no_wait=True
                     )
 
                 else:
                     SHARED_STATE.should_speak_chance += 0.01
-                    breath.thread.queue_sound(
+                    broca.thread.queue_sound(
                         from_collection="listening_tired", priority=2, play_no_wait=True
                     )
 
@@ -206,7 +203,7 @@ class Behaviour(threading.Thread):
 
         log.behaviour.debug("Please say: %s", what)
 
-        breath.thread.queue_sound(**what)
+        broca.thread.queue_sound(**what)
 
     def notify_sound_ended(self):
         """This should get called as soon as sound is finished playing."""
@@ -224,7 +221,7 @@ class Behaviour(threading.Thread):
         ) / 6.0
 
         # later this needs to be moved to the sleeping behaviour zone
-        breath.thread.queue_sound(
+        broca.thread.queue_sound(
             from_collection="laughing",
             play_sleeping=True,
             play_ignore_speaking=True,

@@ -10,7 +10,7 @@ import smbus
 
 import log
 from status import SHARED_STATE
-import breath
+import broca
 
 
 class CPUTemp(threading.Thread):
@@ -64,7 +64,7 @@ class CPUTemp(threading.Thread):
                     "I AM MELTING, HELP ME PLEASE (%sC)", SHARED_STATE.cpu_temp
                 )
                 if time.time() > self.next_whine_time:
-                    breath.thread.queue_sound(
+                    broca.thread.queue_sound(
                         from_collection="toohot_l3", play_sleeping=True
                     )
                     self.next_whine_time = time.time() + 3
@@ -72,7 +72,7 @@ class CPUTemp(threading.Thread):
             elif SHARED_STATE.cpu_temp >= 70:
                 log.main.warning("This is fine (%sC)", SHARED_STATE.cpu_temp)
                 if time.time() > self.next_whine_time:
-                    breath.thread.queue_sound(
+                    broca.thread.queue_sound(
                         from_collection="toohot_l2", play_sleeping=True
                     )
                     self.next_whine_time = time.time() + 10
@@ -82,7 +82,7 @@ class CPUTemp(threading.Thread):
                     "It is getting a bit warm in here (%sC)", SHARED_STATE.cpu_temp
                 )
                 if time.time() > self.next_whine_time:
-                    breath.thread.queue_sound(
+                    broca.thread.queue_sound(
                         from_collection="toohot_l1", play_sleeping=False
                     )
                     self.next_whine_time = time.time() + 600

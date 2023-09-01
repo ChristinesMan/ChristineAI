@@ -1,5 +1,6 @@
 """
-Handles emitting sounds
+Handles emitting sounds and speech synthesis.
+Broca's area is the part of the brain responsible for speech. 
 """
 import sys
 import os
@@ -23,14 +24,14 @@ import sounds
 import wernicke
 
 
-class Breath(threading.Thread):
+class Broca(threading.Thread):
     """
     This thread is where the sounds are actually output.
     Christine is always breathing at all times.
     Except when I'm working on her.
     """
 
-    name = "Breath"
+    name = "Broca"
 
     def __init__(self):
         threading.Thread.__init__(self)
@@ -52,9 +53,6 @@ class Breath(threading.Thread):
 
         # A queue to queue stuff
         self.queue_breath = deque()
-
-        # Controls what sort of breathing, basically filler for when no other sounds play
-        self.breath_style = "breathe_normal"
 
         # Setup an audio channel
         # self.SoundChannel = pygame.mixer.Channel(0) (pygame SEGV'd and got chucked)
@@ -102,6 +100,8 @@ class Breath(threading.Thread):
                 self.current_sound = {'id': 10000, 'name': 'omgcool/icantalk.wav', 'base_volume_adjust': 1.0, 'proximity_volume_adjust': 1.0, 'intensity': 1.0, 'cuteness': 0.5, 'tempo_range': 0.0, 'replay_wait': 0, 'inter_word_silence': '[]', 'SkipUntil': 1693416833.8523135, 'cutsound': True, 'priority': 9, 'playsleeping': False, 'ignorespeaking': False, 'ignoreshush': False, 'delayer': 0, 'is_playing': False}
                 log.sound.info("Playing immediately: %s", self.current_sound)
                 self.play()
+
+
 
             # Get everything out of the queue and process it
             while len(self.queue_breath) != 0:
@@ -199,7 +199,7 @@ class Breath(threading.Thread):
         """
         Select a random breath sound when there is nothing else going on.
         """
-        self.current_sound = sounds.collections[self.breath_style].get_random_sound(
+        self.current_sound = sounds.collections['breathe_normal'].get_random_sound(
             intensity=SHARED_STATE.breath_intensity
         )
         self.current_sound.update(
@@ -282,14 +282,6 @@ class Breath(threading.Thread):
         # let stuff know this sound is playing, not just waiting in line
         self.current_sound["is_playing"] = True
 
-    # I really ought to just abandon this type stuff anyway and sort them by intensity. Later.
-    def breath_change(self, new_type):
-        """
-        Change the style of automatic breath sounds. Normal / sleepy, etc
-        """
-        log.sound.debug("Breath style changed to %s", new_type)
-        self.breath_style = new_type
-
     def queue_sound(
         self,
         sound=None,
@@ -344,8 +336,8 @@ class Breath(threading.Thread):
         try:
 
             # capture any errors
-            sys.stdout = open(f"./logs/{os.getpid()}_breath.out", "w", buffering=1, encoding="utf-8", errors='ignore')
-            sys.stderr = open(f"./logs/{os.getpid()}_breath.err", "w", buffering=1, encoding="utf-8", errors='ignore')
+            sys.stdout = open(f"./logs/broca_{os.getpid()}.out", "w", buffering=1, encoding="utf-8", errors='ignore')
+            sys.stderr = open(f"./logs/broca_{os.getpid()}.err", "w", buffering=1, encoding="utf-8", errors='ignore')
 
             # calculate some stuff
             # All the wav files are forced to the same format during preprocessing, currently stereo 44100
@@ -511,6 +503,6 @@ class Breath(threading.Thread):
 
 
 # Instantiate and start the thread
-thread = Breath()
+thread = Broca()
 thread.daemon = True
 thread.start()

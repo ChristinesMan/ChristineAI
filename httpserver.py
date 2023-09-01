@@ -10,7 +10,7 @@ from bottle import TEMPLATE_PATH, route, run, template, request, static_file  # 
 import log
 from status import SHARED_STATE
 import sounds
-import breath
+import broca
 import sleep
 import wernicke
 
@@ -86,7 +86,7 @@ def getupload():
 @route("/Honey_Say", method="POST")
 def posthoneysay():
     sound_id = request.forms.get("sound_id")
-    breath.thread.queue_sound(
+    broca.thread.queue_sound(
         sound=sounds.soundsdb.get_sound(sound_id=sound_id),
         play_sleeping=True,
         play_ignore_speaking=True,
@@ -113,7 +113,7 @@ def postnewsound():
     upload.save(f"sounds_master/{newname}")
     new_sound_id = sounds.soundsdb.new_sound(newname)
     sounds.soundsdb.reprocess(new_sound_id)
-    breath.thread.queue_sound(
+    broca.thread.queue_sound(
         sound=sounds.soundsdb.get_sound(sound_id=new_sound_id),
         play_sleeping=True,
         play_ignore_speaking=True,
@@ -149,7 +149,7 @@ def postbasevolchange():
     log.main.info("Base Volume Change: %s (new volume %s)", sound_id, volume)
     sounds.soundsdb.update(sound_id=sound_id, base_volume_adjust=volume)
     sounds.soundsdb.reprocess(sound_id=sound_id)
-    breath.thread.queue_sound(
+    broca.thread.queue_sound(
         sound=sounds.soundsdb.get_sound(sound_id=sound_id),
         play_sleeping=True,
         play_ignore_speaking=True,

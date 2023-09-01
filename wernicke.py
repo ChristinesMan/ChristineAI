@@ -154,14 +154,14 @@ class Wernicke(threading.Thread):
 
         # capture any errors
         sys.stdout = open(
-            f"./logs/{os.getpid()}_wernicke.out",
+            f"./logs/wernicke_{os.getpid()}.out",
             "w",
             buffering=1,
             encoding="utf-8",
             errors="ignore",
         )
         sys.stderr = open(
-            f"./logs/{os.getpid()}_wernicke.err",
+            f"./logs/wernicke_{os.getpid()}.err",
             "w",
             buffering=1,
             encoding="utf-8",

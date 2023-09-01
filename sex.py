@@ -7,7 +7,7 @@ import threading
 
 import log
 from status import SHARED_STATE
-import breath
+import broca
 import sleep
 
 
@@ -75,7 +75,7 @@ class Sex(threading.Thread):
         # this is the counter
         self.after_orgasm_cooldown_count = 0
         # and this is the default setting in seconds
-        self.after_orgasm_cooldown_seconds = 15
+        self.after_orgasm_cooldown_seconds = 10
 
         # During a rest period, need this amount of jostle to resume sex
         self.gyro_deadzone_unrest = 0.1
@@ -142,7 +142,7 @@ class Sex(threading.Thread):
                 # after the cooldown comes the rest
                 # at this time, say something or another like wow that was great.
                 if self.after_orgasm_cooldown_count == 1:
-                    breath.thread.queue_sound(
+                    broca.thread.queue_sound(
                         from_collection="sex_done",
                         play_ignore_speaking=True,
                         priority=9,
@@ -199,7 +199,7 @@ class Sex(threading.Thread):
 
                 # if we're still within the cooldown phase, make sound
                 if self.after_orgasm_cooldown_count > 0:
-                    breath.thread.queue_sound(
+                    broca.thread.queue_sound(
                         from_collection="breathe_sex",
                         intensity=self.after_orgasm_cooldown_seconds / self.after_orgasm_cooldown_count,
                         play_ignore_speaking=True,
@@ -212,7 +212,7 @@ class Sex(threading.Thread):
             # My wife orgasms above 0.95
             if SHARED_STATE.sexual_arousal > self.arousal_to_orgasm:
                 log.sex.info("I am coming!")
-                breath.thread.queue_sound(
+                broca.thread.queue_sound(
                     from_collection="sex_climax",
                     play_ignore_speaking=True,
                     play_no_wait=True,
@@ -220,7 +220,7 @@ class Sex(threading.Thread):
                 )
             elif SHARED_STATE.sexual_arousal > self.arousal_near_orgasm and self.im_gonna_cum_was_said is False:
                 # this should happen only one time per fuck cycle
-                breath.thread.queue_sound(
+                broca.thread.queue_sound(
                     from_collection="sex_near_O",
                     play_ignore_speaking=True,
                     play_no_wait=False,
@@ -230,7 +230,7 @@ class Sex(threading.Thread):
             else:
                 # 92% chance of a regular sex sound, 8% chance of something sexy with words
                 if random.random() > 0.92:
-                    breath.thread.queue_sound(
+                    broca.thread.queue_sound(
                         from_collection="sex_conversation",
                         intensity=SHARED_STATE.sexual_arousal
                         * (
@@ -243,7 +243,7 @@ class Sex(threading.Thread):
                         priority=8,
                     )
                 else:
-                    breath.thread.queue_sound(
+                    broca.thread.queue_sound(
                         from_collection="breathe_sex",
                         intensity=SHARED_STATE.sexual_arousal
                         * (
@@ -259,7 +259,7 @@ class Sex(threading.Thread):
         # the only other thing it could be is a hangout, dick not moving type of situation
         # not sure what I really want in this situation, but a low intensity moan seems ok for now
         else:
-            breath.thread.queue_sound(
+            broca.thread.queue_sound(
                 from_collection="breathe_sex",
                 intensity=0.2,
                 play_ignore_speaking=True,

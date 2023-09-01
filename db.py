@@ -42,11 +42,7 @@ class ChristineDB:
 
         # log exception in the db.log
         except Exception as ex:
-            log.db.error(
-                "Database error. {0} {1} {2}  Query: {3}".format(
-                    ex.__class__, ex, log.format_tb(ex.__traceback__), query
-                )
-            )
+            log.db.error("Database error. %s %s %s  Query: %s", ex.__class__, ex, log.format_tb(ex.__traceback__), query)
             return None
 
     def field_names_for_table(self, table):
@@ -70,11 +66,7 @@ class ChristineDB:
 
         # log exception in the db.log
         except Exception as ex:
-            log.db.error(
-                "Database error. {0} {1} {2}  Query: {3}".format(
-                    ex.__class__, ex, log.format_tb(ex.__traceback__), query
-                )
-            )
+            log.db.error("Database error. %s %s %s  Query: %s", ex.__class__, ex, log.format_tb(ex.__traceback__), query)
             return None
 
     def do_commit(self):
@@ -87,11 +79,7 @@ class ChristineDB:
 
         # log exception in the db.log
         except Exception as ex:
-            log.db.error(
-                "Database error (commit). {0} {1} {2}".format(
-                    ex.__class__, ex, log.format_tb(ex.__traceback__)
-                )
-            )
+            log.db.error("Database error (commit). %s %s %s", ex.__class__, ex, log.format_tb(ex.__traceback__))
 
 
 # Instantiate

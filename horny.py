@@ -7,7 +7,7 @@ import numpy as np
 
 import log
 from status import SHARED_STATE
-import breath
+import broca
 
 
 class Horny(threading.Thread):
@@ -89,7 +89,7 @@ class Horny(threading.Thread):
                         # please fuck me
                         log.horny.info("Asking for sex.")
                         self.time_last_asked = time.time()
-                        breath.thread.queue_sound(
+                        broca.thread.queue_sound(
                             from_collection="i_am_so_horny",
                             intensity=SHARED_STATE.horny,
                             priority=8,
