@@ -90,7 +90,7 @@ class Behaviour(threading.Thread):
 
         if (
             SHARED_STATE.shush_please_honey is False
-            and SHARED_STATE.sexual_arousal < 0.1
+            and SHARED_STATE.shush_fucking is False
             and SHARED_STATE.is_sleeping is False
         ):
             if re_love.search(words):

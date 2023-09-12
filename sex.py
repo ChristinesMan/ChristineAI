@@ -78,7 +78,7 @@ class Sex(threading.Thread):
         self.after_orgasm_cooldown_seconds = 10
 
         # During a rest period, need this amount of jostle to resume sex
-        self.gyro_deadzone_unrest = 0.1
+        self.gyro_deadzone_unrest = 0.09
 
     def run(self):
         log.sex.debug("Thread started.")
@@ -107,6 +107,7 @@ class Sex(threading.Thread):
                 log.sex.info("Arousal stagnated and was reset")
                 self.arousal_stagnant_count = 0
                 SHARED_STATE.sexual_arousal = 0.0
+                SHARED_STATE.shush_fucking = False
                 self.multiplier = 1.0
                 self.after_orgasm_rest = False
                 self.after_orgasm_cooldown_count = False
@@ -130,6 +131,7 @@ class Sex(threading.Thread):
                 ):
                     log.sex.info("After orgasm cool down")
                     SHARED_STATE.horny = 0.0
+                    SHARED_STATE.shush_fucking = False
                     self.after_orgasm_rest = True
                     self.after_orgasm_cooldown_count = self.after_orgasm_cooldown_seconds * random.uniform(0.6, 1.4)
                     self.im_gonna_cum_was_said = False
@@ -153,6 +155,7 @@ class Sex(threading.Thread):
                 if self.after_orgasm_rest is True and SHARED_STATE.jostled_level_short > self.gyro_deadzone_unrest:
                     log.sex.info("Jostled so we're starting up again")
                     SHARED_STATE.sexual_arousal = self.arousal_post_orgasm
+                    SHARED_STATE.shush_fucking = True
                     self.after_orgasm_rest = False
                     self.after_orgasm_cooldown_count = 0
 
@@ -197,17 +200,20 @@ class Sex(threading.Thread):
             # then we log the hit but get out of here before we make any sounds
             if self.after_orgasm_rest is True:
 
-                # if we're still within the cooldown phase, make sound
+                # if we're still within the cooldown phase, make sound, with intensity dropping out with time
                 if self.after_orgasm_cooldown_count > 0:
                     broca.thread.queue_sound(
                         from_collection="breathe_sex",
                         intensity=self.after_orgasm_cooldown_seconds / self.after_orgasm_cooldown_count,
                         play_ignore_speaking=True,
                         play_no_wait=True,
-                        priority=8,
+                        priority=6,
                     )
 
                 return
+
+            # if we got this far without bailing, it means we're having sex, not resting, so stop talking like normal
+            SHARED_STATE.shush_fucking = True
 
             # My wife orgasms above 0.95
             if SHARED_STATE.sexual_arousal > self.arousal_to_orgasm:

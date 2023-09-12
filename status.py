@@ -76,6 +76,9 @@ class Status(threading.Thread):
         # A way to prevent talking, called a shush, not now honey
         self.shush_please_honey = False
 
+        # Best I could think of to prevent normal conversation during sex, except during rest periods
+        self.shush_fucking = False
+
         # I was getting woke up a lot with all the cute hmmm sounds that are in half of the sleeping breath sounds
         # And that's how this got here. We may want to refine this later, too.
         # After sex we could ramp this up and taper it down gradually
