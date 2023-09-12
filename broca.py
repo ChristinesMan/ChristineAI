@@ -23,7 +23,6 @@ from status import SHARED_STATE
 import sounds
 import wernicke
 
-
 class Broca(threading.Thread):
     """
     This thread is where the sounds are actually output.
@@ -52,7 +51,7 @@ class Broca(threading.Thread):
         ]
 
         # A queue to queue stuff
-        self.queue_breath = deque()
+        self.sound_queue = deque()
 
         # Setup an audio channel
         # self.SoundChannel = pygame.mixer.Channel(0) (pygame SEGV'd and got chucked)
@@ -82,12 +81,13 @@ class Broca(threading.Thread):
         self.shuttlecraft_process.start()
 
     def run(self):
-        log.sound.info("Thread started.")
+        log.broca.info("Thread started.")
 
         while True:
+
             # graceful shutdown
             if SHARED_STATE.please_shut_down:
-                log.sound.info("Thread shutting down")
+                log.broca.info("Thread shutting down")
                 self.to_shuttlecraft.send({"wavfile": "selfdestruct", "vol": 0})
                 break
 
@@ -98,14 +98,14 @@ class Broca(threading.Thread):
                 os.rename('/root/play_this.wav', '/root/sounds_processed/10000/0.wav')
 
                 self.current_sound = {'id': 10000, 'name': 'omgcool/icantalk.wav', 'base_volume_adjust': 1.0, 'proximity_volume_adjust': 1.0, 'intensity': 1.0, 'cuteness': 0.5, 'tempo_range': 0.0, 'replay_wait': 0, 'inter_word_silence': '[]', 'SkipUntil': 1693416833.8523135, 'cutsound': True, 'priority': 9, 'playsleeping': False, 'ignorespeaking': False, 'ignoreshush': False, 'delayer': 0, 'is_playing': False}
-                log.sound.info("Playing immediately: %s", self.current_sound)
+                log.broca.info("Playing immediately: %s", self.current_sound)
                 self.play()
 
 
 
             # Get everything out of the queue and process it
-            while len(self.queue_breath) != 0:
-                incoming_sound = self.queue_breath.popleft()
+            while len(self.sound_queue) != 0:
+                incoming_sound = self.sound_queue.popleft()
 
                 # If the current thing is higher priority, just discard.
                 # Before this I had to kiss her just right, not too much.
@@ -124,8 +124,9 @@ class Broca(threading.Thread):
                             if (
                                 incoming_sound["cutsound"] is True
                                 and incoming_sound["ignorespeaking"] is True
+                                and incoming_sound["synth_wait"] is False
                             ):
-                                log.sound.debug("Playing immediately: %s", incoming_sound)
+                                log.broca.debug("Playing immediately: %s", incoming_sound)
                                 self.current_sound = incoming_sound
                                 self.play()
                             elif (
@@ -133,24 +134,24 @@ class Broca(threading.Thread):
                                 or incoming_sound["priority"]
                                 > self.delayed_sound["priority"]
                             ):
-                                log.sound.debug("Accepted: %s", incoming_sound)
+                                log.broca.debug("Accepted: %s", incoming_sound)
                                 if self.delayed_sound is not None:
-                                    log.sound.debug(
+                                    log.broca.debug(
                                         "Threw away delayed sound: %s",
                                         self.delayed_sound,
                                     )
                                     self.delayed_sound = None
                                 self.current_sound = incoming_sound
                             else:
-                                log.sound.debug(
+                                log.broca.debug(
                                     "Discarded (delayed sound): %s", incoming_sound
                                 )
                         else:
-                            log.sound.debug("Discarded (shush): %s", incoming_sound)
+                            log.broca.debug("Discarded (shush): %s", incoming_sound)
                     else:
-                        log.sound.debug("Discarded (sleeping): %s", incoming_sound)
+                        log.broca.debug("Discarded (sleeping): %s", incoming_sound)
                 else:
-                    log.sound.debug("Discarded (priority): %s", incoming_sound)
+                    log.broca.debug("Discarded (priority): %s", incoming_sound)
 
             # This will block here until the shuttlecraft sends a true/false which is whether the sound is still playing.
             # The shuttlecraft will send this every 0.2s, which will setup the approapriate delay
@@ -162,13 +163,14 @@ class Broca(threading.Thread):
                 # if we're here, it means there's no sound actively playing
                 # If there's a sound that couldn't play when it came in, and it can be played now, put it into CurrentSound
                 # all of this shit is going in the trash when I get Behavior zones started
+                # I need to rework all of this awful messy shit
                 if self.delayed_sound is not None and (
                     time.time() > SHARED_STATE.dont_speak_until
                     or self.delayed_sound["ignorespeaking"] is True
                 ):
                     self.current_sound = self.delayed_sound
                     self.delayed_sound = None
-                    log.sound.debug(
+                    log.broca.debug(
                         "Moved delayed to current: %s", self.current_sound
                     )
 
@@ -183,18 +185,19 @@ class Broca(threading.Thread):
                 else:
                     # If the sound is not a breath but it's not time to speak, save the sound for later and queue up another breath
                     if (
-                        self.current_sound["ignorespeaking"] is True
-                        or time.time() > SHARED_STATE.dont_speak_until
+                        (self.current_sound["ignorespeaking"] is True
+                        or time.time() > SHARED_STATE.dont_speak_until)
+                        and self.current_sound["synth_wait"] is False
                     ):
                         self.play()
                     else:
-                        log.sound.debug("Sound delayed due to DontSpeakUntil block")
+                        log.broca.debug("Sound delayed")
                         self.delayed_sound = self.current_sound
                         self.delayed_sound["delayer"] = 0
                         self.choose_new_breath()
                         self.play()
 
-
+#  or self.current_sound["synth_wait"] is True:
     def choose_new_breath(self):
         """
         Select a random breath sound when there is nothing else going on.
@@ -211,15 +214,16 @@ class Broca(threading.Thread):
                 "ignoreshush": True,
                 "delayer": random.randint(3, 7),
                 "is_playing": False,
+                "synth_wait": False,
             }
         )
-        log.sound.debug("Chose breath: %s", self.current_sound)
+        log.broca.debug("Chose breath: %s", self.current_sound)
 
     def play(self):
         """
         Start playing that sound
         """
-        log.sound.info("Playing: %s", self.current_sound)
+        log.broca.info("Playing: %s", self.current_sound)
 
         # Now that we're actually playing the sound,
         # tell the sound collection to not play it for a while
@@ -285,6 +289,7 @@ class Broca(threading.Thread):
     def queue_sound(
         self,
         sound=None,
+        text=None,
         from_collection=None,
         alt_collection=None,
         intensity=None,
@@ -298,17 +303,29 @@ class Broca(threading.Thread):
         """
         Add a sound to the queue to be played
         """
+
+        # if we're playing a sound object directly, make sure to add the... thing... it's late
+        if sound is not None:
+            sound['synth_wait'] = False
+
         # if we're playing a sound from a collection, go fetch that rando
         if sound is None and from_collection is not None:
             sound = sounds.collections[from_collection].get_random_sound(
                 intensity=intensity
             )
 
-        # If a collection is empty, or no sounds available at this time, it's possible to get a None sound. So try one more time.
+        # if we still didn't get a sound defined, maybe it's a synthesized sound we wanted
+        # This sound object will be quickly returned although the actual audio will be processing on the server
+        # When the audio data is actually generated and ready to play, the synth_wait will get flipped
+        if sound is None and text is not None:
+            sound = sounds.soundsdb.get_sound_synthesis(text=text, alt_collection=alt_collection)
+
+        # If a collection is empty, or no sounds available at this time, it's possible to get a None sound. So try one more time in the alt collection.
         if sound is None and alt_collection is not None:
             sound = sounds.collections[alt_collection].get_random_sound(
                 intensity=intensity
             )
+            from_collection = alt_collection
 
         # if fail, just chuck it. No sound for you
         if sound is not None:
@@ -326,7 +343,8 @@ class Broca(threading.Thread):
                     "is_playing": False,
                 }
             )
-            self.queue_breath.append(sound)
+            self.sound_queue.append(sound)
+
 
     def shuttlecraft(self, to_starship):
         """
@@ -404,11 +422,11 @@ class Broca(threading.Thread):
                 # So basically, if there's something in the pipe, get it all out
                 if to_starship.poll():
                     comms = to_starship.recv()
-                    log.sound.debug("Shuttlecraft received: %s", comms)
+                    log.broca.debug("Shuttlecraft received: %s", comms)
 
                     # graceful shutdown
                     if comms["wavfile"] == "selfdestruct":
-                        log.sound.info("Shuttlecraft self destruct activated.")
+                        log.broca.info("Shuttlecraft self destruct activated.")
                         break
 
                     # the volume gets set before each sound is played

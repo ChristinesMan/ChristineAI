@@ -30,6 +30,7 @@
             <li>Sounds</li>
             <li>Collections</li>
             <li>Upload</li>
+            <li>Text To Speech</li>
         </ul>
 
         <div class="content_wrapper">
@@ -42,6 +43,8 @@
           <div class="tab_content" endpoint="/collections">
           </div>
           <div class="tab_content" endpoint="/upload">
+          </div>
+          <div class="tab_content" endpoint="/tts">
           </div>
       </div>
     </div>

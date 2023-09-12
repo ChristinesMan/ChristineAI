@@ -82,7 +82,7 @@ class Wernicke(threading.Thread):
             # This is just a message to let wife know that I am now speaking and to wait until I'm finished
             if comm["class"] == "speaking_start":
                 SHARED_STATE.dont_speak_until = time.time() + 30.0
-                log.sound.debug("SpeakingStart")
+                log.broca.debug("SpeakingStart")
 
             # Husband isn't speaking anymore, so go ahead and say what you gotta say
             elif comm["class"] == "speaking_stop":
@@ -90,7 +90,7 @@ class Wernicke(threading.Thread):
                 SHARED_STATE.dont_speak_until = (
                     time.time() + 0.5 + (random.random() * 2.0)
                 )
-                log.sound.debug("SpeakingStop")
+                log.broca.debug("SpeakingStop")
 
             # Words from the speech recognition server
             elif comm["class"] == "words":

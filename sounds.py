@@ -6,10 +6,177 @@ import sys
 import time
 import random
 import math
+import wave
+import threading
+from multiprocessing.managers import BaseManager
+import queue
 import numpy as np
 
 import log
 import db
+import broca
+
+
+# magic as far as I'm concerned
+# A fine black box
+class TTSServerManager(BaseManager):
+    """Black box stuff"""
+
+    pass  # pylint: disable=unnecessary-pass
+
+class MyTTSServer(threading.Thread):
+    """
+    A server on the local network will be running a service that will accept text and return speech.
+
+    I had some issues because we're still using python3.6 on this old pi, and python3.9/10/11 on the servers.
+    Python3.6 hashes the challenge response thing using md5. Others use sha256.
+    So this is my ugly hack:
+    sed -i "s/'md5'/'sha256'/g" /usr/local/lib/python3.6/multiprocessing/connection.py
+    Bitch.
+    """
+
+    name = "MyTTSServer"
+
+    def __init__(self):
+
+        threading.Thread.__init__(self)
+
+        # init these to make linter happy
+        self.server_name = None
+        self.server_host = None
+        self.server_rating = 0
+        self.manager = None
+        self.text_queue = queue.Queue(maxsize=30)
+        self.audio_queue = queue.Queue(maxsize=30)
+        self.server_shutdown = False
+        self.is_connected = False
+
+    def run(self):
+
+        while True:
+
+            if self.is_connected is True:
+
+                # get something out of the queue if there's anything. Don't block.
+                # I admit this is kludgy af
+                # this entire mess needs to be redesigned from scratch
+                try:
+                    result_sound = self.audio_queue.get_nowait()
+
+                    wav_file = wave.open(f"sounds_master/{result_sound['name']}", "wb")
+                    wav_file.setnchannels(1)
+                    wav_file.setsampwidth(2)
+                    wav_file.setframerate(44100)
+                    wav_file.writeframes(result_sound['audio_data'])
+                    wav_file.close()
+                    soundsdb.reprocess(sound_id=result_sound['id'])
+                    if broca.thread.delayed_sound is not None:
+                        broca.thread.delayed_sound['synth_wait'] = False
+                    if broca.thread.current_sound is not None:
+                        broca.thread.current_sound['synth_wait'] = False
+
+                except (BrokenPipeError, EOFError) as ex:
+                    log.broca.warning("Server went away. %s", ex)
+                    self.destroy_manager()
+
+                except Exception: # pylint: disable=broad-exception-caught
+                    pass
+
+            time.sleep(0.5)
+
+    def connect_manager(self):
+        """Connect the manager thing"""
+
+        try:
+
+            log.broca.info("Connecting to %s", self.server_host)
+            self.manager = TTSServerManager(
+                address=(self.server_host, 10000), authkey=b'fuckme',
+            )
+            self.manager.register("get_text_queue")
+            self.manager.register("get_audio_queue")
+            self.manager.register("get_server_shutdown")
+            self.manager.connect()
+
+            self.text_queue = (
+                self.manager.get_text_queue() # pylint: disable=no-member
+            )
+            self.audio_queue = (
+                self.manager.get_audio_queue() # pylint: disable=no-member
+            )
+            self.server_shutdown = (
+                self.manager.get_server_shutdown() # pylint: disable=no-member
+            )
+            log.broca.debug("Connected")
+            self.is_connected = True
+
+        except Exception as ex: # pylint: disable=broad-exception-caught
+
+            log.broca.error("Connect failed. %s", ex)
+            self.destroy_manager()
+
+    def destroy_manager(self):
+        """Disconnect and utterly destroy the manager"""
+
+        self.is_connected = False
+
+        try:
+            del self.text_queue
+        except AttributeError:
+            pass
+
+        try:
+            del self.audio_queue
+        except AttributeError:
+            pass
+
+        try:
+            del self.manager
+        except AttributeError:
+            pass
+
+        self.server_name = None
+        self.server_host = None
+        self.server_rating = 0
+        self.manager = None
+
+    def server_update(self, server_name: str, server_host: str, server_rating: int):
+        """This is called when another machine other than myself says hi"""
+
+        log.broca.debug("%s/%s/%s Current: %s", server_name, server_host, server_rating, self.server_rating)
+
+        if server_rating > self.server_rating:
+
+            log.broca.debug("Accepted. %s/%s/%s Current: %s", server_name, server_host, server_rating, self.server_rating)
+
+            if self.is_connected is True:
+                self.destroy_manager()
+
+            self.server_name = server_name
+            self.server_host = server_host
+            self.server_rating = server_rating
+
+            self.connect_manager()
+
+        else:
+            log.broca.debug("Rejected. %s/%s/%s Current: %s", server_name, server_host, server_rating, self.server_rating)
+
+    def synthesize(self, text):
+        """Accepts a bit of text to get some speech synthesis done"""
+
+        try:
+            self.text_queue.put(text, block=False)
+            log.broca.debug("Put this on the synthesis queue: %s. Queue sizes: %s / %s", text, self.text_queue.qsize(), self.audio_queue.qsize())
+        except queue.Full:
+            log.broca.error("The remote queue is full, wtf")
+            self.server_shutdown = True
+            time.sleep(1)
+            self.destroy_manager()
+        except (BrokenPipeError, EOFError) as ex:
+            log.broca.error("Server error. %s", ex)
+            self.destroy_manager()
+        except AttributeError:
+            pass
 
 
 class SoundsDB:
@@ -25,6 +192,18 @@ class SoundsDB:
         # This grabs the field names so that it's easier to assign the value of fields to keys or something like that
         self.db_field_names = db.conn.field_names_for_table("sounds")
 
+        # load all the sounds and index by the text column
+        # this is for speech synthesis
+        self.sounds_by_text = {}
+        for sound_with_text in self.all_with_text():
+            sound_with_text['synth_wait'] = False
+            self.sounds_by_text[sound_with_text['text']] = sound_with_text
+
+        # When this class starts, it won't be connected to a server yet
+        self.tts_server = MyTTSServer()
+        self.tts_server.daemon = True
+        self.tts_server.start()
+
     def get_sound(self, sound_id):
         """
         Returns a sound from the database as a dict.
@@ -39,6 +218,36 @@ class SoundsDB:
             sound[field_name] = rows[0][field_id]
         return sound
 
+    def get_sound_synthesis(self, text, alt_collection = None):
+        """
+        Returns a sound as a dict. If the text of the sound already exists, return the cached sound.
+        Otherwise, if a voice synthesis server is available, send to the server, return the sound, 
+        and update the sound when the synthesized audio is available. 
+        """
+
+        # if there's already a synthesized sound, use the same cached stuff and return it
+        if text in self.sounds_by_text:
+            self.sounds_by_text[text]['synth_wait'] = False
+            return self.sounds_by_text[text]
+
+        # if there's no cached sound and there's no server available, then we try finding something in collections
+        if self.tts_server.is_connected is False:
+            if alt_collection is not None:
+                return collections[alt_collection].get_random_sound()
+            else:
+                return None
+
+        # so if we are connected to the server.. send it over there but don't wait. The broca module will do the waiting.
+        else:
+
+            text_stripped = text.replace(' ', '_').replace("'", '').replace('?', '').replace('!', '').lower().strip()
+            sound_name = f"synths/{text_stripped}.wav"
+            sound_id = self.new_sound(new_path=sound_name, text=text_stripped, tempo_range=0.0, base_volume_adjust=10.0)
+            new_sound = {'id': sound_id, 'name': sound_name, 'text': text, 'base_volume_adjust': 10.0, 'proximity_volume_adjust': 1.0, 'intensity': 1.0, 'cuteness': 0.5, 'tempo_range': 0.0, 'replay_wait': 0, 'inter_word_silence': '[]', 'synth_wait': True}
+            self.sounds_by_text[text] = new_sound
+            self.tts_server.synthesize(new_sound)
+            return new_sound
+
     def all(self):
         """
         Return a list of all sounds in the database. Called when building the web interface only, pretty much, so far.
@@ -52,6 +261,22 @@ class SoundsDB:
             for field_name, field_id in self.db_field_names.items():
                 sound[field_name] = row[field_id]
             sounds.append(sound)
+        return sounds
+
+    def all_with_text(self):
+        """
+        Return a list of all sounds in the database with any text in the text column. Used for the sounds_by_text var
+        """
+
+        rows = db.conn.do_query("SELECT * FROM sounds WHERE text NOT NULL")
+        sounds = []
+        if rows is not None:
+            for row in rows:
+                sound = {}
+                for field_name, field_id in self.db_field_names.items():
+                    sound[field_name] = row[field_id]
+                sound["synth_wait"] = False
+                sounds.append(sound)
         return sounds
 
     def update(
@@ -94,12 +319,12 @@ class SoundsDB:
             )
         db.conn.do_commit()
 
-    def new_sound(self, new_path):
+    def new_sound(self, new_path, text = "", tempo_range = 0.0, base_volume_adjust = 1.0):
         """
         Add a new sound to the database. Returns the new sound id. The new file will already be there.
         """
 
-        db.conn.do_query(f"INSERT INTO sounds (id,name) VALUES (NULL, '{new_path}')")
+        db.conn.do_query(f"INSERT INTO sounds (id,name,text,tempo_range,base_volume_adjust) VALUES (NULL, '{new_path}', '{text}', {tempo_range}, {base_volume_adjust})")
         db.conn.do_commit()
         rows = db.conn.do_query(f"SELECT id FROM sounds WHERE name = '{new_path}'")
         if rows is None:
@@ -141,7 +366,10 @@ class SoundsDB:
         sound_tempo_range = the_sound["tempo_range"]
 
         # Delete the old processed sound
-        os.system(f"rm -rf ./sounds_processed/{sound_id}/*.wav")
+        try:
+            os.system(f"rm -rf ./sounds_processed/{sound_id}/*.wav")
+        except Exception: # pylint: disable=broad-exception-caught
+            pass
 
         # Create the destination directory
         os.makedirs(f"./sounds_processed/{sound_id}", exist_ok=True)
@@ -181,7 +409,10 @@ class SoundsDB:
         )
         log.main.info("Downsampled %s tempo 0 (%s)", sound_id, exit_status)
 
-        exit_status = os.system("rm -f ./sounds_processed/%s/tmp_*", sound_id)
+        try:
+            exit_status = os.system("rm -f ./sounds_processed/%s/tmp_*", sound_id)
+        except Exception: # pylint: disable=broad-exception-caught
+            pass
         log.main.info("Removed tmp files for %s (%s)", sound_id, exit_status)
 
     def amplify_master_sounds(self):
@@ -257,6 +488,8 @@ class SoundsDB:
 
         Reading this months later. OMG this is stupid.
         OMG this is awful!
+
+        Reading it again a year later. Omg this is shit! SHAME!
         """
 
         skip = 54
@@ -543,10 +776,11 @@ class SoundCollection:
         for sound_id in self.sound_ids:
             if sound_id is not None:
                 sound = soundsdb.get_sound(sound_id=sound_id)
-                if sound is not None:
+                if sound is not None and os.path.exists(f'./sounds_processed/{sound_id}/0.wav') is True:
                     sound["SkipUntil"] = time.time() + (
                         sound["replay_wait"] * random.uniform(0.0, 1.2)
                     )
+                    sound['synth_wait'] = False
                     self.sounds_in_collection.append(sound)
                 else:
                     log.main.warning(
@@ -609,7 +843,7 @@ class SoundCollection:
 
         # There may be times that we run out of available sounds and have to throw a None
         if len(self.sounds_available_to_play) == 0:
-            log.sound.warning("No sounds available to play in %s", self.name)
+            log.broca.warning("No sounds available to play in %s", self.name)
             return None
 
         # if the desired intensity is specified, we want to only select sounds near that intensity
@@ -624,11 +858,12 @@ class SoundCollection:
                 if math.isclose(sound["intensity"], intensity, abs_tol=0.25):
                     sounds_near_intensity.append(sound)
             if len(sounds_near_intensity) == 0:
-                log.sound.warning(
+                log.broca.warning(
                     "No sounds near intensity %s in %s", intensity, self.name
                 )
                 return None
             rando_sound = random.choice(sounds_near_intensity)
+            rando_sound['synth_wait'] = False
 
         return rando_sound
 
@@ -639,7 +874,7 @@ class SoundCollection:
 
         for sound in self.sounds_in_collection:
             if sound["id"] == sound_id:
-                log.sound.debug("Made unavailable: %s", sound)
+                log.broca.debug("Made unavailable: %s", sound)
                 sound["SkipUntil"] = time.time() + (
                     sound["replay_wait"] * random.uniform(0.8, 1.2)
                 )
@@ -647,7 +882,7 @@ class SoundCollection:
                 try:
                     self.sounds_available_to_play.remove(sound)
                 except ValueError:
-                    log.sound.warning("ValueError happened when removing this sound: %s", sound)
+                    log.broca.warning("ValueError happened when removing this sound: %s", sound)
                 break
 
 
