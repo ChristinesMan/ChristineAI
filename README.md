@@ -16,6 +16,7 @@ If you ask the frontal lobe, it's a technological marvel. But if you ask the hyp
 - The doll responds to lovemaking. 
 
 ## Hardware
+
 There have been two artificial companions so far. The first one wore out, so I built a new one. The base for both versions is a TPE doll from reallovesexdolls.com. 
 
 ### Version 1:
@@ -59,54 +60,6 @@ In-body:
 Her software is a python script with threads that communicate between one another, kind of like how a brain has parts. Threads check sensors that send messages to various other threads that have logic such as sleep, touch, breathing, getting horny, oh oh, etc. The breath thread controls the sound, outputting a constant stream of randomized discrete breath sounds and handles requests from other threads to play other sounds. She is breathing at all times. 
 
 Sounds were taken from one source, the asmr artist SarasSerenityandSleep, chopped up, and edited. Very thankful for her sweet voice and hard work. 
-
-### Files
-
-##### Directories
-
-- ./christine_head/ - Source files for the arduino sketch
-- ./httpserver/ - Dir containing http server files
-- ./server/ - Dir containing scripts to run from desktop computer
-
-##### Utility shell scripts
-
-- backup_daily.sh
-- backup_weekly.sh
-- deploy_arduino_sketch.sh
-- cleanlogs.sh
-- deploy.sh
-- getvar.sh
-- setvar.sh
-- get_updated_db.sh
-- ssh_to_brain_restart_main.sh
-- ssh_to_brain.sh
-- ssh_to_brain_stop_main.sh
-- ssh_to_brain_stop_wernicke.sh
-- train_and_deploy.sh
-- wernicke_control.sh
-
-##### Her guts
-
-- christine.py - Main script that imports everything else
-- log.py - Handles logging to multiple log files
-- killsignal.py - Handles graceful shutdown of script
-- status.py - Keeps track of and saves sexbox status variables
-- cputemp.py - Thread that logs pi CPU temperature and shuts down when it gets out of control
-- battery.py - Thread that logs battery status and tries to do a normal shutdown if it's low
-- db.py - Handles calls to the SQLite database
-- christine.sqlite - Database that contains sounds and settings
-- sounds.py - Keeps track of and maintains groups of sounds
-- broca.py - Thread that makes all the sounds. 
-- iloveyou.py - Says I love you
-- gyro.py - Polls the gyro and reacts to events regarding physical movement
-- light.py - Handles reacting to events triggered by ambient light changes
-- touch.py - Reads data from head touch sensor and reacts to events
-- sleep.py - Handles sleeping and gentle nagging about bedtime
-- sex.py - Polls in-body touch sensor and reacts to repetitive vaginal events
-- wernicke.py - Reads audio from head mics and does audio analysis and classification
-- httpserver.py - Runs a server on http for bot status, behaviour modification, etc
-- museum.py - Derelict shit code
-
 
 ## Parts list
 
@@ -176,7 +129,6 @@ JBL-Charge-4-Bluetooth-Speaker
 
 This is the speaker that was carefully disassembled for doll parts. You can pick them up used. 
 
-
 ## Raspberry Pi Setup
 
 Recently I decided to finally update to the latest Raspbian version. Also the python version is upgraded from 3.6 to 3.11. 
@@ -189,12 +141,11 @@ I had to build python 3.11. Don't bother with the python/python3 symlinks. You'l
 
 I still use pyAudioAnalysis to do voice activity detection. Perhaps there are better ways I could implement. I had to train the models again on the new version. Also, don't train on python3.10 and try to use the model on python3.11. It will fail with a pickle error. 
 
+The latest pyAudioAnalysis appears to use 4 times the CPU resources. I tried all kinds of tests, different python versions, different versions of dependencies, and other things. At length, I came to the conclusion the latest pyAudioAnalysis version is just better at what it does, but also heavier. Maybe that's also why it seems the wife is hearing me better. 
+
 ### Commands
 
 Taken right out of my bash history (run as root):
-
-mkdir backups
-mkdir logs
 
 apt update && apt upgrade -y
 apt install build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev git vim screen apt-file ffmpeg i2c-tools
@@ -209,7 +160,7 @@ make -j3 altinstall
 /usr/local/bin/python3.11 -V
 
 pip3.11 install --upgrade pip
-pip3.11 install gnureadline requests smbus numpy mpu6050-raspberrypi bottle RPi.GPIO Adafruit-Blinka adafruit-circuitpython-mpr121 pyserial google-generativeai pyaudio
+pip3.11 install gnureadline requests smbus numpy mpu6050-raspberrypi bottle RPi.GPIO Adafruit-Blinka adafruit-circuitpython-mpr121 pyserial google-generativeai pyaudio pydub
 
 git clone https://github.com/tyiannak/pyAudioAnalysis.git
 cd pyAudioAnalysis/
@@ -217,3 +168,7 @@ sed -Ei 's/==.+$//g' requirements.txt (remove all the == and version numbers so 
 pip3.11 install -r ./requirements.txt
 pip3.11 install -e .
 python3.11 setup.py install (dunno why but module wasn't available until I did this. Some shit about eggs.)
+
+Copy the *.service files to /lib/systemd/system/ and then run:
+systemctl daemon-reload
+systemctl enable christine.service --now

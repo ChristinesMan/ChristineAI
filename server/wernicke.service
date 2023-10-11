@@ -1,9 +1,0 @@
-[Unit]
-Description=Christine's Wernicke
-
-[Service]
-Type=simple
-ExecStart=/bin/bash /usr/bin/wernicke.sh
-
-[Install]
-WantedBy=multi-user.target

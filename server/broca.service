@@ -1,9 +1,0 @@
-[Unit]
-Description=Christine's Broca
-
-[Service]
-Type=simple
-ExecStart=/bin/bash /usr/bin/broca.sh
-
-[Install]
-WantedBy=multi-user.target
