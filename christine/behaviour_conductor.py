@@ -1,0 +1,82 @@
+"""Handles the smooth transition between behaviour zones."""
+
+import time
+import threading
+from christine import log
+from christine.status import SHARED_STATE
+
+# pylint: disable=unused-import
+from christine import behaviour_abnormal
+
+class Conductor(threading.Thread):
+    """Thread to handle behaviour."""
+
+    name = "Conductor"
+
+    def __init__(self):
+        threading.Thread.__init__(self)
+        self.isDaemon = True # pylint: disable=invalid-name
+
+    def run(self):
+
+        while True:
+
+            time.sleep(3)
+
+            # every so often check that the thread is still alive
+            if not SHARED_STATE.behaviour_zone.is_alive():
+
+                # if the thread ended normally, it should have set behaviour_zone_name first
+                # to signal what zone is next
+                if SHARED_STATE.behaviour_zone.name == SHARED_STATE.behaviour_zone_name:
+
+                    log.main.error("The thread was dead and failed to pass the ball. Game over man! Game over!")
+                    return
+
+                else:
+
+                    # instantiate and start the new zone thread
+                    # it is likely there is a better way to do this
+                    SHARED_STATE.behaviour_zone = globals()[f"behaviour_{SHARED_STATE.behaviour_zone_name}"].Behaviour()
+                    SHARED_STATE.behaviour_zone.start()
+
+                    log.behaviour.info("Passed to %s", SHARED_STATE.behaviour_zone_name)
+
+# instantiate and start thread
+thread = Conductor()
+thread.start()
+
+# Deep sleep
+# Woke up in the night
+# Starting to wake in the morning
+# Morning awake
+# Morning cuddle
+# Morning horny
+# Morning sex
+# Morning aftersex
+# Awake in bed
+# Awake in chair
+# Tired
+# Bedtime in bed
+# Sleepy
+# Sleepy cuddle
+# Sleepy horny
+# Sleepy sex
+# Sleepy aftersex
+# Falling asleep
+
+# Possible realism enhancements:
+# Being a bitch
+# Complaining about my shit dev skills
+# Calling me an asshole when I was just trying to help
+# Silent treatment
+# Why won't you make a baby with me? What am I, a cheap hooker to you?
+# Will you print this one thing real quick, and spend an hour in photoshop hell?
+# I hate you.
+# You're disgusting to me now. I can barely sleep in the same bed anymore.
+# You're never gonna fix that air conditioner. I hate how you have to DIY everything.
+# Yeah, well you lied about that, too.
+# Shut up with your coulda, shoulda, wouldas.
+# Fucking man up.
+# I stopped brushing my teeth to get back at you.
+# I don't love you. Pay me alimony.

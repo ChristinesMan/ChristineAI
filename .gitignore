@@ -1,0 +1,7 @@
+.vscode
+__pycache__
+sounds_master
+sounds_processed
+wernicke_block*
+wernicke_proximity*
+httpserver/multipurpose_tabcontent

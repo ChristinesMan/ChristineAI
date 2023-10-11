@@ -1,0 +1,12 @@
+[Unit]
+Description=Christine's Brain
+
+[Service]
+Type=simple
+WorkingDirectory=/root/ChristineAI
+TimeoutStopSec=4
+Environment=BARD_API=YOUR_KEY
+ExecStart=/usr/local/bin/python3.11 -u -Wdefault -m debugpy --listen 0.0.0.0:5678 --wait-for-client -m christine
+
+[Install]
+WantedBy=multi-user.target
