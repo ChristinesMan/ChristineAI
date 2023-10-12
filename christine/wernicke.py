@@ -96,10 +96,6 @@ class Wernicke(threading.Thread):
             elif comm["class"] == "words":
                 SHARED_STATE.behaviour_zone.notify_words(comm["text"])
 
-            # The speech recognition server is unavailable, so we heard something unknown
-            elif comm["class"] == "heard_unknown":
-                SHARED_STATE.behaviour_zone.notify_words("unknown")
-
             # the audio data contains embedded sensor and voice proximity data
             elif comm["class"] == "sensor_data":
                 light.thread.new_data(comm["light"])
@@ -153,8 +149,8 @@ class Wernicke(threading.Thread):
         """
 
         # capture any errors
-        sys.stdout = open(f"/root/logs/subprocess_wernicke_{os.getpid()}.out", "w", buffering=1, encoding="utf-8", errors="ignore")
-        sys.stderr = open(f"/root/logs/subprocess_wernicke_{os.getpid()}.err", "w", buffering=1, encoding="utf-8", errors="ignore")
+        sys.stdout = open(f"./logs/subprocess_wernicke_{os.getpid()}.out", "w", buffering=1, encoding="utf-8", errors="ignore")
+        sys.stderr = open(f"./logs/subprocess_wernicke_{os.getpid()}.err", "w", buffering=1, encoding="utf-8", errors="ignore")
 
         # If we're recording, this holds the message from the enterprise containing file data. If not recording, contains None
         recording_state = None
@@ -509,7 +505,6 @@ class Wernicke(threading.Thread):
                         # wf.writeframes(data)
                         # wf.close()
 
-                        # log.wernicke.debug('Discarded audio data.')
                         self.pause_processing -= 1
 
         # instantiate and start the thread
@@ -556,11 +551,6 @@ class Wernicke(threading.Thread):
                     _,
                 ] = aT.load_model("wernicke_proximity", is_regression=True)
 
-                # var to keep track of which ear seems best based on loudness
-                # However, one ear seems to be plugged or something so we just use one.
-                # By chance the ear I face in bed is the good one.
-                # self.LeftRightRatio = 1.0
-
             def read(self):
                 """Return a block of audio data, blocking if necessary."""
 
@@ -570,6 +560,8 @@ class Wernicke(threading.Thread):
                 # first we get 2 channels from the serial port
                 # 16000 bytes is 4000 frames or 0.25s
                 # and we're also amplifying here
+                # I should really run some real tests to nail down what amplification is best for accuracy
+                # Seriously, I threw in "24" and maybe listened to a sample, that's it
                 in_audio = (
                     AudioSegment(
                         data=buffer_queue.get(),
@@ -643,19 +635,6 @@ class Wernicke(threading.Thread):
                     # Convert or cast the raw audio data to numpy array
                     block_np = np.frombuffer(block, np.int16)
 
-                    # # Try to reject quick loud clicky sounds
-                    # # trying this out disabled. I don't want gaps.
-                    # maximum = (np.abs(block_np)).max()
-                    # mean = (np.abs(block_np)).mean()
-                    # avg_vs_max = mean / maximum
-
-                    # # if the block contains a huge but quick spike (a click) then drop it and skip this block
-                    # if avg_vs_max <= 0.075:
-
-                    #     log.wernicke.info(f'Dropped possible clicking noise. {mean} / {maximum} = {avg_vs_max}')
-                    #     continue
-
-                    # log.wernicke.debug('block classify')
                     # Run the classifier. This is ripped directly out of paura.py and carelessly sutured into place. There's so much blood! Thank you!!!
                     [block_mt_feats, _, _] = mF.mid_feature_extraction(
                         block_np, 16000, 4000, 4000, 800, 800
@@ -749,6 +728,7 @@ class Wernicke(threading.Thread):
 
                         # if this is a lover or lover_maybe block, reset the counter, else if it's not lover determine if we should end streaming
                         if "lover" in block_class:
+
                             # if lover wasn't already speaking, notify they are now
                             lover_speaking_delay_stop = 3
                             if lover_speaking is False:
@@ -778,18 +758,6 @@ class Wernicke(threading.Thread):
                             else:
                                 post_silence -= 1
 
-        # https://stackoverflow.com/questions/46727787/runtimeerror-there-is-no-current-event-loop-in-thread-in-async-apscheduler
-        # Experts warn: "Do not do this!"
-        # Me: "I'll be right back. Hold my beer."
-        # Me: "loop = asyncio.get_event_loop()!!!!!!"
-        # loop = asyncio.new_event_loop()
-        # asyncio.set_event_loop(loop)
-        # loop.set_debug(True)
-        # So, uh, I guess this is why this derps randomly with some error about loops and promises
-        # Experts were right.
-
-        # Start the threads.
-
         # Thread that monitors the pipe from the enterprise to away team
         messages_thread = CheckForMessages()
         messages_thread.daemon = True
@@ -803,10 +771,10 @@ class Wernicke(threading.Thread):
 
         # Audio blocks are accumulated in these vars
         accumulated_data = bytearray()
-        accumulated_blocks = 0
 
         # Gets blocks for                                     ev..                       er....
         for block in blocks:
+
             # Graceful shutdown
             if shutdown:
                 break
@@ -814,34 +782,19 @@ class Wernicke(threading.Thread):
             if block is not None:
                 # The block is not None, which means there's new audio data, so add it on
                 accumulated_data.extend(block)
-                accumulated_blocks += 1
 
             else:
                 # When block is None, that signals the end of audio data. Go ahead and do what we want to do with the complete data
 
-                # if the server is available, send it over there as long as we're not sleeping
+                # if the server is available, send it over there
                 try:
                     if audio_server.is_connected is True:
-                        log.wernicke.debug("The server appears to be still alive")
-                        # if SHARED_STATE.is_sleeping is False:
                         log.wernicke.debug("Sending utterance to server.")
                         audio_server.transcribe(accumulated_data)
 
-                        # else:
-                        #     log.wernicke.debug(
-                        #         "Threw away %s blocks as I am sleeping",
-                        #         accumulated_blocks,
-                        #     )
-
-                    # if the server is not available, no further processing, just send over a general I heard some unknown words
+                    # if the server is not available, no further processing, dump it
                     else:
-                        log.wernicke.debug(
-                            "Threw away %s blocks as the server was unavailable",
-                            accumulated_blocks,
-                        )
-
-                        hey_honey({"class": "heard_unknown"})
-                        # conversate.thread.Words('unknown') derp
+                        log.wernicke.warning("Server unavailable, threw audio away")
 
                     # # save the utterance to a wav file for debugging and QA
                     # os.makedirs(f'training_wavs_whisper/{time.strftime("%d")}/', exist_ok=True)
@@ -857,7 +810,6 @@ class Wernicke(threading.Thread):
                     audio_server.destroy_manager()
 
                 accumulated_data = bytearray()
-                accumulated_blocks = 0
 
 
 # Instantiate and start the thread

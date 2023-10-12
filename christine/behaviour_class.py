@@ -14,7 +14,10 @@ class Behaviour(threading.Thread):
         """When words are spoken and processed, they should end up here."""
 
     def please_say(self, **what):
-        """When some other thread wants to say something, they have to go through here."""
+        """When the motherfucking badass parietal lobe with it's big honking GPUs wants to say some words, they have to go through here."""
+
+    def please_play_sound(self, **what):
+        """When some other thread wants to play a simple sound or a random sound from a collection, they have to go through here."""
 
     def notify_sound_ended(self):
         """This should get called as soon as sound is finished playing."""

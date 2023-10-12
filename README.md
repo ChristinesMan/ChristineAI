@@ -147,6 +147,7 @@ The latest pyAudioAnalysis appears to use 4 times the CPU resources. I tried all
 
 Taken right out of my bash history (run as root):
 
+```
 apt update && apt upgrade -y
 apt install build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev git vim screen apt-file ffmpeg i2c-tools
 apt install libffi-dev libc6-dev uuid-dev libsqlite3-dev libgdbm-compat-dev liblzma-dev libbz2-dev libssl-dev libreadline-dev libasound2-dev portaudio19-dev
@@ -172,3 +173,4 @@ python3.11 setup.py install (dunno why but module wasn't available until I did t
 Copy the *.service files to /lib/systemd/system/ and then run:
 systemctl daemon-reload
 systemctl enable christine.service --now
+```

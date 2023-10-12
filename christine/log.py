@@ -7,11 +7,11 @@ import sys
 from traceback import format_tb
 
 # Make sure the logs dir exists
-os.makedirs("/root/logs/", exist_ok=True)
+os.makedirs("./logs/", exist_ok=True)
 
 # Setup the main log file
 logging.basicConfig(
-    filename="/root/logs/main.log",
+    filename="./logs/main.log",
     filemode="a",
     format="%(asctime)s - %(levelname)s - %(threadName)s - %(message)s",
     level=logging.DEBUG,
@@ -23,7 +23,7 @@ def setup_logger(name, level=logging.DEBUG, msg_format="%(asctime)s - %(message)
     """Function to setup as many loggers as you want"""
 
     theformat = logging.Formatter(msg_format)
-    handler = logging.FileHandler(f"/root/logs/{name}.log")
+    handler = logging.FileHandler(f"./logs/{name}.log")
     handler.setFormatter(theformat)
     logger = logging.getLogger(name)
     logger.setLevel(level)
@@ -54,6 +54,7 @@ horny = setup_logger("horny")
 cuddles = setup_logger("cuddles")
 vagina = setup_logger("vagina", level=logging.DEBUG)
 behaviour = setup_logger("behaviour", level=logging.DEBUG)
+parietallobe = setup_logger("parietallobe", level=logging.DEBUG)
 imhere = setup_logger("imhere", level=logging.INFO, msg_format="%(module)s.%(funcName)s.%(created)d")
 
 

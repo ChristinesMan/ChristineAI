@@ -72,15 +72,16 @@ class Broca(threading.Thread):
                 # log.sound.debug('No sound playing')
 
                 # if we're here, it means there's no sound actively playing
-                if self.next_sound is None:
+                if self.next_sound is not None and self.next_sound['synth_wait'] is False:
+
+                    self.play_next_sound()
+
+                else:
+
                     if self.delayer > 0:
                         self.delayer -= 1
                     else:
                         self.just_breath()
-
-                else:
-
-                    self.play_next_sound()
 
     def just_breath(self):
         """
@@ -155,13 +156,16 @@ class Broca(threading.Thread):
         # now that the sound is playing, we can discard this
         self.next_sound = None
 
+        # well, it didn't really end, but it's definitely ready for the next sound
+        SHARED_STATE.behaviour_zone.notify_sound_ended()
+
     def queue_sound(
         self,
         sound=None,
-        text=None,
         from_collection=None,
         alt_collection=None,
         intensity=None,
+        priority=5,
         play_no_wait=False,
     ):
         """
@@ -181,24 +185,26 @@ class Broca(threading.Thread):
             )
             from_collection = alt_collection
 
-        # if we still didn't get a sound defined, maybe it's a synthesized sound we wanted
-        # we're going to try to stream all the voice synthesis from the server directly
-        # work in progress
-        if sound is None and text is not None:
-            pass
-
         # if fail, just chuck it. No sound for you
         if sound is not None:
-            # Take the Sound and add all the options to it. Merges the two dicts into one.
-            # The collection name is saved so that we can update the delay wait only when the sound is played
-            sound.update(
-                {
-                    "collection": from_collection,
-                    "play_no_wait": play_no_wait,
-                }
-            )
-            self.next_sound = sound
 
+            # The collection name is saved so that we can update the delay wait only when the sound is played
+            if self.next_sound is None or priority > self.next_sound['priority']:
+                sound.update({"collection": from_collection, "priority": priority, "synth_wait": False})
+                self.next_sound = sound
+
+                if play_no_wait is True:
+                    self.play_next_sound()
+
+    def queue_text(
+        self,
+        text=None,
+    ):
+        """Voice synthesis"""
+
+        if text is not None:
+            self.next_sound = sounds.soundsdb.get_sound_synthesis(text=text)
+            self.next_sound['priority'] = 10
 
     def shuttlecraft(self, to_starship):
         """
@@ -208,8 +214,8 @@ class Broca(threading.Thread):
         try:
 
             # capture any errors
-            sys.stdout = open(f"/root/logs/subprocess_broca_{os.getpid()}.out", "w", buffering=1, encoding="utf-8", errors='ignore')
-            sys.stderr = open(f"/root/logs/subprocess_broca_{os.getpid()}.err", "w", buffering=1, encoding="utf-8", errors='ignore')
+            sys.stdout = open(f"./logs/subprocess_broca_{os.getpid()}.out", "w", buffering=1, encoding="utf-8", errors='ignore')
+            sys.stderr = open(f"./logs/subprocess_broca_{os.getpid()}.err", "w", buffering=1, encoding="utf-8", errors='ignore')
 
             # # calculate some stuff
             # # All the wav files are forced to the same format during preprocessing, currently stereo 44100

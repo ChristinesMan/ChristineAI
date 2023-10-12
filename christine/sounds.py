@@ -8,6 +8,7 @@ import random
 import math
 import wave
 import threading
+import re
 from multiprocessing.managers import BaseManager
 import queue
 import numpy as np
@@ -25,15 +26,7 @@ class TTSServerManager(BaseManager):
     pass  # pylint: disable=unnecessary-pass
 
 class MyTTSServer(threading.Thread):
-    """
-    A server on the local network will be running a service that will accept text and return speech.
-
-    I had some issues because we're still using python3.6 on this old pi, and python3.9/10/11 on the servers.
-    Python3.6 hashes the challenge response thing using md5. Others use sha256.
-    So this is my ugly hack:
-    sed -i "s/'md5'/'sha256'/g" /usr/local/lib/python3.6/multiprocessing/connection.py
-    Bitch.
-    """
+    """A server on the local network will be running a service that will accept text and return speech."""
 
     name = "MyTTSServer"
 
@@ -233,7 +226,7 @@ class SoundsDB:
         # so if we are connected to the server.. send it over there but don't wait. The broca module will do the waiting.
         else:
 
-            text_stripped = text.replace(' ', '_').replace("'", '').replace('?', '').replace('!', '').lower().strip()
+            text_stripped = re.sub("[^a-zA-Z0-9 ]", "", text).lower().strip().replace(' ', '_')
             sound_name = f"synths/{text_stripped}.wav"
             sound_id = self.new_sound(new_path=sound_name, text=text_stripped, tempo_range=0.0, base_volume_adjust=10.0)
             new_sound = {'id': sound_id, 'name': sound_name, 'text': text, 'base_volume_adjust': 10.0, 'proximity_volume_adjust': 1.0, 'intensity': 1.0, 'cuteness': 0.5, 'tempo_range': 0.0, 'replay_wait': 0, 'inter_word_silence': '[]', 'synth_wait': True}

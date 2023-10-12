@@ -99,7 +99,7 @@ def posthoneysay():
 @route("/Honey_Say_Text", method="POST")
 def posthoneysaytext():
     text = request.forms.get("text")
-    broca.thread.queue_sound(text=text, alt_collection="no", play_no_wait=True)
+    broca.thread.queue_text(text=text)
     log.http.info("Honey Say Request: %s", text)
     return "OK"
 
