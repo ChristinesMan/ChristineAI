@@ -30,6 +30,10 @@ class Behaviour(threading.Thread):
         # queue up sentences to feed into broca one at a time
         self.broca_queue = queue.Queue()
 
+        # I want to send messages to the parietal lobe when there are gyro events, but not so many messages, just one
+        # so keep track of the time
+        self.time_of_last_body_message = 0.0
+
     def run(self):
         while True:
             time.sleep(2)
@@ -51,7 +55,6 @@ class Behaviour(threading.Thread):
         log.behaviour.info("Heard: %s", words)
 
         if re_wake_up.search(words):
-            SHARED_STATE.should_speak_chance += 0.03
             sleep.thread.wake_up(0.2)
             broca.thread.queue_sound(from_collection="uh_huh", play_no_wait=True)
 
@@ -184,15 +187,19 @@ class Behaviour(threading.Thread):
             elif queue_item['type'] == "text":
                 broca.thread.queue_text(queue_item['content'])
 
-    def notify_jostled(self):
+    def notify_jostled(self, magnitude: float):
         """When wife is feeling those bumps in the night, this gets hit."""
 
-        log.behaviour.debug("Jostled.")
+        log.behaviour.debug("Jostled. (%.2f)", magnitude)
+        
+        if time.time() > self.time_of_last_body_message + 60:
+            parietal_lobe.thread.accept_body_internal_message("Your gyroscope has detected some significant body movement.")
+            self.time_of_last_body_message = time.time()
 
         sleep.thread.wake_up(0.08)
         SHARED_STATE.lover_proximity = (
             (SHARED_STATE.lover_proximity * 5.0) + 1.0
         ) / 6.0
 
-        # later this needs to be moved to the sleeping behaviour zone
-        broca.thread.queue_sound(from_collection="laughing", play_no_wait=True)
+        # # later this needs to be moved to the sleeping behaviour zone
+        # broca.thread.queue_sound(from_collection="laughing", play_no_wait=True)

@@ -13,11 +13,11 @@ from collections import deque
 # import wave
 import queue
 import signal
+import struct
 from pydub import AudioSegment
 import serial
 import numpy as np
-from pyAudioAnalysis import MidTermFeatures as mF  # pylint: disable=no-name-in-module
-from pyAudioAnalysis import audioTrainTest as aT  # pylint: disable=no-name-in-module
+import pvcobra
 
 from christine import log
 from christine.status import SHARED_STATE
@@ -168,6 +168,7 @@ class Wernicke(threading.Thread):
 
         # we're going to keep track of the proximity detected.
         # This works great. When wife is far away, she pipes up. When we're pillow talking, she avoids shouting in your ear which she used to do.
+        # For now this is disabled, but I plan to bring it back later
         proximity = 1.0
 
         # Send message to the main process
@@ -524,32 +525,11 @@ class Wernicke(threading.Thread):
             BLOCKSIZE = 4000
 
             def __init__(self):
-                # there are two models. The first classifies voice vs silence. The second is a regression model that tells distance to speaker
-                # pylint: disable=unbalanced-tuple-unpacking
-                log.wernicke.debug("Initializing pyAudioAnalysis single-block classifier model...")
-                [
-                    self.block_model,
-                    self.block_mean,
-                    self.block_std,
-                    self.block_class_names,
-                    self.block_mt_win,
-                    self.block_mt_step,
-                    self.block_st_win,
-                    self.block_st_step,
-                    _,
-                ] = aT.load_model("wernicke_block")
 
-                log.wernicke.debug("Initializing pyAudioAnalysis proximity model...")
-                [
-                    self.proximity_model,
-                    self.proximity_mean,
-                    self.proximity_std,
-                    self.proximity_mt_win,
-                    self.proximity_mt_step,
-                    self.proximity_st_win,
-                    self.proximity_st_step,
-                    _,
-                ] = aT.load_model("wernicke_proximity", is_regression=True)
+                # start the cobra vad
+                log.wernicke.debug("Initializing cobra...")
+                self.cobra = pvcobra.create(access_key=os.getenv("COBRA_KEY"))
+                log.wernicke.debug("Cobra loaded. Frame length: %s. Sample rate: %s.", self.cobra.frame_length, self.cobra.sample_rate)
 
             def read(self):
                 """Return a block of audio data, blocking if necessary."""
@@ -575,34 +555,7 @@ class Wernicke(threading.Thread):
                 # Split the interleaved data into separate channels
                 in_audio_split = in_audio.split_to_mono()
 
-                # compute the loudness of sound
-                # the idea was to gather audio from the best side only
-                # if my wife's lovely head is laying on the pillow, one side is going to be really low
-                # didn't want that low side to degrade the better side
-                # I never tested this really well to see if it really helps, well maybe one time I did listen and it seemed better
-                # mostly there's just a thought, well there's two channels, why not use it for something
-
-                # disabled this until we get back in here and finish it
-                # tried again and it is clear that right side is 3 times as responsive.
-                # so I give up officially, will just favor right side
-                # loudness_left = in_audio_split[0].rms
-                # loudness_right = in_audio_split[1].rms
-                # loudness_ratio = loudness_left / loudness_right
-
-                # maybe favor right side when there's little difference to avoid switching/wobble
-                # if abs(loudness_ratio - 1.0) < 0.1:
-                #     self.LeftRightRatio = 0.9
-
-                # running average
-                # self.LeftRightRatio = ((self.LeftRightRatio * 5.0) + loudness_ratio) / 6.0
-
-                # for now, log it and favor left ear
-                # log.wernicke.debug(f'LeftRightRatio: {self.LeftRightRatio}')
-
-                # favoring right ear now, because that's the ear I whisper sweet good nights in
-
-                # I need to actually record something real when head is turned to the side, then record the other side, to figure out how we know which side is best, loudness?
-
+                # favoring her right ear now, because that's the ear I whisper sweet good nights in
                 return in_audio_split[1].raw_data
 
             def collector(self):
@@ -628,60 +581,32 @@ class Wernicke(threading.Thread):
                 # this is a global var for tracking proximity
                 nonlocal proximity
 
+                # there's a spot below where I'll be using struct.unpack that uses this 4001 long str
+                # worried it's going to try to build the string over and over, so set it here and reuse
+                unpack_string = '<'+'h'*4000
+
                 while True:
                     # forever read new blocks of audio data
                     block = self.read()
+                    
+                    # convert the 1 byte per element array into half as many 2 byte signed short ints
+                    # took way too long to figure out the expected audio format for cobra
+                    block_unpacked = struct.unpack(unpack_string, block)
 
-                    # Convert or cast the raw audio data to numpy array
-                    block_np = np.frombuffer(block, np.int16)
-
-                    # Run the classifier. This is ripped directly out of paura.py and carelessly sutured into place. There's so much blood! Thank you!!!
-                    [block_mt_feats, _, _] = mF.mid_feature_extraction(
-                        block_np, 16000, 4000, 4000, 800, 800
-                    )
-                    block_cur_fv = (
-                        block_mt_feats[:, 0] - self.block_mean
-                    ) / self.block_std
-                    [res, prob] = aT.classifier_wrapper(
-                        self.block_model, "svm_rbf", block_cur_fv
-                    )
-                    block_class = self.block_class_names[int(res)]
-                    block_prob = round(prob[int(res)], 2)
-
-                    # temporary data collection for proximity regression model
-                    # only save if it's classified as lover
-                    # And now we're saving blocks that are not lover but with a low silence probability
-                    # for fine tuning
-                    # tired of running over to the bed to yell in your ear
-                    # if block_class == 'ignore' and block_prob < 0.96:
-                    #     wav_file = wave.open(f'training_wavs_finetune/{int(time.time()*100)}_finetune.wav', 'wb')
-                    #     wav_file.setnchannels(1)
-                    #     wav_file.setsampwidth(2)
-                    #     wav_file.setframerate(16000)
-                    #     wav_file.writeframes(block)
-                    #     wav_file.close()
-
-                    # if it's me, aka lover, then get the proximity
-                    if block_class == "lover":
-                        proximity_cur_fv = (
-                            block_mt_feats[:, 0] - self.proximity_mean
-                        ) / self.proximity_std
-                        proximity_now = aT.regression_wrapper(
-                            self.proximity_model, "svm_rbf", proximity_cur_fv
-                        )
-                        log.wernicke.info(
-                            "Heard lover with prob %.2f and proximity %s",
-                            block_prob,
-                            proximity_now,
-                        )
-
-                        # update running average
-                        proximity = ((proximity * 2.0) + proximity_now) / 3.0
-
+                    # Sweep the leg.
+                    # In other words, since cobra expects a list of short ints 512 elements long,
+                    # But I'm starting out with a 0.25s of audio,
+                    # Chop it up into little bits and calculate the average over all bits
+                    # this could be better
+                    total_prob = 0.0
+                    for pos in range(0, 3500, 512):
+                        total_prob += self.cobra.process(block_unpacked[pos:pos+512])
+                    block_prob = total_prob / 7.0
+                    if block_prob > 0.07:
+                        block_class = 'lover'
                     else:
-                        log.wernicke.debug(
-                            "Heard %s with prob %.2f", block_class, block_prob
-                        )
+                        block_class = 'ignore'
+                    log.wernicke.debug("Heard %s with prob %.2f", block_class, block_prob)
 
                     # NOT triggered
                     # when not triggered, it means we're not currently collecting audio for processing

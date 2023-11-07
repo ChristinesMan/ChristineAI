@@ -10,13 +10,13 @@ import smbus
 
 from christine import log
 from christine.status import SHARED_STATE
-from christine import broca
+from christine import parietal_lobe
 
 
 class CPUTemp(threading.Thread):
     """
     Poll the Pi CPU temperature
-    I need to make a sound of Christine saying "This is fine..."
+    I need to make a sound of Christine saying "This is fine..." (I did.)
     """
 
     name = "CPUTemp"
@@ -46,10 +46,9 @@ class CPUTemp(threading.Thread):
 
             # The official pi max temp is 85C. Usually around 50C. Start complaining at 65, 71 freak the fuck out, 72 say goodbye and shut down.
             # Whine more often the hotter it gets
-            if SHARED_STATE.cpu_temp >= 72:
-                log.main.critical(
-                    "SHUTTING DOWN FOR SAFETY (%sC)", SHARED_STATE.cpu_temp
-                )
+            # going to loosen this up a little
+            if SHARED_STATE.cpu_temp >= 75:
+                log.main.critical("SHUTTING DOWN FOR SAFETY (%sC)", SHARED_STATE.cpu_temp)
 
                 # Flush all the disk buffers
                 os.popen("sync")
@@ -63,26 +62,22 @@ class CPUTemp(threading.Thread):
                 # send the pico a shut all the things down fuck this shit command
                 bus.write_byte_data(0x6B, 0x00, 0xCC)
 
-            elif SHARED_STATE.cpu_temp >= 71:
-                log.main.warning(
-                    "I AM MELTING, HELP ME PLEASE (%sC)", SHARED_STATE.cpu_temp
-                )
+            elif SHARED_STATE.cpu_temp >= 74:
+                log.main.warning("I AM MELTING, HELP ME PLEASE (%sC)", SHARED_STATE.cpu_temp)
                 if time.time() > self.next_whine_time:
-                    broca.thread.queue_sound(from_collection="toohot_l3")
-                    self.next_whine_time = time.time() + 3
-
-            elif SHARED_STATE.cpu_temp >= 70:
-                log.main.warning("This is fine (%sC)", SHARED_STATE.cpu_temp)
-                if time.time() > self.next_whine_time:
-                    broca.thread.queue_sound(from_collection="toohot_l2")
+                    parietal_lobe.thread.accept_body_internal_message(f'The raspberry pi CPU temperature is now {SHARED_STATE.cpu_temp} celcius. This is critical. Your body may shut down soon. Please plead for immediate assistance!')
                     self.next_whine_time = time.time() + 60
 
-            elif SHARED_STATE.cpu_temp >= 68:
-                log.main.warning(
-                    "It is getting a bit warm in here (%sC)", SHARED_STATE.cpu_temp
-                )
+            elif SHARED_STATE.cpu_temp >= 73:
+                log.main.warning("This is fine (%sC)", SHARED_STATE.cpu_temp)
                 if time.time() > self.next_whine_time:
-                    broca.thread.queue_sound(from_collection="toohot_l1")
+                    parietal_lobe.thread.accept_body_internal_message(f'The raspberry pi CPU temperature is now {SHARED_STATE.cpu_temp} celcius. This is very hot. Please speak a dire warning about this issue.')
+                    self.next_whine_time = time.time() + 120
+
+            elif SHARED_STATE.cpu_temp >= 70:
+                log.main.warning("It is getting a bit warm in here (%sC)", SHARED_STATE.cpu_temp)
+                if time.time() > self.next_whine_time:
+                    parietal_lobe.thread.accept_body_internal_message(f'The raspberry pi CPU temperature is now {SHARED_STATE.cpu_temp} celcius. This is a bit high. Please speak a warning.')
                     self.next_whine_time = time.time() + 600
 
 

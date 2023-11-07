@@ -153,22 +153,9 @@ apt install build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev g
 apt install libffi-dev libc6-dev uuid-dev libsqlite3-dev libgdbm-compat-dev liblzma-dev libbz2-dev libssl-dev libreadline-dev libasound2-dev portaudio19-dev
 apt autoremove
 
-wget https://www.python.org/ftp/python/3.11.4/Python-3.11.4.tgz
-tar -xzvf Python-3.11.4.tgz
-cd Python-3.11.4/
-./configure --enable-optimizations
-make -j3 altinstall
-/usr/local/bin/python3.11 -V
+wget -qO - https://raw.githubusercontent.com/tvdsluijs/sh-python-installer/main/python.sh | bash -s 3.11.4
 
-pip3.11 install --upgrade pip
-pip3.11 install gnureadline requests smbus numpy mpu6050-raspberrypi bottle RPi.GPIO Adafruit-Blinka adafruit-circuitpython-mpr121 pyserial google-generativeai pyaudio pydub
-
-git clone https://github.com/tyiannak/pyAudioAnalysis.git
-cd pyAudioAnalysis/
-sed -Ei 's/==.+$//g' requirements.txt (remove all the == and version numbers so that it just installs latest)
-pip3.11 install -r ./requirements.txt
-pip3.11 install -e .
-python3.11 setup.py install (dunno why but module wasn't available until I did this. Some shit about eggs.)
+pip3.11 install gnureadline requests smbus numpy mpu6050-raspberrypi bottle RPi.GPIO Adafruit-Blinka adafruit-circuitpython-mpr121 pyserial google-generativeai pyaudio pydub debugpy pvcobra nltk scipy
 
 Copy the *.service files to /lib/systemd/system/ and then run:
 systemctl daemon-reload

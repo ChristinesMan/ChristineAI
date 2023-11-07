@@ -9,6 +9,7 @@ import scipy.stats
 from christine import log
 from christine.status import SHARED_STATE
 from christine import broca
+from christine import parietal_lobe
 from christine import sleep
 
 
@@ -113,6 +114,7 @@ class Touch:
                 )
                 if SHARED_STATE.is_sleeping is False:
                     broca.thread.queue_sound(from_collection="kissing", play_no_wait=True)
+                    parietal_lobe.thread.accept_body_internal_message('The sensor near your mouth is triggered. You are probably getting kissed.')
                 sleep.thread.wake_up(0.05)
                 SHARED_STATE.should_speak_chance += 0.05
 

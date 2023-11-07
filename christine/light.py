@@ -1,11 +1,13 @@
 """
 Handles processing of light sensor data
 """
+import time
 import numpy as np
 
 from christine import log
 from christine.status import SHARED_STATE
 from christine import sleep
+from christine import parietal_lobe
 
 
 class Light:
@@ -31,6 +33,10 @@ class Light:
         # By the time we reach this line we should have already fetched the saved light level from sqlite so just use that
         # this controls how fast the average will change
         self.light_avg_window = 100.0
+
+        # I want to send messages to the parietal lobe when there are light events, but not so many messages, just one
+        # so keep track of the time
+        self.time_of_last_body_message = time.time()
 
     def new_data(self, light_adc_raw):
         """
@@ -68,9 +74,19 @@ class Light:
         light_trend = light_level / SHARED_STATE.light_level
 
         # What to do when there's sudden light, wake up fast
-        if light_trend > 3.0:
+        if light_trend > 6.0:
             log.sleep.debug("LightTrend: %s waking up fast", light_trend)
-            sleep.thread.wake_up(0.01)
+            if time.time() > self.time_of_last_body_message + 600.0:
+                parietal_lobe.thread.accept_body_internal_message('The light sensors near your eyes are detecting a sudden brightness.')
+                self.time_of_last_body_message = time.time()
+            sleep.thread.wake_up(0.03)
+
+        # And what to do if the lights go out
+        if light_trend < 0.4:
+            log.sleep.debug("LightTrend: %s who turned out the lights?", light_trend)
+            if time.time() > self.time_of_last_body_message + 600.0:
+                parietal_lobe.thread.accept_body_internal_message('The light sensors near your eyes are detecting a sudden darkness.')
+                self.time_of_last_body_message = time.time()
 
         # Log the light level
         log.light.debug(

@@ -5,7 +5,9 @@ Description=Christine's Brain
 Type=simple
 WorkingDirectory=/root/ChristineAI
 TimeoutStopSec=4
-Environment=BARD_API=YOUR_KEY
+Environment=PALM_API=YOUR_KEY
+Environment=COBRA_KEY=YOUR_COBRA_KEY
+Environment=CBU_NAME=Yourname
 ExecStart=/usr/local/bin/python3.11 -u -Wdefault -m debugpy --listen 0.0.0.0:5678 --wait-for-client -m christine
 
 [Install]

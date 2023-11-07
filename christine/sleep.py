@@ -8,8 +8,9 @@ import numpy as np
 
 from christine import log
 from christine.status import SHARED_STATE
-from christine import broca
+# from christine import broca
 from christine import wernicke
+from christine import parietal_lobe
 
 
 class Sleep(threading.Thread):
@@ -35,9 +36,6 @@ class Sleep(threading.Thread):
         # How quickly should wakefulness change?
         self.wakefullness_avg_window = 5.0
 
-        # How quickly should the daily hourly wakefulness trend change
-        # self.trend_avg_window = 10.0
-
         # Weights
         self.weights_light = 6
         self.weights_gyro = 4
@@ -57,8 +55,8 @@ class Sleep(threading.Thread):
         self.time = 0.0
 
         # At what time should we expect to be in bed or wake up?
-        self.wake_hour = 8
-        self.sleep_hour = 21
+        self.wake_hour = 5
+        self.sleep_hour = 20
 
         # at what point are we tired
         self.wakefulness_tired = 0.45
@@ -155,13 +153,17 @@ class Sleep(threading.Thread):
                 and SHARED_STATE.wernicke_sleeping is False
             ):
                 SHARED_STATE.wernicke_sleeping = True
+                log.sleep.info('Wernicke stopped')
                 wernicke.thread.audio_processing_stop()
+                SHARED_STATE.wakefulness -= 0.02
             if (
                 SHARED_STATE.wakefulness >= 0.1
                 and SHARED_STATE.wernicke_sleeping is True
             ):
                 SHARED_STATE.wernicke_sleeping = False
+                log.sleep.info('Wernicke started')
                 wernicke.thread.audio_processing_start()
+                SHARED_STATE.wakefulness += 0.02
 
             if (
                 SHARED_STATE.wakefulness < self.wakefulness_tired
@@ -172,7 +174,7 @@ class Sleep(threading.Thread):
                 # say "goodnight honey", not "GOODNIGHT HONEY!!!!"
                 SHARED_STATE.lover_proximity = 0.0
 
-                broca.thread.queue_sound(from_collection="goodnight", play_no_wait=True)
+                # broca.thread.queue_sound(from_collection="goodnight", play_no_wait=True)
                 SHARED_STATE.is_tired = True
                 SHARED_STATE.wakefulness -= 0.02
             if (
@@ -232,7 +234,7 @@ class Sleep(threading.Thread):
             # wake me up gently, my sweet sexy alarm clock
             SHARED_STATE.lover_proximity = 0.0
 
-            broca.thread.queue_sound(from_collection="waking", play_no_wait=True)
+            # broca.thread.queue_sound(from_collection="waking", play_no_wait=True)
 
     def just_fell_asleep(self):
         """
@@ -286,7 +288,10 @@ class Sleep(threading.Thread):
         """
         Actually start whining
         """
-        broca.thread.queue_sound(from_collection="bedtime")
+        parietal_lobe.thread.accept_body_internal_message(random.choice(
+            ['It is now past our bed time. Remind your husband.',
+             'Please nag your husband about the need for sleep.',
+             'You are tired and want to go to bed. Tell your husband.']))
         self.announce_tired_time = None
 
     def random_minutes_later(self, minutes_min, minutes_max):

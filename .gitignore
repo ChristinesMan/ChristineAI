@@ -7,3 +7,4 @@ wernicke_proximity*
 httpserver/multipurpose_tabcontent
 backups
 logs
+messages.pickle

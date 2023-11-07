@@ -42,6 +42,9 @@ class Broca(threading.Thread):
         # This allows a random delay before breathing again
         self.delayer = 0
 
+        # capture the priority of whatever sound is playing now
+        self.playing_now_priority = 5
+
         # setup the separate process with pipe that we're going to be fucking
         # lol I put the most insane things in code omg, but this will help keep it straight!
         # The enterprise sent out a shuttlecraft with Data at the helm.
@@ -69,7 +72,7 @@ class Broca(threading.Thread):
             # So all this logic here will only run when the shuttlecraft finishes playing the current sound
             # If there's some urgent sound that must interrupt, that is communicated to the shuttlecraft through the pipe
             if self.to_shuttlecraft.recv() is False:
-                # log.sound.debug('No sound playing')
+                # log.broca.debug('No sound playing')
 
                 # if we're here, it means there's no sound actively playing
                 if self.next_sound is not None and self.next_sound['synth_wait'] is False:
@@ -82,6 +85,14 @@ class Broca(threading.Thread):
                         self.delayer -= 1
                     else:
                         self.just_breath()
+
+            else:
+
+                # handle the case of a sound coming in that should interrupt the sound / breath currently playing
+                if self.next_sound is not None and self.next_sound['play_no_wait'] is True and self.next_sound['synth_wait'] is False and self.next_sound['priority'] > self.playing_now_priority:
+
+                    self.play_next_sound()
+
 
     def just_breath(self):
         """
@@ -103,6 +114,9 @@ class Broca(threading.Thread):
                 "vol": 100,
             }
         )
+
+        # breaths have 0 priority, they can always be interrupted
+        self.playing_now_priority = 0
 
         # set the delayer to a random number of periods for the next time
         # currently 10 periods per second
@@ -142,6 +156,12 @@ class Broca(threading.Thread):
         # get the file name
         wav_file = f'./sounds_processed/{self.next_sound["id"]}/0.wav'
 
+        # if the file doesn't exist somehow, fail graceful like
+        if os.path.isfile(wav_file) is False:
+            log.main.warning('Sound file %s does not exist.', wav_file)
+            self.next_sound = None
+            return
+
         # let the ears know that the mouth is going to emit noises that are not breathing
         wernicke.thread.audio_processing_pause(ceil(( os.stat(wav_file).st_size / 88272 ) / 0.25))
 
@@ -152,6 +172,9 @@ class Broca(threading.Thread):
                 "vol": volume,
             }
         )
+
+        # save the priority so that we can tell what can interrupt it
+        self.playing_now_priority = self.next_sound['priority']
 
         # now that the sound is playing, we can discard this
         self.next_sound = None
@@ -191,20 +214,23 @@ class Broca(threading.Thread):
             # The collection name is saved so that we can update the delay wait only when the sound is played
             if self.next_sound is None or priority > self.next_sound['priority']:
                 sound.update({"collection": from_collection, "priority": priority, "synth_wait": False})
+
+                # if we are requesting to interrupt a playing sound, and the sound playing is not as high priority, we can interrupt
+                if play_no_wait is True and sound['priority'] > self.playing_now_priority:
+                    sound['play_no_wait'] = True
+                else:
+                    sound['play_no_wait'] = False
+
                 self.next_sound = sound
 
-                if play_no_wait is True:
-                    self.play_next_sound()
-
-    def queue_text(
-        self,
-        text=None,
-    ):
+    def queue_text(self, text=None):
         """Voice synthesis"""
 
         if text is not None:
-            self.next_sound = sounds.soundsdb.get_sound_synthesis(text=text)
-            self.next_sound['priority'] = 10
+
+            sound = sounds.soundsdb.get_sound_synthesis(text=text)
+            sound.update({"collection": "none", "priority": 10, "play_no_wait": True})
+            self.next_sound = sound
 
     def shuttlecraft(self, to_starship):
         """
