@@ -61,3 +61,11 @@ re_thanks = re.compile(
 re_shutdown = re.compile(
     "(shutdown|shut down|turn off) your (brain|pie|pi)", flags=re.IGNORECASE
 )
+
+# these are for matching stuff sent from the LLM that trigger various things
+re_body_deactivate_hearing = re.compile(
+    r"\(Deactivate \S+ hearing for ([0-9]+) minutes\.?\)", flags=re.IGNORECASE
+)
+re_body_go_to_sleep = re.compile(
+    r"\(go to sleep\.?\)", flags=re.IGNORECASE
+)
