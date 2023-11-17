@@ -83,7 +83,6 @@ class Horny(threading.Thread):
                     if (
                         SHARED_STATE.is_sleeping is False
                         and SHARED_STATE.sexual_arousal == 0.0
-                        and SHARED_STATE.should_speak_chance > 0.0
                         and SHARED_STATE.shush_please_honey is False
                     ):
                         # please fuck me

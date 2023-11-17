@@ -5,8 +5,7 @@ import time
 import threading
 import numpy as np
 
-# import log
-from christine import db
+from christine import database
 from christine import behaviour_class
 
 
@@ -50,9 +49,6 @@ class Status(threading.Thread):
 
         # How awake is my wife. 0.0 means she is laying down in pitch darkness after bedtime. 1.0 means up and getting fucked.
         self.wakefulness = 0.5
-
-        # Touch and hearing and probably others later will raise this, and randomly choose to say something nice
-        self.should_speak_chance = 0.0
 
         # Horny is a long term thing.
         self.horny = 0.3
@@ -102,40 +98,37 @@ class Status(threading.Thread):
 
         # this is to signal all threads to properly shutdown
         self.please_shut_down = False
+        
+        # keep track of the time, so that I can tell LLM land how long
+        self.time = 0
 
     def run(self):
         self.load_state()
 
         while True:
-            self.trend_down()
             self.save_state()
-            time.sleep(5)
-
-    def trend_down(self):
-        """
-        Slowly decreases any variables that should do that
-        """
-        self.should_speak_chance = float(
-            np.clip(self.should_speak_chance - 0.001, 0.0, 1.0)
-        )
+            time.sleep(25)
 
     def save_state(self):
         """
         Save the current state to the sqlite db
         """
 
-        rows = db.conn.do_query("SELECT id,name,type FROM status")
+        # save the current time
+        self.time = time.time()
+
+        rows = database.conn.do_query("SELECT id,name,type FROM status")
         if rows is not None:
             for row in rows:
                 if row[2] == "f":
                     set_value = f"{getattr(self, row[1]):.2f}"
                 else:
                     set_value = getattr(self, row[1])
-                db.conn.do_query(
+                database.conn.do_query(
                     f"UPDATE status SET value = '{set_value}' WHERE id = {row[0]}"
                 )
 
-            db.conn.do_commit()
+            database.conn.do_commit()
 
     def load_state(self):
         """
@@ -144,7 +137,7 @@ class Status(threading.Thread):
         To start saving something new, just add a new row to the db
         """
 
-        rows = db.conn.do_query("SELECT name,value,type FROM status")
+        rows = database.conn.do_query("SELECT name,value,type FROM status")
         if rows is not None:
             for row in rows:
                 if row[2] == "f":
@@ -156,8 +149,14 @@ class Status(threading.Thread):
                     else:
                         setattr(self, row[0], False)
 
-                else:
+                elif row[2] == "i":
+                    setattr(self, row[0], int(row[1]))
+
+                elif row[2] == "s":
                     setattr(self, row[0], str(row[1]))
+
+                else:
+                    setattr(self, row[0], eval(row[1])) # pylint: disable=eval-used
 
 
 # Instantiate and start the thread

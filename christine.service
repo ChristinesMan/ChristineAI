@@ -8,6 +8,7 @@ TimeoutStopSec=4
 Environment=PALM_API=YOUR_KEY
 Environment=COBRA_KEY=YOUR_COBRA_KEY
 Environment=CBU_NAME=Yourname
+Environment=SBU_NAME=Christine
 ExecStart=/usr/local/bin/python3.11 -u -m christine
 
 [Install]

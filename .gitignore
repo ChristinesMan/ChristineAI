@@ -1,10 +1,8 @@
 .vscode
 __pycache__
-sounds_master
-sounds_processed
-wernicke_block*
-wernicke_proximity*
+sounds
 httpserver/multipurpose_tabcontent
 backups
 logs
 messages.pickle
+christine.sqlite

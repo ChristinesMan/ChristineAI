@@ -6,10 +6,11 @@ Main script that starts everything else
 import time
 
 from christine import log
+from christine import database
+from christine import sounds
 from christine.status import SHARED_STATE
 from christine import cputemp
 from christine import gyro
-from christine import sounds
 from christine import broca
 from christine import sleep
 from christine import light

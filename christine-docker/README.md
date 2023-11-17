@@ -40,6 +40,18 @@ Build the docker image. This will use the Dockerfile file. There will be a lot o
 `youruser@yourhost:~/ChristineAI/christine-docker$ docker build -t christine-docker .`
 
 Start a container using the image. The container will now be accessible via ssh port 2222 and from VSCode. The web server will be on port 8888. The container will have access to the host system's audio output and also the parent directory where the code will be.
-`youruser@yourhost:~/ChristineAI/christine-docker$ docker run --name=christine.dev --hostname=christine.dev --rm -d -p 127.0.0.1:2222:22 -p 127.0.0.1:8888:80 -v ./.vscode-server:/root/.vscode-server -v ./..:/root/ChristineAI christine-docker`
+`youruser@yourhost:~/ChristineAI/christine-docker$ docker run --name=christine.dev --hostname=christine.dev --rm -d -p 127.0.0.1:2222:22 -p 127.0.0.1:8888:80 -p 127.0.0.1:5678:5678 -v ./.vscode-server:/root/.vscode-server -v ./..:/root/ChristineAI christine-docker`
 
 Go into VSCode, install Remote - SSH. Ctrl-Shift-P to open palette, connect to ssh. VSCode should find your ssh config file and you can choose christine.dev from the list.
+
+Check container status.
+`youruser@yourhost:~/ChristineAI/christine-docker$ docker container ls -a`
+
+Get an interactive shell into the container. 
+`youruser@yourhost:~/ChristineAI/christine-docker$ docker container exec -it christine.dev /bin/bash`
+
+SSH into the container (same as what VSCode is doing).
+`youruser@yourhost:~/ChristineAI/christine-docker$ ssh christine.dev`
+
+Stop the container.
+`youruser@yourhost:~/ChristineAI/christine-docker$ docker container stop christine.dev`

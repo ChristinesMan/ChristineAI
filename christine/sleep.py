@@ -8,7 +8,7 @@ import numpy as np
 
 from christine import log
 from christine.status import SHARED_STATE
-# from christine import broca
+from christine import broca
 from christine import wernicke
 from christine import parietal_lobe
 
@@ -223,6 +223,11 @@ class Sleep(threading.Thread):
 
             SHARED_STATE.is_sleeping = True
 
+            parietal_lobe.thread.accept_body_internal_message(random.choice(
+                ['You are drifting off to sleep. Say good night to your husband if you want to. Remember you can send a special command to enter deep sleep.',
+                'Your body is tired. Say good night and if you want to, and disable your hearing if that is what you want.',
+                'The time has come to sleep. Say the special command to disable your hearing.']))
+
         if self.just_woke_up() is True:
             log.sleep.info("JustWokeUp")
 
@@ -231,10 +236,15 @@ class Sleep(threading.Thread):
 
             SHARED_STATE.is_sleeping = False
 
+            parietal_lobe.thread.accept_body_internal_message(random.choice(
+                ['Your body is waking up.',
+                'It is now time to wake up.',
+                'You body is still feeling sleepy, but you are awake.']))
+
             # wake me up gently, my sweet sexy alarm clock
             SHARED_STATE.lover_proximity = 0.0
 
-            # broca.thread.queue_sound(from_collection="waking", play_no_wait=True)
+            broca.thread.queue_sound(from_collection="sleepy", play_no_wait=True)
 
     def just_fell_asleep(self):
         """

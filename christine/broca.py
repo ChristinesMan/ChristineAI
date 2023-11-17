@@ -40,7 +40,8 @@ class Broca(threading.Thread):
         self.next_sound = None
 
         # This allows a random delay before breathing again
-        self.delayer = 0
+        # Init to a sorta high number to avoid starting too soon, should be about 15s
+        self.delayer = 150
 
         # capture the priority of whatever sound is playing now
         self.playing_now_priority = 5
@@ -100,17 +101,17 @@ class Broca(threading.Thread):
         """
 
         # select a random breathing sound
-        next_breath = sounds.collections['breathe_normal'].get_random_sound(
-            intensity=SHARED_STATE.breath_intensity
-        )
-
-        # get the file name
-        wav_file = f'./sounds_processed/{next_breath["id"]}/0.wav'
+        next_breath = sounds.db.get_random_sound(collection_name='breathing', intensity=SHARED_STATE.breath_intensity)
+        
+        # Fail gracefully
+        if next_breath is None:
+            log.main.error('No breathing sound was available!')
+            return
 
         # send the message to the subprocess
         self.to_shuttlecraft.send(
             {
-                "wavfile": wav_file,
+                "wavfile": next_breath['file_path'],
                 "vol": 100,
             }
         )
@@ -122,7 +123,7 @@ class Broca(threading.Thread):
         # currently 10 periods per second
         self.delayer = 5 + (random.random() * 8)
 
-        log.broca.debug("Chose breath: %s", next_breath)
+        # log.broca.debug("Chose breath: %s", next_breath)
 
     def play_next_sound(self):
         """
@@ -132,13 +133,8 @@ class Broca(threading.Thread):
 
         # Now that we're actually playing the sound,
         # tell the sound collection to not play it for a while
-        if (
-            self.next_sound["replay_wait"] != 0
-            and self.next_sound["collection"] is not None
-        ):
-            sounds.collections[self.next_sound["collection"]].set_skip_until(
-                sound_id=self.next_sound["id"]
-            )
+        if self.next_sound["replay_wait"] != 0:
+            sounds.db.set_skip_until(sound_id=self.next_sound["id"])
 
         # calculate what volume this should play at adjusting for proximity
         # this was really hard math to figure out for some reason
@@ -153,22 +149,26 @@ class Broca(threading.Thread):
             * 100
         )
 
-        # get the file name
-        wav_file = f'./sounds_processed/{self.next_sound["id"]}/0.wav'
+        # pop out the file path
+        file_path = self.next_sound["file_path"]
 
         # if the file doesn't exist somehow, fail graceful like
-        if os.path.isfile(wav_file) is False:
-            log.main.warning('Sound file %s does not exist.', wav_file)
+        if os.path.isfile(file_path) is False:
+            log.main.warning('Sound file %s does not exist.', file_path)
             self.next_sound = None
             return
 
         # let the ears know that the mouth is going to emit noises that are not breathing
-        wernicke.thread.audio_processing_pause(ceil(( os.stat(wav_file).st_size / 88272 ) / 0.25))
+        # since I stopped TTS from appending silence to synthesized voice audio I have noticed some garbage heard after speaking
+        # so that's why I'm adjusting this by 0.5s.
+        # the number of seconds in the wav file are estimated based on the file size, then 0.5s is added as padding,
+        # then / 0.25 because blocks are 0.25s long.
+        wernicke.thread.audio_processing_pause(ceil((( os.stat(file_path).st_size / 88272 ) + 0.5) / 0.25))
 
         # send the message to the subprocess
         self.to_shuttlecraft.send(
             {
-                "wavfile": wav_file,
+                "wavfile": file_path,
                 "vol": volume,
             }
         )
@@ -197,21 +197,17 @@ class Broca(threading.Thread):
 
         # if we're playing a sound from a collection, go fetch that rando
         if sound is None and from_collection is not None:
-            sound = sounds.collections[from_collection].get_random_sound(
-                intensity=intensity
-            )
+            sound = sounds.db.get_random_sound(collection_name=from_collection, intensity=intensity)
 
         # If a collection is empty, or no sounds available at this time, it's possible to get a None sound. So try one more time in the alt collection.
         if sound is None and alt_collection is not None:
-            sound = sounds.collections[alt_collection].get_random_sound(
-                intensity=intensity
-            )
+            sound = sounds.db.get_random_sound(collection_name=alt_collection, intensity=intensity)
             from_collection = alt_collection
 
         # if fail, just chuck it. No sound for you
         if sound is not None:
 
-            # The collection name is saved so that we can update the delay wait only when the sound is played
+            # The collection name is saved so that we can see it in the logs
             if self.next_sound is None or priority > self.next_sound['priority']:
                 sound.update({"collection": from_collection, "priority": priority, "synth_wait": False})
 
@@ -228,9 +224,15 @@ class Broca(threading.Thread):
 
         if text is not None:
 
-            sound = sounds.soundsdb.get_sound_synthesis(text=text)
-            sound.update({"collection": "none", "priority": 10, "play_no_wait": True})
+            sound = sounds.db.get_sound_synthesis(text=text)
+            sound.update({"collection": "synth", "priority": 10, "play_no_wait": True})
             self.next_sound = sound
+
+    def notify_synth_done(self):
+        """The sounds module starts a voice synthesis process, and calls this when it's completed."""
+
+        if self.next_sound is not None:
+            self.next_sound['synth_wait'] = False
 
     def shuttlecraft(self, to_starship):
         """
@@ -256,30 +258,7 @@ class Broca(threading.Thread):
             # The pump is primed using some default sounds.
             # I'm going to use a primitive way of selecting sound
             # because this will be in a separate process
-            wav_data = wave.open(
-                "./sounds_processed/{0}/0.wav".format( # pylint: disable=consider-using-f-string
-                    random.choice(
-                        [
-                            13,
-                            14,
-                            17,
-                            23,
-                            36,
-                            40,
-                            42,
-                            59,
-                            67,
-                            68,
-                            69,
-                            92,
-                            509,
-                            515,
-                            520,
-                            527,
-                        ]
-                    )
-                )
-            )
+            wav_data = wave.open("sounds/beep.wav")
 
             # # I want to keep track to detect when we're at the last chunk
             # # so we can chuck it away and also tell the enterprise to send more sounds.

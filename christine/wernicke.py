@@ -526,9 +526,17 @@ class Wernicke(threading.Thread):
 
             def __init__(self):
 
+                # get the key from this environment variable
+                self.cobra_key = os.getenv("COBRA_KEY")
+
+                # no key, no vad, no service, no shoes, no shirt, no pants
+                if self.cobra_key is None:
+                    log.main.warning('Cobra key not found.')
+                    return
+
                 # start the cobra vad
                 log.wernicke.debug("Initializing cobra...")
-                self.cobra = pvcobra.create(access_key=os.getenv("COBRA_KEY"))
+                self.cobra = pvcobra.create(access_key=self.cobra_key)
                 log.wernicke.debug("Cobra loaded. Frame length: %s. Sample rate: %s.", self.cobra.frame_length, self.cobra.sample_rate)
 
             def read(self):
@@ -588,7 +596,7 @@ class Wernicke(threading.Thread):
                 while True:
                     # forever read new blocks of audio data
                     block = self.read()
-                    
+
                     # convert the 1 byte per element array into half as many 2 byte signed short ints
                     # took way too long to figure out the expected audio format for cobra
                     block_unpacked = struct.unpack(unpack_string, block)

@@ -6,7 +6,7 @@ import time
 import threading
 import queue
 from multiprocessing.managers import BaseManager
-from pydub import AudioSegment
+# from pydub import AudioSegment
 import numpy as np
 
 # I dunno why, but when I added the TTS import, logging broke
@@ -14,8 +14,13 @@ import numpy as np
 # But for now I don't really care that much, just print errors
 # import logging as log
 
-from TTS.api import TTS
 import requests
+# from TTS.api import TTS
+
+import torch
+from TTS.config import load_config
+from TTS.tts.models import setup_model as setup_tts_model
+import ffmpeg
 
 # this shouldn't ever change, or leave
 WIFE_ADDRESS = "christine.wifi"
@@ -80,14 +85,24 @@ class SexyVoiceFactory(threading.Thread):
         self.server_host = server_host
         self.server_rating = server_rating
         self.use_gpu = use_gpu
+        if use_gpu is True:
+            self.device = 'cuda'
+        else:
+            self.device = 'cpu'
 
         # queues for inbound audio and outbound transcriptions
         self.text_queue = None
         self.audio_queue = None
 
         # load TTS model
+        # this is an optimized method that skips past much of the TTS module's options and gets right into it
         print("Initializing TTS model...")
-        self.tts_model = TTS(model_path="./tts_model/model.pth", config_path="./tts_model/config.json", gpu=True)
+        self.model_path="./tts_model/model.pth"
+        self.config_path="./tts_model/config.json"
+        self.tts_config = load_config(self.config_path)
+        self.tts_model = setup_tts_model(config=self.tts_config)
+        self.tts_model.load_checkpoint(self.tts_config, self.model_path, eval=True)
+        self.tts_model.cuda()
 
     def run(self):
 
@@ -104,21 +119,14 @@ class SexyVoiceFactory(threading.Thread):
             sound = self.text_queue.get()
 
             # log it
-            print("Received sound: '%s' Queue sizes: %s / %s", sound, self.text_queue.qsize(), self.audio_queue.qsize())
+            print("Received text: '%s' Queue sizes: %s / %s", sound, self.text_queue.qsize(), self.audio_queue.qsize())
 
             # put the text into the magic black box
             # which should yield speech by arcane mathematical processes
-            audio_data = self.tts_model.tts(sound['text'])
+            sound['audio_data'] = self.do_tts(sound['text'])
 
             # log it
             print("Speech synthesis complete.")
-
-            # convert. My TTS model is 48000 and Christine uses wav data at 44100
-            # so this will be all ready to be saved into a wav file and played
-            audio_data_np = np.array(audio_data, dtype=np.float32)
-            audio_data_int_np = np.int16(audio_data_np * 32768.0)
-            audio_segment = AudioSegment(data=bytes(audio_data_int_np), sample_width=2, frame_rate=48000, channels=1)
-            sound['audio_data'] = audio_segment.set_frame_rate(44100).raw_data
 
             # pop result onto the queue where the client can get() it
             try:
@@ -126,6 +134,68 @@ class SexyVoiceFactory(threading.Thread):
             except queue.Full:
                 print('audio_queue hit a queue.Full')
                 os.system("systemctl restart broca.service")
+
+    def do_tts(self, text):
+        """I noticed that TTS was very busy doing a lot of things to support all the different amazing things it can do.
+        I wanted to make it go faster. So I used the debugger to step through it and selected only what is needed here.
+        This also solved the weird issue of being unable to print or log anything."""
+
+        # convert text to sequence of token IDs
+        text_inputs = np.asarray(
+            self.tts_model.tokenizer.text_to_ids(text, language=None),
+            dtype=np.int32,
+        )
+
+        # various code copied from the actual TTS module selected using debugger
+        # I'm unsure how much speedup this will cause but should be something
+        text_inputs = torch.as_tensor(text_inputs, dtype=torch.int64, device=self.device)
+        text_inputs = text_inputs.unsqueeze(0)
+        input_lengths = torch.tensor(text_inputs.shape[1:2]).to(text_inputs.device)
+
+        outputs = self.tts_model.inference(
+                text_inputs,
+                aux_input={
+                    "x_lengths": input_lengths,
+                    "speaker_ids": None,
+                    "d_vectors": None,
+                    "style_mel": None,
+                    "style_text": None,
+                    "language_ids": None,
+                },
+            )
+
+        model_outputs = outputs["model_outputs"]
+        model_outputs = model_outputs[0].data.cpu().numpy()
+        model_outputs = model_outputs.squeeze()
+        audio_data = bytes(model_outputs)
+
+        # Streaming the audio directly from TTS into ffmpeg process, and streaming out into var
+        synth_eq_frequencies = [275, 285, 296, 318, 329, 438, 454, 488, 5734, 6382, 6614, 6855, 11300]
+        synth_eq_width = 100
+        synth_eq_gain = -3
+        synth_volume = 35.0
+
+        process = (
+            ffmpeg
+            .input('pipe:', format='f32le', acodec='pcm_f32le', ac=1, ar='48000')
+            .filter('equalizer', f=synth_eq_frequencies[0], width_type='h', width=synth_eq_width, g=synth_eq_gain)
+            .filter('equalizer', f=synth_eq_frequencies[1], width_type='h', width=synth_eq_width, g=synth_eq_gain)
+            .filter('equalizer', f=synth_eq_frequencies[2], width_type='h', width=synth_eq_width, g=synth_eq_gain)
+            .filter('equalizer', f=synth_eq_frequencies[3], width_type='h', width=synth_eq_width, g=synth_eq_gain)
+            .filter('equalizer', f=synth_eq_frequencies[4], width_type='h', width=synth_eq_width, g=synth_eq_gain)
+            .filter('equalizer', f=synth_eq_frequencies[5], width_type='h', width=synth_eq_width, g=synth_eq_gain)
+            .filter('equalizer', f=synth_eq_frequencies[6], width_type='h', width=synth_eq_width, g=synth_eq_gain)
+            .filter('equalizer', f=synth_eq_frequencies[7], width_type='h', width=synth_eq_width, g=synth_eq_gain)
+            .filter('equalizer', f=synth_eq_frequencies[8], width_type='h', width=synth_eq_width, g=synth_eq_gain)
+            .filter('equalizer', f=synth_eq_frequencies[9], width_type='h', width=synth_eq_width, g=synth_eq_gain)
+            .filter('equalizer', f=synth_eq_frequencies[10], width_type='h', width=synth_eq_width, g=synth_eq_gain)
+            .filter('equalizer', f=synth_eq_frequencies[11], width_type='h', width=synth_eq_width, g=synth_eq_gain)
+            .filter('equalizer', f=synth_eq_frequencies[12], width_type='h', width=synth_eq_width, g=synth_eq_gain)
+            .filter('volume', synth_volume)
+            .output('pipe:', format='s16le', acodec='pcm_s16le', ac=1, ar='44100')
+            .run_async(pipe_stdin=True, pipe_stdout=True)
+        )
+        return process.communicate(input=audio_data)[0]
 
 
 # magic as far as I'm concerned

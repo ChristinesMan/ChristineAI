@@ -3,7 +3,8 @@ Description=Christine's Broca
 
 [Service]
 Type=simple
-ExecStart=/bin/bash /usr/bin/broca.sh
+WorkingDirectory=/wernicke
+ExecStart=/wernicke/broca_venv/bin/python -u broca_server.py --server_name "Ye Olde VR Rig" --server_host "yeoldevrrig.lan" --server_rating "90" --use_gpu True
 
 [Install]
 WantedBy=multi-user.target

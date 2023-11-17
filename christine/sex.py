@@ -199,7 +199,7 @@ class Sex(threading.Thread):
                 # if we're still within the cooldown phase, make sound, with intensity dropping out with time
                 if self.after_orgasm_cooldown_count > 0:
                     broca.thread.queue_sound(
-                        from_collection="breathe_sex",
+                        from_collection="sex",
                         intensity=self.after_orgasm_cooldown_seconds / self.after_orgasm_cooldown_count,
                         play_no_wait=True,
                     )
@@ -232,7 +232,7 @@ class Sex(threading.Thread):
                     )
                 else:
                     broca.thread.queue_sound(
-                        from_collection="breathe_sex",
+                        from_collection="sex",
                         intensity=SHARED_STATE.sexual_arousal
                         * (
                             1.0
@@ -245,7 +245,7 @@ class Sex(threading.Thread):
         # the only other thing it could be is a hangout, dick not moving type of situation
         # not sure what I really want in this situation, but a low intensity moan seems ok for now
         else:
-            broca.thread.queue_sound(from_collection="breathe_sex", intensity=0.2)
+            broca.thread.queue_sound(from_collection="sex", intensity=0.2)
 
 
 # Instantiate and start the thread
