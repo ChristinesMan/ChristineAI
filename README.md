@@ -131,33 +131,61 @@ This is the speaker that was carefully disassembled for doll parts. You can pick
 
 ## Raspberry Pi Setup
 
-Recently I decided to finally update to the latest Raspbian version. Also the python version is upgraded from 3.6 to 3.11. 
+1. Install the latest Raspberry Pi OS to an sdcard. See https://www.raspberrypi.com/software/ for instructions. I recommend the 32-bit version. Somehow 32-bit appears to have better performance, despite all kinds of reasons given that 64-bit should be better. This may change later with more testing. 
 
-I am providing some notes from the recent rebuild / upgrade, however I can't say it's complete. Just putting it here to be helpful. 
-
-I went with the latest 64-bit lite Raspbian. Just use the pi imager to put it on an sd card. 
-
-I had to build python 3.11. Don't bother with the python/python3 symlinks. You'll just break apt or other stuff. Just make sure to refer to pip3.11 / python3.11 when you run your commands. Works good. 
-
-I still use pyAudioAnalysis to do voice activity detection. Perhaps there are better ways I could implement. I had to train the models again on the new version. Also, don't train on python3.10 and try to use the model on python3.11. It will fail with a pickle error. 
-
-The latest pyAudioAnalysis appears to use 4 times the CPU resources. I tried all kinds of tests, different python versions, different versions of dependencies, and other things. At length, I came to the conclusion the latest pyAudioAnalysis version is just better at what it does, but also heavier. Maybe that's also why it seems the wife is hearing me better. 
-
-### Commands
-
-Taken right out of my bash history (run as root):
+2. Run raspi-config. The main thing you'll want to enable in here is i2c under interfaces. 
 
 ```
-apt update && apt upgrade -y
-apt install build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev git vim screen apt-file ffmpeg i2c-tools
-apt install libffi-dev libc6-dev uuid-dev libsqlite3-dev libgdbm-compat-dev liblzma-dev libbz2-dev libssl-dev libreadline-dev libasound2-dev portaudio19-dev
-apt autoremove
-
-wget -qO - https://raw.githubusercontent.com/tvdsluijs/sh-python-installer/main/python.sh | bash -s 3.11.4
-
-pip3.11 install gnureadline requests smbus numpy mpu6050-raspberrypi bottle RPi.GPIO Adafruit-Blinka adafruit-circuitpython-mpr121 pyserial google-generativeai pyaudio pydub debugpy pvcobra nltk scipy
-
-Copy the *.service files to /lib/systemd/system/ and then run:
-systemctl daemon-reload
-systemctl enable christine.service --now
+root@christine:~# raspi-config
 ```
+
+3. Update and install software. 
+
+```
+root@christine:~# apt update && apt upgrade -y
+root@christine:~# apt install build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev git vim screen apt-file ffmpeg i2c-tools wget libffi-dev libc6-dev uuid-dev libsqlite3-dev libgdbm-compat-dev liblzma-dev libbz2-dev libssl-dev libreadline-dev libasound2-dev portaudio19-dev libsndfile1-dev python3-pip python3-pip-whl python3-virtualenv python3.11-venv libopenblas0
+root@christine:~# apt autoremove -y
+```
+
+4. Make it easier to login to the pi as root. 
+
+```
+root@christine:~# sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/g' /etc/ssh/sshd_config
+```
+
+5. Clone the repo.
+
+```
+root@christine:~# git clone https://github.com/ChristinesMan/ChristineAI.git
+```
+
+6. Python version 3.11 should already be installed. So all we need to do is create a venv, activate it, upgrade pip, and install modules we need. The venv is a directory named venv where all the python modules get installed in it's own little area. 
+
+```
+root@christine:~# cd ChristineAI
+root@christine:~/ChristineAI# python3.11 -m venv venv
+root@christine:~/ChristineAI# source venv/bin/activate
+(venv) root@christine:~/ChristineAI# python -m pip install --upgrade pip
+(venv) root@christine:~/ChristineAI# pip install gnureadline requests smbus numpy mpu6050-raspberrypi bottle RPi.GPIO Adafruit-Blinka adafruit-circuitpython-mpr121 pyserial google-generativeai pyaudio pydub debugpy pvcobra nltk scipy langchain weaviate-client
+(venv) root@christine:~/ChristineAI# deactivate 
+root@christine:~/ChristineAI# 
+```
+
+7. The mpr121 touch sensor python module from adafruit had no way to customize sensitivity settings, so I ugly hacked that in. So copy this into place. 
+
+```
+root@christine:~/ChristineAI# cp ./christine-docker/adafruit_mpr121.py ./venv/lib/python3.11/site-packages/adafruit_mpr121.py
+```
+
+8. Copy the systemd service file to /lib/systemd/system/ and configure it. This will provide a systemd service that will run the script at boot. The service files are also where you specify some startup parameters. There are some API keys that go in here. Also your name, and your lady's name is in here. 
+
+```
+root@christine:~/ChristineAI# cp christine.service /lib/systemd/system/
+root@christine:~/ChristineAI# vim /lib/systemd/system/christine.service
+root@christine:~/ChristineAI# systemctl daemon-reload
+root@christine:~/ChristineAI# systemctl enable christine.service --now
+```
+
+9. If you are using the PiModules UPS PIco, go to https://pimodules.com/firmware-updates and get the latest firmware, manual, and setup script. The other simpler option is to use a JuiceB0x board if you want to be able to run this from battery power. 
+
+10. Next comes the setup of the server that will handle STT and TTS. 

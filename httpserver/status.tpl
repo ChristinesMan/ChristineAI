@@ -10,7 +10,6 @@
         <tr><td class="statusarea_table-label">Wakefulness</td><td class="statusarea_table-value" id="Wakefulness">{{int(round(SHARED_STATE.wakefulness, 2)*100)}}%</td></tr>
         <tr><td class="statusarea_table-label">Touch</td><td class="statusarea_table-value" id="TouchedLevel">{{int(round(SHARED_STATE.touched_level, 2)*100)}}%</td></tr>
         <tr><td class="statusarea_table-label">Noise</td><td class="statusarea_table-value" id="NoiseLevel">{{int(round(SHARED_STATE.noise_level, 2)*100)}}%</td></tr>
-        <tr><td class="statusarea_table-label">ChanceToSpeak</td><td class="statusarea_table-value" id="ChanceToSpeak">{{int(round(SHARED_STATE.should_speak_chance, 2)*100)}}%</td></tr>
         <tr><td class="statusarea_table-label">LT Jostled</td><td class="statusarea_table-value" id="JostledLevel">{{int(round(SHARED_STATE.jostled_level, 2)*100)}}%</td></tr>
         <tr><td class="statusarea_table-label">ST Jostled</td><td class="statusarea_table-value" id="JostledShortTermLevel">{{int(round(SHARED_STATE.jostled_level_short, 2)*100)}}%</td></tr>
         <tr><td class="statusarea_table-label">SexualArousal</td><td class="statusarea_table-value" id="SexualArousal">{{int(round(SHARED_STATE.sexual_arousal, 2)*100)}}%</td></tr>

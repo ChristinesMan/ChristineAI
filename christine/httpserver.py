@@ -83,9 +83,9 @@ def getcontrol():
 #     return template("upload")
 
 
-# @route("/tts")
-# def gettts():
-#     return template("tts")
+@route("/tts")
+def gettts():
+    return template("tts")
 
 
 # @route("/Honey_Say", method="POST")
@@ -96,12 +96,12 @@ def getcontrol():
 #     return "OK"
 
 
-# @route("/Honey_Say_Text", method="POST")
-# def posthoneysaytext():
-#     text = request.forms.get("text")
-#     broca.thread.queue_text(text=text)
-#     log.http.info("Honey Say Request: %s", text)
-#     return "OK"
+@route("/Honey_Say_Text", method="POST")
+def posthoneysaytext():
+    text = request.forms.get("text")
+    broca.thread.queue_text(text=text)
+    log.http.info("Honey Say Request: %s", text)
+    return "OK"
 
 
 # @route("/New_Sound", method="POST")
@@ -248,22 +248,22 @@ def getcontrol():
 #     return 'OK'
 
 
-@route("/wernicke/hello", method="POST")
-def wernicke_hello():
-    server_name = request.forms.get("server_name")
-    server_host = request.forms.get("server_host")
-    server_rating = request.forms.get("server_rating")
-    wernicke.thread.audio_server_update({"server_name": server_name, "server_host": server_host, "server_rating": int(server_rating)})
-    return "OK"
+# @route("/wernicke/hello", method="POST")
+# def wernicke_hello():
+#     server_name = request.forms.get("server_name")
+#     server_host = request.forms.get("server_host")
+#     server_rating = request.forms.get("server_rating")
+#     wernicke.thread.audio_server_update({"server_name": server_name, "server_host": server_host, "server_rating": int(server_rating)})
+#     return "OK"
 
 
-@route("/broca/hello", method="POST")
-def broca_hello():
-    server_name = request.forms.get("server_name")
-    server_host = request.forms.get("server_host")
-    server_rating = request.forms.get("server_rating")
-    sounds.db.tts_server.server_update(server_name=server_name, server_host=server_host, server_rating=int(server_rating))
-    return "OK"
+# @route("/broca/hello", method="POST")
+# def broca_hello():
+#     server_name = request.forms.get("server_name")
+#     server_host = request.forms.get("server_host")
+#     server_rating = request.forms.get("server_rating")
+#     sounds.db.tts_server.server_update(server_name=server_name, server_host=server_host, server_rating=int(server_rating))
+#     return "OK"
 
 
 @route("/wernicke/processing", method="POST")

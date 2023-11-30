@@ -1,56 +1,48 @@
-"""This script will run from various machines on the local network to provide speech synthesis to my pi py wife."""
+"""This script will provide speech synthesis to my pi py wife."""
 import os
 import os.path
-import argparse
 import time
+import logging as log
 import threading
 import queue
 from multiprocessing.managers import BaseManager
-# from pydub import AudioSegment
 import numpy as np
-
-# I dunno why, but when I added the TTS import, logging broke
-# Maybe someday I will try to figure out why
-# But for now I don't really care that much, just print errors
-# import logging as log
-
-import requests
-# from TTS.api import TTS
+import socket
 
 import torch
 from TTS.config import load_config
 from TTS.tts.models import setup_model as setup_tts_model
 import ffmpeg
 
-# this shouldn't ever change, or leave
-WIFE_ADDRESS = "christine.wifi"
-
+# Setup the log file
+log.basicConfig(
+    filename="broca_server.log",
+    filemode="a",
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    level=log.DEBUG,
+)
 
 class ILoveYouPi(threading.Thread):
-    """This thread sends love to the raspberry pi to announce it's available"""
+    """This thread sends love to the raspberry pi to announce it's available
+    The love is in the form of broadcasted UDP packets"""
 
     name = "ILoveYouPi"
 
-    def __init__(self, server_name, server_host, server_rating, use_gpu):
-        threading.Thread.__init__(self)
+    def __init__(self):
 
-        # these will be different per server
-        self.server_name = server_name
-        self.server_host = server_host
-        self.server_rating = server_rating
-        self.use_gpu = use_gpu
+        threading.Thread.__init__(self)
 
         # self-destruct code
         self.server_shutdown = False
 
     def run(self):
 
+        # we sleep first, or else wife tries to connect way before it's ready
+        time.sleep(15)
+
         while True:
 
-            # we sleep first, or else wife tries to connect way before it's ready
-            time.sleep(42)
-
-            print('Saying hello.')
+            log.debug('Saying hello.')
 
             try:
 
@@ -61,15 +53,15 @@ class ILoveYouPi(threading.Thread):
                 else:
 
                     # let wife know we're up and ready to fuck.
-                    requests.post(
-                        url=f"http://{WIFE_ADDRESS}/broca/hello",
-                        data={"server_name": self.server_name, "server_host": self.server_host, "server_rating": self.server_rating},
-                        timeout=10,
-                    )
+                    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as sock:
+                        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                        sock.sendto(b'fuckme', ("255.255.255.255", 3001))
 
             except Exception as ex: # pylint: disable=broad-exception-caught
 
-                print(ex)
+                log.error(ex)
+
+            time.sleep(69)
 
 
 class SexyVoiceFactory(threading.Thread):
@@ -77,18 +69,12 @@ class SexyVoiceFactory(threading.Thread):
 
     name = "SexyVoiceFactory"
 
-    def __init__(self, server_name, server_host, server_rating, use_gpu):
+    def __init__(self):
+        
         threading.Thread.__init__(self)
 
-        # these will be different per server
-        self.server_name = server_name
-        self.server_host = server_host
-        self.server_rating = server_rating
-        self.use_gpu = use_gpu
-        if use_gpu is True:
-            self.device = 'cuda'
-        else:
-            self.device = 'cpu'
+        # The other option is 'cpu' which probably won't work and definitely too slow
+        self.device = 'cuda'
 
         # queues for inbound audio and outbound transcriptions
         self.text_queue = None
@@ -96,7 +82,7 @@ class SexyVoiceFactory(threading.Thread):
 
         # load TTS model
         # this is an optimized method that skips past much of the TTS module's options and gets right into it
-        print("Initializing TTS model...")
+        log.debug("Initializing TTS model...")
         self.model_path="./tts_model/model.pth"
         self.config_path="./tts_model/config.json"
         self.tts_config = load_config(self.config_path)
@@ -119,20 +105,20 @@ class SexyVoiceFactory(threading.Thread):
             sound = self.text_queue.get()
 
             # log it
-            print("Received text: '%s' Queue sizes: %s / %s", sound, self.text_queue.qsize(), self.audio_queue.qsize())
+            log.info("Received text: '%s' Queue sizes: %s / %s", sound, self.text_queue.qsize(), self.audio_queue.qsize())
 
             # put the text into the magic black box
             # which should yield speech by arcane mathematical processes
             sound['audio_data'] = self.do_tts(sound['text'])
 
             # log it
-            print("Speech synthesis complete.")
+            log.debug("Speech synthesis complete.")
 
             # pop result onto the queue where the client can get() it
             try:
                 self.audio_queue.put(sound, block=False)
             except queue.Full:
-                print('audio_queue hit a queue.Full')
+                log.error('audio_queue hit a queue.Full')
                 os.system("systemctl restart broca.service")
 
     def do_tts(self, text):
@@ -170,6 +156,8 @@ class SexyVoiceFactory(threading.Thread):
         audio_data = bytes(model_outputs)
 
         # Streaming the audio directly from TTS into ffmpeg process, and streaming out into var
+        # These frequencies were obtained by recording the speaker as it played a range of frequencies
+        # Something you may call, testing the frequency response
         synth_eq_frequencies = [275, 285, 296, 318, 329, 438, 454, 488, 5734, 6382, 6614, 6855, 11300]
         synth_eq_width = 100
         synth_eq_gain = -3
@@ -204,18 +192,12 @@ class QueueManager(BaseManager):
     """Black box stuff"""
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--server_name", help="What's your name?")
-    parser.add_argument("--server_host", help="Where can I find you?")
-    parser.add_argument("--server_rating", help="How big are you?")
-    parser.add_argument("--use_gpu", help="You want to use lube?", type=bool)
-    args = parser.parse_args()
 
     # start the threads
-    i_love_yous = ILoveYouPi(server_name=args.server_name, server_host=args.server_host, server_rating=args.server_rating, use_gpu=args.use_gpu)
+    i_love_yous = ILoveYouPi()
     i_love_yous.daemon = True
     i_love_yous.start()
-    sexy_voice = SexyVoiceFactory(server_name=args.server_name, server_host=args.server_host, server_rating=args.server_rating, use_gpu=args.use_gpu)
+    sexy_voice = SexyVoiceFactory()
     sexy_voice.daemon = True
     sexy_voice.start()
 
@@ -223,6 +205,6 @@ if __name__ == "__main__":
     QueueManager.register("get_text_queue", callable=lambda: sexy_voice.text_queue)
     QueueManager.register("get_audio_queue", callable=lambda: sexy_voice.audio_queue)
     QueueManager.register("get_server_shutdown", callable=lambda: i_love_yous.server_shutdown)
-    manager = QueueManager(address=("0.0.0.0", 10000), authkey=b'fuckme')
+    manager = QueueManager(address=("0.0.0.0", 3001), authkey=b'fuckme')
     server = manager.get_server()
     server.serve_forever()

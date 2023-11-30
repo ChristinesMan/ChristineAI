@@ -13,10 +13,10 @@ import random
 from multiprocessing import Process, Pipe
 import wave
 from math import ceil
+import socket
 
 # pyalsaaudio seems to have died after the recent drastic Raspbian and python upgrades
 # import alsaaudio
-# import simpleaudio
 import pyaudio
 
 from christine import log
@@ -239,198 +239,68 @@ class Broca(threading.Thread):
         Runs in a separate process for performance reasons.
         Sounds got crappy and this solved it.
         """
-        try:
 
-            # capture any errors
-            sys.stdout = open(f"./logs/subprocess_broca_{os.getpid()}.out", "w", buffering=1, encoding="utf-8", errors='ignore')
-            sys.stderr = open(f"./logs/subprocess_broca_{os.getpid()}.err", "w", buffering=1, encoding="utf-8", errors='ignore')
+        # capture any errors
+        sys.stdout = open(f"./logs/subprocess_broca_{os.getpid()}.out", "w", buffering=1, encoding="utf-8", errors='ignore')
+        sys.stderr = open(f"./logs/subprocess_broca_{os.getpid()}.err", "w", buffering=1, encoding="utf-8", errors='ignore')
 
-            # # calculate some stuff
-            # # All the wav files are forced to the same format during preprocessing, currently stereo 44100
-            # # chopping the rate into 10 pieces, so that's 10 chunks per second. I might adjust later.
-            # # I tried 25 so that this gets called more often, but this is probably not necessary now, setting back to 10
-            # # I put it back to 25 so that there will be more variability when inserting silence
-            # rate = 44100
-            # periodspersecond = 25
-            # periodsize = rate // periodspersecond
+        # The current wav file buffer thing
+        # The pump is primed using some default sound.
+        wav_data = wave.open("sounds/beep.wav")
 
-            # The current wav file buffer thing
-            # The pump is primed using some default sounds.
-            # I'm going to use a primitive way of selecting sound
-            # because this will be in a separate process
-            wav_data = wave.open("sounds/beep.wav")
+        # # Start fucking alsa
+        # # Oh, alsa died of 64bititis
+        # device = alsaaudio.PCM(
+        #     channels=1,
+        #     rate=rate,
+        #     format=alsaaudio.PCM_FORMAT_S16_LE,
+        #     periodsize=periodsize,
+        # )
 
-            # # I want to keep track to detect when we're at the last chunk
-            # # so we can chuck it away and also tell the enterprise to send more sounds.
-            # wav_data_frames = wav_data.getnframes()
+        # # init the mixer thing
+        # mixer = alsaaudio.Mixer(control="PCM")
 
-            # # one periodsize of 16 bit silence data for stuffing into the buffer when pausing
-            # wav_data_silence = b"\x00\x00" * periodsize
+        # Start up some pyaudio
+        pya = pyaudio.PyAudio()
 
-            # # counters for the silence stuffing
-            # silent_blocks = 0
-            # current_position = 0
-            # next_silence = []
+        # This will feed new wav data into pyaudio
+        def wav_data_feeder(in_data, frame_count, time_info, status): # pylint: disable=unused-argument
+            # print(f'frame_count: {frame_count}  status: {status}')
+            return (wav_data.readframes(frame_count), pyaudio.paContinue)
 
-            # # Start fucking alsa
-            # device = alsaaudio.PCM(
-            #     channels=1,
-            #     rate=rate,
-            #     format=alsaaudio.PCM_FORMAT_S16_LE,
-            #     periodsize=periodsize,
-            # )
+        # Start the pyaudio stream
+        pya_stream = pya.open(format=8, channels=1, rate=44100, output=True, stream_callback=wav_data_feeder)
 
-            # # init the mixer thing
-            # mixer = alsaaudio.Mixer(control="PCM")
+        while True:
 
-            # Start up some pyaudio
-            pya = pyaudio.PyAudio()
+            # So basically, if there's something in the pipe, get it all out
+            if to_starship.poll():
+                comms = to_starship.recv()
+                log.broca.debug("Shuttlecraft received: %s", comms)
 
-            # This will feed new wav data into pyaudio
-            def wav_data_feeder(in_data, frame_count, time_info, status): # pylint: disable=unused-argument
-                # print(f'frame_count: {frame_count}  status: {status}')
-                return (wav_data.readframes(frame_count), pyaudio.paContinue)
+                # graceful shutdown
+                if comms["wavfile"] == "selfdestruct":
+                    log.broca.info("Shuttlecraft self destruct activated.")
+                    break
 
-            # Start the pyaudio stream
-            pya_stream = pya.open(format=8, channels=1, rate=44100, output=True, stream_callback=wav_data_feeder)
+                # the volume gets set before each sound is played
+                # mixer.setvolume(comms["vol"])
+                # pyalsaaudio died so we have to forking fork
+                os.system(f'amixer -q cset numid=1 {comms["vol"]}%')
 
-            while True:
+                # stop stream, open wav file, and start the stream back up
+                # I do wonder now if this was why pyaudio used to lock up
+                # it used to be that I would open a new wav file before stopping stream
+                pya_stream.stop_stream()
+                wav_data = wave.open(comms["wavfile"])
+                pya_stream.start_stream()
 
-                # So basically, if there's something in the pipe, get it all out
-                if to_starship.poll():
-                    comms = to_starship.recv()
-                    log.broca.debug("Shuttlecraft received: %s", comms)
+            else:
+                # otherwise, in this case the current wav has been sucked dry and we need something else
+                to_starship.send(pya_stream.is_active())
 
-                    # graceful shutdown
-                    if comms["wavfile"] == "selfdestruct":
-                        log.broca.info("Shuttlecraft self destruct activated.")
-                        break
-
-                    # the volume gets set before each sound is played
-                    # mixer.setvolume(comms["vol"])
-                    # pyalsaaudio died so we have to forking fork
-                    os.system(f'amixer -q cset numid=1 {comms["vol"]}%')
-
-                    # stop stream, open wav file, and start the stream back up
-                    # I do wonder now if this was why pyaudio used to lock up
-                    # it used to be that I would open a new wav file before stopping stream
-                    pya_stream.stop_stream()
-                    wav_data = wave.open(comms["wavfile"])
-                    pya_stream.start_stream()
-
-                else:
-                    # otherwise, in this case the current wav has been sucked dry and we need something else
-                    to_starship.send(pya_stream.is_active())
-
-                    # just masturbate for a little while
-                    time.sleep(0.1)
-
-
-
-
-
-
-
-
-
-
-
-                #     # Normally the pipe will receive a path to a new wav file to start playing, stopping the previous sound
-                #     # it used to be just a string with a path, since I started dynamic volume changes this will be a dict
-                #     wav_data = wave.open(comms["wavfile"])
-                #     wav_data_frames = wav_data.getnframes()
-                #     silent_blocks = 0
-                #     current_position = 0
-                #     pya_stream.stop_stream()
-                #     pya_stream.start_stream()
-
-                #     # for each insert silence position, now that we have the total length of the wav file, we can calculate the positions in sample number
-                #     # The s[1] is how many seconds to play silence, so we can also randomize and blockify that here
-                #     for silence in comms["insert_silence_here"]:
-                #         silence[0] = int(silence[0] * wav_data_frames)
-                #         silence[1] = int(random.random() * silence[1] * periodspersecond)
-
-                #     # pop the first silence out of the list of lists
-                #     if len(comms["insert_silence_here"]) > 0:
-                #         next_silence = comms["insert_silence_here"][0]
-                #         comms["insert_silence_here"].remove(next_silence)
-
-                #     else:
-                #         next_silence = []
-
-                # else:
-                #     # log.sound.debug(f'NextSilence: {NextSilence}  WavDataFrames: {WavDataFrames}  SilentBlocks: {SilentBlocks}  CurrentPosition: {CurrentPosition}')
-                #     # If there are still frames enough to write without being short
-                #     if current_position <= wav_data_frames:
-                #         # if we are at the spot where we need to insert silence, we want to send the samples to get right up to that exact sample,
-                #         # then insert a silence immediately after to get it playing
-                #         if (
-                #             len(next_silence) > 0
-                #             and current_position + periodsize > next_silence[0]
-                #         ):
-                #             # the second var in the list is the number of seconds of silence to insert, in blocks of periodsize
-                #             silent_blocks = next_silence[1]
-
-                #             # so we're going to write something that is much less than the period size, which the docs warn against doing
-                #             # but then immediately writing a full block of silence. So I dunno if it'll handle properly or not, might get mad, flip out
-                #             # log.sound.debug('Starting silence')
-                #             device.write(
-                #                 wav_data.readframes(next_silence[0] - current_position)
-                #             )
-                #             device.write(wav_data_silence)
-
-                #             # increment where in the audio we are now. Which should be, and always will be, by the power of greyskull, the exact position of the silence insert.
-                #             current_position = next_silence[0]
-
-                #             # throw away the silence we just started. We don't need it anymore because we have SilentBlocks to carry it forward. There may be another. It's a list of lists
-                #             if len(comms["insert_silence_here"]) > 0:
-                #                 next_silence = comms["insert_silence_here"][0]
-                #                 comms["insert_silence_here"].remove(next_silence)
-
-                #             else:
-                #                 next_silence = []
-
-                #         else:
-                #             # if we're currently pumping out silence
-                #             if silent_blocks > 0:
-                #                 # log.sound.debug('Writing silence')
-                #                 # write silence
-                #                 device.write(wav_data_silence)
-
-                #                 # decrement the counter
-                #                 silent_blocks -= 1
-
-                #             else:
-                #                 # log.sound.debug('Writing wav data')
-                #                 # write the frames, and if the buffer is full it will block here and provide the delay we need
-                #                 device.write(wav_data.readframes(periodsize))
-
-                #                 # we are at this sample number
-                #                 current_position += periodsize
-
-                #         # send a signal back to enterprise letting them know something is still being played
-                #         to_starship.send(True)
-
-                #     else:
-                #         # otherwise, in this case the current wav has been sucked dry and we need something else
-                #         to_starship.send(False)
-
-                #         # just masturbate for a little while
-                #         time.sleep(1 / periodspersecond)
-
-
-
-
-
-
-
-
-        # log exception in the main.log
-        except Exception as ex: # pylint: disable=broad-exception-caught
-            log.main.error(
-                "Shuttlecraft fucking exploded. %s %s %s", ex.__class__, ex, log.format_tb(ex.__traceback__)
-            )
-
+                # just masturbate for a little while
+                time.sleep(0.1)
 
 # Instantiate and start the thread
 thread = Broca()

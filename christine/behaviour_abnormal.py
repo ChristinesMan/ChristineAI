@@ -86,13 +86,28 @@ class Behaviour(threading.Thread):
         if broca.thread.next_sound is None:
             self.notify_sound_ended()
 
-    def please_play_sound(self, **what):
-        """When some other thread wants to play a simple sound or a random sound from a collection, they have to go through here."""
+    def please_play_emote(self, text):
+        """Play an emote if we have a sound in the collection."""
 
-        log.behaviour.debug("Please play: %s", what)
+        log.behaviour.debug("Please emote: %s", text)
+
+        # figure out which emote
+        if re_emote_laugh.search(text):
+            collection = 'laughing'
+
+        elif re_emote_grrr.search(text):
+            collection = 'disgust'
+
+        elif re_emote_yawn.search(text):
+            collection = 'sleepy'
+
+        else:
+            # if it doesn't match anything known, just discard
+            log.behaviour.warning('This emote matched nothing and was discarded: %s', text)
+            return
 
         # put it on the queue
-        self.broca_queue.put_nowait({"type": "sound", "content": what})
+        self.broca_queue.put_nowait({"type": "sound", "collection": collection})
 
         # start the ball rolling if it's not already
         if broca.thread.next_sound is None:
@@ -110,9 +125,9 @@ class Behaviour(threading.Thread):
                 log.behaviour.warning('self.broca_queue was empty. Not supposed to happen.')
 
             if queue_item['type'] == "sound":
-                broca.thread.queue_sound(**queue_item['content'])
+                broca.thread.queue_sound(from_collection=queue_item['collection'])
             elif queue_item['type'] == "text":
-                broca.thread.queue_text(queue_item['content'])
+                broca.thread.queue_text(text=queue_item['content'])
 
     def notify_jostled(self, magnitude: float):
         """When wife is feeling those bumps in the night, this gets hit."""

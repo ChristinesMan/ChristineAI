@@ -13,6 +13,7 @@ import re
 from multiprocessing.managers import BaseManager
 import queue
 import numpy as np
+import socket
 
 from christine import log
 from christine import database
@@ -36,9 +37,7 @@ class MyTTSServer(threading.Thread):
         threading.Thread.__init__(self)
 
         # init these to make linter happy
-        self.server_name = None
-        self.server_host = None
-        self.server_rating = 0
+        self.server_ip = None
         self.manager = None
         self.text_queue = queue.Queue(maxsize=30)
         self.audio_queue = queue.Queue(maxsize=30)
@@ -80,9 +79,9 @@ class MyTTSServer(threading.Thread):
 
         try:
 
-            log.broca.info("Connecting to %s", self.server_host)
+            log.broca.info("Connecting to %s", self.server_ip)
             self.manager = TTSServerManager(
-                address=(self.server_host, 10000), authkey=b'fuckme',
+                address=(self.server_ip, 3001), authkey=b'fuckme',
             )
             self.manager.register("get_text_queue")
             self.manager.register("get_audio_queue")
@@ -126,26 +125,21 @@ class MyTTSServer(threading.Thread):
         except AttributeError:
             pass
 
-        self.server_name = None
-        self.server_host = None
-        self.server_rating = 0
+        self.server_ip = None
         self.manager = None
 
-    def server_update(self, server_name: str, server_host: str, server_rating: int):
+    def server_update(self, server_ip: str):
         """This is called when another machine other than myself says hi"""
 
-        log.broca.debug("%s/%s/%s Current: %s", server_name, server_host, server_rating, self.server_rating)
+        # if somehow we're still connected, get outta there
+        if self.is_connected is True:
+            self.destroy_manager()
 
-        if server_rating > self.server_rating:
+        # save the server ip
+        self.server_ip = server_ip
 
-            if self.is_connected is True:
-                self.destroy_manager()
-
-            self.server_name = server_name
-            self.server_host = server_host
-            self.server_rating = server_rating
-
-            self.connect_manager()
+        # connect to it
+        self.connect_manager()
 
     def synthesize(self, sound):
         """Accepts a bit of text to get some speech synthesis done"""
@@ -225,7 +219,7 @@ class SoundsDB(threading.Thread):
             return None
 
         # standardize the text to just the words, no spaces
-        text_stripped = re.sub("[^a-zA-Z0-9 ]", "", text).lower().strip().replace(' ', '_')
+        text_stripped = re.sub("[^a-zA-Z0-9 ]", "", text).lower().strip().replace(' ', '_')[0:200]
         file_path = f"sounds/synth/{text_stripped}.wav"
 
         # if there's already a cached synthesized sound, use the same cached stuff and return it
@@ -344,7 +338,7 @@ class SoundsDB(threading.Thread):
         """Must only update a sound's skip_until when it's time to play it. So the broca module will call this."""
 
         sound = self.sounds[sound_id]
-        log.broca.debg("Made unavailable: %s", sound)
+        log.broca.debug("Made unavailable: %s", sound)
         sound["skip_until"] = time.time() + (sound["replay_wait"] * random.uniform(0.0, 1.2))
 
     def clean_cache(self):
@@ -367,3 +361,39 @@ class SoundsDB(threading.Thread):
 db = SoundsDB()
 db.daemon = True
 db.start()
+
+class ReceiveLoveFromUDP(threading.Thread):
+    """Thread will listen to the UDP broadcast packets sent from server.
+    """
+
+    name = "ReceiveLoveFromUDP"
+
+    def __init__(self):
+
+        threading.Thread.__init__(self)
+
+    def run(self):
+        
+        # bind to the UDP port
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        sock.bind(("0.0.0.0", 3001))
+
+        # repeatedly listen for UDP packets, only when server not connected
+        while True:
+
+            time.sleep(15)
+
+            if db.tts_server.is_connected is False:
+                
+                log.broca.debug('Waiting for UDP packet')
+                data, addr = sock.recvfrom(1024)
+
+                if data == b'fuckme':
+                    server_ip = addr[0]
+                    log.broca.debug('Received UDP packet from %s', server_ip)
+                    db.tts_server.server_update(server_ip=server_ip)
+
+udp_listener = ReceiveLoveFromUDP()
+udp_listener.daemon = True
+udp_listener.start()

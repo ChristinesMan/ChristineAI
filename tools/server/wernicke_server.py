@@ -1,7 +1,6 @@
-"""This script will run from various machines on the local network to provide audio analysis to my pi py wife."""
+"""This script will provide audio analysis and speech recognition to my pi py wife."""
 import os
 import os.path
-import argparse
 import time
 import logging as log
 import threading
@@ -10,15 +9,7 @@ from multiprocessing.managers import BaseManager
 import wave
 import whisper
 import numpy as np
-
-# import scipy
-# from pyAudioAnalysis import ShortTermFeatures as sF
-# from pyAudioAnalysis import MidTermFeatures as mF
-# from pyAudioAnalysis import audioTrainTest as aT
-import requests
-
-# this shouldn't ever change, or leave
-WIFE_ADDRESS = "christine.wifi"
+import socket
 
 # Setup the log file
 log.basicConfig(
@@ -28,32 +19,25 @@ log.basicConfig(
     level=log.DEBUG,
 )
 
-
 class ILoveYouPi(threading.Thread):
-    """This thread sends love to the raspberry pi to announce it's available to process audio
-    The plan is to have several of these server processes on the network as backup.
-    The wife can keep track of what's available and use the server with the best rating.
-    """
+    """This thread sends love to the raspberry pi to announce it's available
+    The love is in the form of broadcasted UDP packets"""
 
     name = "ILoveYouPi"
 
-    def __init__(self, server_name, server_host, server_rating, server_model):
-        threading.Thread.__init__(self)
+    def __init__(self):
 
-        # these will be different per server
-        self.server_name = server_name
-        self.server_host = server_host
-        self.server_rating = server_rating
-        self.server_model = server_model
+        threading.Thread.__init__(self)
 
         # self-destruct code
         self.server_shutdown = False
 
     def run(self):
-        while True:
 
-            # we sleep first, or else wife tries to connect way before it's ready
-            time.sleep(69)
+        # we sleep first, or else wife tries to connect way before it's ready
+        time.sleep(10)
+
+        while True:
 
             log.debug('Saying hello.')
 
@@ -65,17 +49,16 @@ class ILoveYouPi(threading.Thread):
 
                 else:
 
-                    # let wife know we're up. And so hard for you.
-                    requests.post(
-                        url=f"http://{WIFE_ADDRESS}/wernicke/hello",
-                        data={"server_name": self.server_name, "server_host": self.server_host, "server_rating": self.server_rating},
-                        timeout=10,
-                    )
-
+                    # let wife know we're up. And so hard.
+                    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as sock:
+                        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                        sock.sendto(b'fuckme', ("255.255.255.255", 3000))
+    
             except Exception as ex: # pylint: disable=broad-exception-caught
 
                 log.warning(ex)
 
+            time.sleep(69)
 
 class SausageFactory(threading.Thread):
     """This thread waits for new audio data.
@@ -85,19 +68,18 @@ class SausageFactory(threading.Thread):
 
     name = "SausageFactory"
 
-    def __init__(self, server_name, server_host, server_rating, server_model):
-        threading.Thread.__init__(self)
+    def __init__(self):
 
-        # these will be different per server
-        self.server_name = server_name
-        self.server_host = server_host
-        self.server_rating = server_rating
-        self.server_model = server_model
+        threading.Thread.__init__(self)
 
         # queues for inbound audio and outbound transcriptions
         self.audio_queue = None
         self.result_queue = None
 
+        # get the whisper model size to use from the environment variable
+        # The size can be reduced if there's not enough VMEM, at the cost of accuracy
+        self.server_model = os.getenv("WHISPER_MODEL", 'medium.en')
+        
         # load whisper model
         log.info("Initializing whisper model...")
         self.whisper_model = whisper.load_model(self.server_model)
@@ -186,18 +168,12 @@ class QueueManager(BaseManager):
     """Black box stuff"""
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--server_name", help="What's your name?")
-    parser.add_argument("--server_host", help="Where can I find you?")
-    parser.add_argument("--server_rating", help="How big are you?")
-    parser.add_argument("--server_model", help="Are you beautiful?")
-    args = parser.parse_args()
 
     # start the threads
-    i_love_yous = ILoveYouPi(server_name=args.server_name, server_host=args.server_host, server_rating=args.server_rating, server_model=args.server_model)
+    i_love_yous = ILoveYouPi()
     i_love_yous.daemon = True
     i_love_yous.start()
-    sausages = SausageFactory(server_name=args.server_name, server_host=args.server_host, server_rating=args.server_rating, server_model=args.server_model)
+    sausages = SausageFactory()
     sausages.daemon = True
     sausages.start()
 

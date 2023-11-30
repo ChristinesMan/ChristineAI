@@ -16,8 +16,8 @@ class Behaviour(threading.Thread):
     def please_say(self, text):
         """When the motherfucking badass parietal lobe with it's big honking GPUs wants to say some words, they have to go through here."""
 
-    def please_play_sound(self, **what):
-        """When some other thread wants to play a simple sound or a random sound from a collection, they have to go through here."""
+    def please_play_emote(self, text):
+        """Play an emote if we have a sound in the collection."""
 
     def notify_sound_ended(self):
         """This should get called as soon as sound is finished playing."""

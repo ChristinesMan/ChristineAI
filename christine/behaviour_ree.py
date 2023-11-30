@@ -69,3 +69,14 @@ re_body_deactivate_hearing = re.compile(
 re_body_go_to_sleep = re.compile(
     r"\(go to sleep\.?\)", flags=re.IGNORECASE
 )
+
+# emotes that show up in text from LLM
+re_emote_laugh = re.compile(
+    r"laugh|😆|🤣|😂|😅|😀|😃|😄|😁|🤪|😜|😝", flags=re.IGNORECASE
+)
+re_emote_grrr = re.compile(
+    r"grrr|😠|😡|🤬|😤|🤯|🖕", flags=re.IGNORECASE
+)
+re_emote_yawn = re.compile(
+    r"yawn|😪|😴|😒|💤|😫|🥱|😑|😔|🤤", flags=re.IGNORECASE
+)

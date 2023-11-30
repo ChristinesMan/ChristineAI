@@ -246,9 +246,10 @@ class Vagina(threading.Thread):
                 )
                 log.vagina.info("Touch sensor init success")
 
-            except OSError:
+            except (OSError, ValueError):
                 honey_touched({"msg": "FAIL", "data": ""})
-                log.vagina.error("Body touch unavailable.")
+                log.vagina.error("Vagina unavailable.")
+                log.main.error("Vagina unavailable.")
                 return
 
             def sensor_wake_up(channel):  # pylint: disable=unused-argument
