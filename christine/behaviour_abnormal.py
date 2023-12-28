@@ -34,6 +34,14 @@ class Behaviour(threading.Thread):
         # so keep track of the time
         self.time_of_last_body_message = 0.0
 
+        # the jostled levels and what messages to send LLM for each level
+        self.jostle_levels = [
+            {'magnitude': 0.8, 'text': 'Your gyroscope has detected a massive bump. It was so intense, your body may have fallen or been set down hard. Please ask to make sure everything is okay.'},
+            {'magnitude': 0.6, 'text': 'Your gyroscope has detected a sudden, strong body movement.'},
+            {'magnitude': 0.3, 'text': 'Your gyroscope has detected some significant body movement.'},
+            {'magnitude': 0.15, 'text': 'Your gyroscope has detected a very gentle, slight body movement.'},
+        ]
+
     def run(self):
         while True:
             time.sleep(2)
@@ -49,10 +57,10 @@ class Behaviour(threading.Thread):
 
         # there are certain garbage phrases that are frequently detected
         if re_garbage.search(words):
-            log.behaviour.info("Heard: %s (discarded)", words)
+            log.parietallobe.info("Heard: %s (discarded)", words)
             return
 
-        log.behaviour.info("Heard: %s", words)
+        log.parietallobe.info("Heard: %s", words)
 
         if re_wake_up.search(words):
             sleep.thread.wake_up(0.2)
@@ -129,16 +137,20 @@ class Behaviour(threading.Thread):
             elif queue_item['type'] == "text":
                 broca.thread.queue_text(text=queue_item['content'])
 
-    def notify_jostled(self, magnitude: float):
+    def notify_jostled(self):
         """When wife is feeling those bumps in the night, this gets hit."""
 
-        log.behaviour.debug("Jostled. (%.2f)", magnitude)
+        # wait a sec first because the full magnitude of the jostling might still be building
+        time.sleep(1)
+        magnitude = SHARED_STATE.jostled_level_short
+        log.behaviour.info("Jostled. (%.2f)", magnitude)
 
-        if time.time() > self.time_of_last_body_message + 60:
-            parietal_lobe.thread.accept_body_internal_message("Your gyroscope has detected some significant body movement.")
-            self.time_of_last_body_message = time.time()
+        # send an approapriate alert to LLM based on the magnitude of being jostled
+        time.sleep(1)
+        for level in self.jostle_levels:
+            if magnitude >= level['magnitude']:
+                parietal_lobe.thread.accept_body_internal_message(level['text'])
+                break
 
-        sleep.thread.wake_up(0.08)
-        SHARED_STATE.lover_proximity = (
-            (SHARED_STATE.lover_proximity * 5.0) + 1.0
-        ) / 6.0
+        # wake up a bit
+        sleep.thread.wake_up(0.1)

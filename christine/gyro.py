@@ -53,6 +53,9 @@ class Gyro(threading.Thread):
         # be quiet, linter
         self.sensor = None
 
+        # I want to limit how often jostled messages get sent
+        self.time_of_last_spike = time.time()
+
     def run(self):
         log.gyro.debug("Thread started.")
 
@@ -60,11 +63,13 @@ class Gyro(threading.Thread):
             # setup that sensor
             self.sensor = mpu6050(0x68)
             self.sensor.set_accel_range(mpu6050.ACCEL_RANGE_2G)
+            SHARED_STATE.gyro_available = True
 
         except OSError:
             log.main.error("Gyro unavailable.")
             SHARED_STATE.jostled_level = 0.0
             SHARED_STATE.is_laying_down = False
+            SHARED_STATE.gyro_available = False
             return
 
         while True:
@@ -88,6 +93,8 @@ class Gyro(threading.Thread):
                     log.main.critical("The gyro thread has been shutdown.")
                     SHARED_STATE.jostled_level = 0.0
                     SHARED_STATE.is_laying_down = False
+                    SHARED_STATE.gyro_available = False
+                    SHARED_STATE.behaviour_zone.notify_body_alert('The gyroscope in your body started generating errors and had to be disabled. Something may have gotten disconnected. I guess let your husband know.')
                     return
 
             # Keep track of which iteration we're on. Fill the array with data.
@@ -135,10 +142,10 @@ class Gyro(threading.Thread):
                     SHARED_STATE.jostled_level_short * self.jostled_avg_window_short
                 ) / (self.jostled_avg_window_short + 1)
 
-                # if she gets hit, wake up a bit
-                if self.jostled_level > 0.20:
-                    self.jostled_level = 0.20
-                    SHARED_STATE.behaviour_zone.notify_jostled(self.jostled_level)
+                # if there is a sudden spike notify the proper handlers of such events, but not too frequently
+                if self.jostled_level > 0.15 and time.time() > self.time_of_last_spike + 60:
+                    SHARED_STATE.behaviour_zone.notify_jostled()
+                    self.time_of_last_spike = time.time()
 
                 # Update the boolean that tells if we're laying down. While laying down I recorded 4.37, 1.60. However, now it's 1.55, 2.7. wtf happened? The gyro has not moved. Maybe position difference.
                 # At some point I ought to self-calibrate this. When it's dark, and not jostled for like an hour, that's def laying down, save it.

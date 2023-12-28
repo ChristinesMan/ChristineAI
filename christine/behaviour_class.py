@@ -22,5 +22,5 @@ class Behaviour(threading.Thread):
     def notify_sound_ended(self):
         """This should get called as soon as sound is finished playing."""
 
-    def notify_jostled(self, magnitude: float):
+    def notify_jostled(self):
         """When wife is feeling those bumps in the night, this gets hit."""
