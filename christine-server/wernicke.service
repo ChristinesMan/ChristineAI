@@ -1,0 +1,12 @@
+[Unit]
+Description=Christine's Wernicke
+
+[Service]
+Type=simple
+WorkingDirectory=/root/ChristineAI/christine-server
+Environment=WHISPER_MODEL=medium.en
+Environment=PV_KEY=YOURPICOVOICEKEY
+ExecStart=/root/ChristineAI/christine-server/wernicke_venv/bin/python -u wernicke.py
+
+[Install]
+WantedBy=multi-user.target

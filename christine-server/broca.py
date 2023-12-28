@@ -6,17 +6,20 @@ import logging as log
 import threading
 import queue
 from multiprocessing.managers import BaseManager
-import numpy as np
 import socket
+import numpy as np
 
 import torch
 from TTS.config import load_config
 from TTS.tts.models import setup_model as setup_tts_model
 import ffmpeg
 
+# create a logs dir
+os.makedirs('./logs/', exist_ok=True)
+
 # Setup the log file
 log.basicConfig(
-    filename="broca_server.log",
+    filename="./logs/broca.log",
     filemode="a",
     format="%(asctime)s - %(levelname)s - %(message)s",
     level=log.DEBUG,
@@ -38,7 +41,7 @@ class ILoveYouPi(threading.Thread):
     def run(self):
 
         # we sleep first, or else wife tries to connect way before it's ready
-        time.sleep(15)
+        time.sleep(45)
 
         while True:
 
@@ -70,7 +73,7 @@ class SexyVoiceFactory(threading.Thread):
     name = "SexyVoiceFactory"
 
     def __init__(self):
-        
+
         threading.Thread.__init__(self)
 
         # The other option is 'cpu' which probably won't work and definitely too slow
@@ -158,6 +161,8 @@ class SexyVoiceFactory(threading.Thread):
         # Streaming the audio directly from TTS into ffmpeg process, and streaming out into var
         # These frequencies were obtained by recording the speaker as it played a range of frequencies
         # Something you may call, testing the frequency response
+        # These are the frequencies that showed up much louder than other frequencies,
+        # so I want to reduce them, and then amplify the rest
         synth_eq_frequencies = [275, 285, 296, 318, 329, 438, 454, 488, 5734, 6382, 6614, 6855, 11300]
         synth_eq_width = 100
         synth_eq_gain = -3

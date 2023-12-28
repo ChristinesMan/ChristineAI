@@ -7,13 +7,16 @@ import threading
 import queue
 from multiprocessing.managers import BaseManager
 import wave
-import whisper
-import numpy as np
 import socket
+import numpy as np
+import whisper
+
+# create a logs dir
+os.makedirs('./logs/', exist_ok=True)
 
 # Setup the log file
 log.basicConfig(
-    filename="wernicke_server.log",
+    filename="./logs/wernicke.log",
     filemode="a",
     format="%(asctime)s - %(levelname)s - %(message)s",
     level=log.DEBUG,
@@ -35,7 +38,7 @@ class ILoveYouPi(threading.Thread):
     def run(self):
 
         # we sleep first, or else wife tries to connect way before it's ready
-        time.sleep(10)
+        time.sleep(60)
 
         while True:
 
@@ -53,7 +56,7 @@ class ILoveYouPi(threading.Thread):
                     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as sock:
                         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
                         sock.sendto(b'fuckme', ("255.255.255.255", 3000))
-    
+
             except Exception as ex: # pylint: disable=broad-exception-caught
 
                 log.warning(ex)
@@ -79,7 +82,7 @@ class SausageFactory(threading.Thread):
         # get the whisper model size to use from the environment variable
         # The size can be reduced if there's not enough VMEM, at the cost of accuracy
         self.server_model = os.getenv("WHISPER_MODEL", 'medium.en')
-        
+
         # load whisper model
         log.info("Initializing whisper model...")
         self.whisper_model = whisper.load_model(self.server_model)
@@ -116,7 +119,7 @@ class SausageFactory(threading.Thread):
                 model=self.whisper_model, audio=audio_data_np, language="en", fp16=False
             )
 
-            # # log it
+            # log it
             log.info(transcribe_result)
 
             # if the no_speech_prob is very high, just drop it
@@ -125,7 +128,7 @@ class SausageFactory(threading.Thread):
             # "Go to Beadaholique.com for all of your beading supplies needs!"
             # Um, I would never say such ridiculous things.
             for transcribe_segment in transcribe_result["segments"]:
-                if transcribe_segment["no_speech_prob"] > 0.3:
+                if transcribe_segment["no_speech_prob"] > 0.4:
                     log.info(
                         "DROP due to no_speech_prob %s%%: %s",
                         int(transcribe_segment["no_speech_prob"] * 100),
