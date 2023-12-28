@@ -54,7 +54,7 @@ horny = setup_logger("horny")
 cuddles = setup_logger("cuddles")
 vagina = setup_logger("vagina")
 behaviour = setup_logger("behaviour")
-parietallobe = setup_logger("parietallobe")
+parietallobe = setup_logger("parietallobe", level=logging.DEBUG)
 imhere = setup_logger("imhere", level=logging.INFO, msg_format="%(module)s.%(funcName)s.%(created)d")
 
 

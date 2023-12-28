@@ -95,6 +95,17 @@ class ChristineDB:
         except Exception as ex:
             log.db.error("Database error (commit). %s %s %s", ex.__class__, ex, log.format_tb(ex.__traceback__))
 
+    def disconnect(self):
+        """Called when script is supposed to be shutting down."""
+
+        try:
+            self.sqlite_connection.commit()
+            self.sqlite_connection.close()
+
+        # log exception in the db.log
+        except Exception as ex:
+            log.db.error("Database error (close). %s %s %s", ex.__class__, ex, log.format_tb(ex.__traceback__))
+
 
 # Instantiate
 conn = ChristineDB()

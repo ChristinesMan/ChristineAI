@@ -38,5 +38,8 @@ log.main.info("Caught kill signal")
 # all the threads monitor this variable and try to shutdown
 SHARED_STATE.please_shut_down = True
 
+# disconnect the sqlite db because around this time we tend to get kill nined
+database.conn.disconnect()
+
 # wait a bit to allow graceful shutdown
 time.sleep(2)
