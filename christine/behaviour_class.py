@@ -13,6 +13,9 @@ class Behaviour(threading.Thread):
     def notify_words(self, words: str):
         """When words are spoken and processed, they should end up here."""
 
+    def notify_body_alert(self, text: str):
+        """When something goes wrong or something changes in the body, this gets called to be passed on to the LLM."""
+
     def please_say(self, text):
         """When the motherfucking badass parietal lobe with it's big honking GPUs wants to say some words, they have to go through here."""
 

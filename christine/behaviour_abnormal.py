@@ -77,6 +77,14 @@ class Behaviour(threading.Thread):
         # send words to the LLM
         parietal_lobe.thread.accept_new_message(words)
 
+    def notify_body_alert(self, text: str):
+        """When something goes wrong or something changes in the body, this gets called to be passed on to the LLM."""
+
+        log.behaviour.info("Body says: %s", text)
+
+        # send words to the LLM as a body internal message
+        parietal_lobe.thread.accept_body_internal_message(text)
+
     def please_say(self, text):
         """When the motherfucking badass parietal lobe with it's big honking GPUs wants to say some words, they have to go through here."""
 
@@ -110,9 +118,8 @@ class Behaviour(threading.Thread):
             collection = 'sleepy'
 
         else:
-            # if it doesn't match anything known, just discard
-            log.behaviour.warning('This emote matched nothing and was discarded: %s', text)
-            return
+            # if it doesn't match anything known, just discard, but let the caller know
+            return False
 
         # put it on the queue
         self.broca_queue.put_nowait({"type": "sound", "collection": collection})
@@ -120,6 +127,9 @@ class Behaviour(threading.Thread):
         # start the ball rolling if it's not already
         if broca.thread.next_sound is None:
             self.notify_sound_ended()
+
+        # if we got this far, the emote was used. We send this back to let Parietal Lobe know to save the emote.
+        return True
 
     def notify_sound_ended(self):
         """This should get called by broca as soon as sound is finished playing. Or, rather, when next_sound is free."""
@@ -133,7 +143,7 @@ class Behaviour(threading.Thread):
                 log.behaviour.warning('self.broca_queue was empty. Not supposed to happen.')
 
             if queue_item['type'] == "sound":
-                broca.thread.queue_sound(from_collection=queue_item['collection'])
+                broca.thread.queue_sound(from_collection=queue_item['collection'], priority=10)
             elif queue_item['type'] == "text":
                 broca.thread.queue_text(text=queue_item['content'])
 

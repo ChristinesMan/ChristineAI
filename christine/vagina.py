@@ -59,9 +59,20 @@ class Vagina(threading.Thread):
             # An embarrassing era in earth's history characterized by the fucking of inanimate objects and mass hysteria.
             sensor_data = self.to_probe.recv()
 
-            # if there was a failure, just die
-            if sensor_data["msg"] == "FAIL":
-                # SHARED_STATE.TouchedLevel = 0.0
+            # if there was a failure even starting the sensor, just die
+            if sensor_data["msg"] == "INIT_FAIL":
+                SHARED_STATE.vagina_available = False
+                return
+
+            # if there was a series of consecutive failures, just let the LLM know and die
+            elif sensor_data["msg"] == "FAIL":
+                SHARED_STATE.behaviour_zone.notify_body_alert('The lower level sensor in your body started generating errors and had to be disabled. Something may have gotten disconnected. I guess let your husband know.')
+                SHARED_STATE.vagina_available = False
+                return
+
+            # if there was a series of consecutive failures, just die
+            elif sensor_data["msg"] == "INIT_SUCCESS":
+                SHARED_STATE.vagina_available = True
                 return
 
             # otherwise, pass the message over to the sex thread
@@ -245,9 +256,10 @@ class Vagina(threading.Thread):
                     debounce=2,
                 )
                 log.vagina.info("Touch sensor init success")
+                honey_touched({"msg": "INIT_SUCCESS", "data": ""})
 
             except (OSError, ValueError):
-                honey_touched({"msg": "FAIL", "data": ""})
+                honey_touched({"msg": "INIT_FAIL", "data": ""})
                 log.vagina.error("Vagina unavailable.")
                 log.main.error("Vagina unavailable.")
                 return

@@ -3,7 +3,7 @@ Keeps track of all the things and share this with all the other modules
 """
 import time
 import threading
-import numpy as np
+# import numpy as np
 
 from christine import database
 from christine import behaviour_class
@@ -98,16 +98,25 @@ class Status(threading.Thread):
 
         # this is to signal all threads to properly shutdown
         self.please_shut_down = False
-        
-        # keep track of the time, so that I can tell LLM land how long
-        self.time = 0
+
+        # keep track of the time, so that I can tell LLM land how long body has been down
+        self.current_time = 0
+        self.time_down = 0
+
+        # is wernicke/broca connected to the server
+        self.wernicke_connected = False
+        self.broca_connected = False
+
+        # is shit fucked up
+        self.gyro_available = False
+        self.vagina_available = False
 
     def run(self):
         self.load_state()
 
         while True:
-            self.save_state()
             time.sleep(25)
+            self.save_state()
 
     def save_state(self):
         """
@@ -115,7 +124,7 @@ class Status(threading.Thread):
         """
 
         # save the current time
-        self.time = time.time()
+        self.current_time = time.time()
 
         rows = database.conn.do_query("SELECT id,name,type FROM status")
         if rows is not None:
@@ -139,9 +148,14 @@ class Status(threading.Thread):
 
         rows = database.conn.do_query("SELECT name,value,type FROM status")
         if rows is not None:
+
             for row in rows:
+
                 if row[2] == "f":
+                    print(f'row[0] {row[0]} row[1] {row[1]} row[2] {row[2]} ')
+                    print(f'self.current_time: {self.current_time}')
                     setattr(self, row[0], float(row[1]))
+                    print(f'self.current_time: {self.current_time}')
 
                 elif row[2] == "b":
                     if row[1] == "True":
@@ -158,6 +172,13 @@ class Status(threading.Thread):
                 else:
                     setattr(self, row[0], eval(row[1])) # pylint: disable=eval-used
 
+            # calculate how long it was between saving the time and starting back up, to share with the LLM
+            self.time_down = time.time() - self.current_time
+            
+            # if the time down has been a huge number of seconds, that means the down time calculation has failed
+            # don't tell your wife she's been sleeping 19700.0 days
+            if self.time_down > 1702090207.0:
+                self.time_down = 0.0
 
 # Instantiate and start the thread
 SHARED_STATE = Status()

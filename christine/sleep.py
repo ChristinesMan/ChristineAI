@@ -34,13 +34,13 @@ class Sleep(threading.Thread):
         self.current_environmental_conditions = 0.5
 
         # How quickly should wakefulness change?
-        self.wakefullness_avg_window = 5.0
+        self.wakefullness_avg_window = 10.0
 
         # Weights
         self.weights_light = 6
         self.weights_gyro = 4
         self.weights_tilt = 3
-        self.weights_time = 8
+        self.weights_time = 6
         self.weights_total = (
             self.weights_light
             + self.weights_gyro
@@ -55,7 +55,7 @@ class Sleep(threading.Thread):
         self.time = 0.0
 
         # At what time should we expect to be in bed or wake up?
-        self.wake_hour = 5
+        self.wake_hour = 6
         self.sleep_hour = 20
 
         # at what point are we tired

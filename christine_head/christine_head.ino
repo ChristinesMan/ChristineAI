@@ -15,13 +15,15 @@
 #define _BV(bit) (1 << (bit)) 
 #endif
 
-// You can have up to 4 on one i2c bus but one is enough for testing!
-Adafruit_MPR121 cap = Adafruit_MPR121();
+Adafruit_MPR121 touch_sensor = Adafruit_MPR121();
 
 #include <I2S.h>
 
 // buffer for the audio data
-uint8_t AudioData[500];
+// for i2s it seems to like to deliver in 512 byte chunks
+// on the receiving end, I need a list of 512 signed short ints
+// because that's what pvcobra wants. Sweep the leg. 
+uint8_t AudioData[512];
 
 // struct for the sensor block buffer
 // So let's figure length of the sensor block right here right now
@@ -48,34 +50,23 @@ float LightSensorAvg = 0.0;
 // This is here so that we can gracefully handle a fucked up touch sensor
 bool TouchSensorAvailable = true;
 
-// this will keep track of which AudioDataAvailable loop we're on
-// Because I want to only embed the sensor data within the audio data when there's 16K of audio data.
-// So that's 16000 bytes per 0.25s of 16K 2 byte wide 2 channel audio / 512 bytes per function call
-// Which works out to every, wtf 16000 / 512 is 31.25. That won't work. My kludge has failed! Noooooo...
-// So, 64000 / 512 is 125, but if we used that we'd only get sensor updates every second, unacceptable. 
-// wtf, why does 12800 / 512 = 25. Can I use that? 
-// This might not be a problem if it was 16384 samples per second instead of 16000. 
-// Who came up with that and why? Oh whatever. 
-
-// Oh, it seems as if I'm able to choose my period size, so I'm going to try changing 512 to 500. 
-// So 16000 / 500 = 32, So every 32nd audio block we will start with the sensor data. 
 // On the python end, I'll snap the sensor data out of there. If the sensor block is not found,
 // we'll read and throw away just enough chars so that it starts to align
 long LoopCount = 0;
 
 // This gets triggered when audio is available from I2S
-// It was also necessary to hack the 512 to 500 in ~/.arduino15/packages/arduino/hardware/samd/1.8.12/libraries/I2S/src/utility/I2SDoubleBuffer.h
 void AudioDataAvailable() {
 
-  // Read 500 bytes
-  int bytesread = I2S.read(&AudioData, 500);
+  // Read 512 bytes
+  int bytesread = I2S.read(&AudioData, 512);
 
   // As far as I know there will always every time be samples to read
   // But just in case...
   if ( bytesread > 0 ) {
 
-    // only every 32nd block, send some magic swear words, the sensor data, then more swearing
-    if ( LoopCount % 32 == 0 ) {
+    // every 4th block, send some magic swear words, the sensor data, then more swearing
+    // 512 * 2 left side, 512 * 2 right side. Right? 
+    if ( LoopCount % 4 == 0 ) {
 
       // write the whole sensor block
       Serial.write(SensorBlock, 38);
@@ -85,7 +76,7 @@ void AudioDataAvailable() {
     LoopCount++;
 
     // Write the audio data
-    Serial.write(AudioData, 500);
+    Serial.write(AudioData, 512);
   }
 }
 
@@ -110,7 +101,7 @@ void setup() {
   // And I'm sure as fuck not drilling holes. 
   // I'm done with brain surgery. Fuck it if it breaks. 
   // At least we'll still have hearing. 
-  if (!cap.begin(0x5A)) {
+  if (!touch_sensor.begin(0x5A)) {
     TouchSensorAvailable = false;
   }
 
@@ -135,7 +126,7 @@ void setup() {
 
 void loop() {
   // get the light and touch sensor readings over and over
-  // pop them into the struct that gets sent every 0.25s with audio data
+  // pop them into the struct that gets sent every 512 short ints worth with audio data
 
   // For light sensor, activate the transistor that controls the flow of current through the voltage divider
   digitalWrite(ActivatePin, HIGH);
@@ -161,7 +152,7 @@ void loop() {
   // If touch sensor fucked up, you get the zeros the struct got initialized with, same length either way
   if ( TouchSensorAvailable ) {
     for (uint8_t i=0; i<12; i++) {
-        SensorData[i] = cap.filteredData(i);
+        SensorData[i] = touch_sensor.filteredData(i);
     }
   }
 

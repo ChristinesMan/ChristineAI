@@ -163,7 +163,8 @@ class Broca(threading.Thread):
         # so that's why I'm adjusting this by 0.5s.
         # the number of seconds in the wav file are estimated based on the file size, then 0.5s is added as padding,
         # then / 0.25 because blocks are 0.25s long.
-        wernicke.thread.audio_processing_pause(ceil((( os.stat(file_path).st_size / 88272 ) + 0.5) / 0.25))
+        # So now that I made the wernicke send about 32 times more tiny blocks, increasing this
+        wernicke.thread.audio_processing_pause(ceil( os.stat(file_path).st_size / 2100 ))
 
         # send the message to the subprocess
         self.to_shuttlecraft.send(

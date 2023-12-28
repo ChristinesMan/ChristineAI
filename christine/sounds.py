@@ -12,10 +12,11 @@ import threading
 import re
 from multiprocessing.managers import BaseManager
 import queue
-import numpy as np
 import socket
+import numpy as np
 
 from christine import log
+from christine.status import SHARED_STATE
 from christine import database
 from christine import broca
 
@@ -42,7 +43,7 @@ class MyTTSServer(threading.Thread):
         self.text_queue = queue.Queue(maxsize=30)
         self.audio_queue = queue.Queue(maxsize=30)
         self.server_shutdown = False
-        self.is_connected = False
+        SHARED_STATE.broca_connected = False
 
     def run(self):
 
@@ -51,7 +52,7 @@ class MyTTSServer(threading.Thread):
 
         while True:
 
-            if self.is_connected is True:
+            if SHARED_STATE.broca_connected is True:
 
                 # get something out of the queue if there's anything. Don't block.
                 try:
@@ -67,6 +68,7 @@ class MyTTSServer(threading.Thread):
 
                 except (BrokenPipeError, EOFError) as ex:
                     log.broca.warning("Server went away. %s", ex)
+                    self.say_fail()
                     self.destroy_manager()
 
                 except Exception: # pylint: disable=broad-exception-caught
@@ -98,17 +100,19 @@ class MyTTSServer(threading.Thread):
                 self.manager.get_server_shutdown() # pylint: disable=no-member
             )
             log.broca.info("Connected")
-            self.is_connected = True
+            self.say_connected()
+            SHARED_STATE.broca_connected = True
 
         except Exception as ex: # pylint: disable=broad-exception-caught
 
             log.broca.error("Connect failed. %s", ex)
+            self.say_fail()
             self.destroy_manager()
 
     def destroy_manager(self):
         """Disconnect and utterly destroy the manager"""
 
-        self.is_connected = False
+        SHARED_STATE.broca_connected = False
 
         try:
             del self.text_queue
@@ -132,7 +136,7 @@ class MyTTSServer(threading.Thread):
         """This is called when another machine other than myself says hi"""
 
         # if somehow we're still connected, get outta there
-        if self.is_connected is True:
+        if SHARED_STATE.broca_connected is True:
             self.destroy_manager()
 
         # save the server ip
@@ -149,15 +153,24 @@ class MyTTSServer(threading.Thread):
             log.broca.debug("Put this on the synthesis queue: %s. Queue sizes: %s / %s", sound, self.text_queue.qsize(), self.audio_queue.qsize())
         except queue.Full:
             log.broca.error("The remote queue is full, wtf")
+            self.say_fail()
             self.server_shutdown = True
             time.sleep(1)
             self.destroy_manager()
         except (BrokenPipeError, EOFError) as ex:
             log.broca.error("Server error. %s", ex)
+            self.say_fail()
             self.destroy_manager()
         except AttributeError:
             pass
 
+    def say_fail(self):
+        """Play the sound to notify that broca failed."""
+        broca.thread.queue_sound(from_collection='broca_failure')
+
+    def say_connected(self):
+        """Play the sound to notify that broca connected."""
+        broca.thread.queue_sound(from_collection='broca_connected')
 
 class SoundsDB(threading.Thread):
     """This class basically manages everything to do with sounds. Actual speech is all synthesized now."""
@@ -215,7 +228,7 @@ class SoundsDB(threading.Thread):
         """
 
         # if there's no server available, just stop it right there
-        if self.tts_server.is_connected is False:
+        if SHARED_STATE.broca_connected is False:
             return None
 
         # standardize the text to just the words, no spaces
@@ -373,7 +386,7 @@ class ReceiveLoveFromUDP(threading.Thread):
         threading.Thread.__init__(self)
 
     def run(self):
-        
+
         # bind to the UDP port
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
@@ -384,8 +397,8 @@ class ReceiveLoveFromUDP(threading.Thread):
 
             time.sleep(15)
 
-            if db.tts_server.is_connected is False:
-                
+            if SHARED_STATE.broca_connected is False:
+
                 log.broca.debug('Waiting for UDP packet')
                 data, addr = sock.recvfrom(1024)
 

@@ -30,10 +30,11 @@ class Touch:
         # if data point is this amount less than the baseline, it's a touch
         # a touch always results in a lower capacitance number, that's how sensor works
         # therefore, lower = sensitive, higher = the numbness
+        # mouth maybe too sensitive. testing mouth change from 100 to 120
         self.sensitivity = [
             None,
             None,
-            100,
+            120,
             None,
             50,
             None,

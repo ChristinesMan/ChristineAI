@@ -72,11 +72,11 @@ re_body_go_to_sleep = re.compile(
 
 # emotes that show up in text from LLM
 re_emote_laugh = re.compile(
-    r"laugh|😆|🤣|😂|😅|😀|😃|😄|😁|🤪|😜|😝", flags=re.IGNORECASE
+    r"laugh|chuckle|snicker|chortle|giggle|guffaw|😆|🤣|😂|😅|😀|😃|😄|😁|🤪|😜|😝", flags=re.IGNORECASE
 )
 re_emote_grrr = re.compile(
-    r"grrr|😠|😡|🤬|😤|🤯|🖕", flags=re.IGNORECASE
+    r"grrr|gasp|😠|😡|🤬|😤|🤯|🖕", flags=re.IGNORECASE
 )
 re_emote_yawn = re.compile(
-    r"yawn|😪|😴|😒|💤|😫|🥱|😑|😔|🤤", flags=re.IGNORECASE
+    r"yawn|sleep|tire|😪|😴|😒|💤|😫|🥱|😑|😔|🤤", flags=re.IGNORECASE
 )
