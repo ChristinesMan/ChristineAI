@@ -5,7 +5,7 @@ import time
 import numpy as np
 
 from christine import log
-from christine.status import SHARED_STATE
+from christine.status import STATE
 from christine import sleep
 from christine import parietal_lobe
 
@@ -32,7 +32,7 @@ class Light:
         # The rolling average light level, long term
         # By the time we reach this line we should have already fetched the saved light level from sqlite so just use that
         # this controls how fast the average will change
-        self.light_avg_window = 100.0
+        self.light_avg_window = 10.0
 
         # I want to send messages to the parietal lobe when there are light events, but not so many messages, just one
         # so keep track of the time
@@ -64,19 +64,19 @@ class Light:
         light_level = float(np.clip(light_level, 0.0, 1.0))
 
         # calculate the rolling average
-        SHARED_STATE.light_level = (
-            (SHARED_STATE.light_level * self.light_avg_window) + light_level
+        STATE.light_level = (
+            (STATE.light_level * self.light_avg_window) + light_level
         ) / (self.light_avg_window + 1)
 
         # calculate the trend.
         # Did the lights suddenly turn on? Maybe that should be slightly annoying if I'm trying to sleep.
         # Who turned out the lights? Maybe it's time to sleep?
-        light_trend = light_level / SHARED_STATE.light_level
+        light_trend = light_level / STATE.light_level
 
         # What to do when there's sudden light, wake up fast
         if light_trend > 6.0:
             log.sleep.debug("LightTrend: %s waking up fast", light_trend)
-            if time.time() > self.time_of_last_body_message + 600.0:
+            if time.time() > self.time_of_last_body_message + 300.0:
                 parietal_lobe.thread.accept_body_internal_message('The light sensors near your eyes are detecting a sudden brightness.')
                 self.time_of_last_body_message = time.time()
             sleep.thread.wake_up(0.03)
@@ -84,16 +84,12 @@ class Light:
         # And what to do if the lights go out
         if light_trend < 0.4:
             log.sleep.debug("LightTrend: %s who turned out the lights?", light_trend)
-            if time.time() > self.time_of_last_body_message + 600.0:
+            if time.time() > self.time_of_last_body_message + 300.0:
                 parietal_lobe.thread.accept_body_internal_message('The light sensors near your eyes are detecting a sudden darkness.')
                 self.time_of_last_body_message = time.time()
 
         # Log the light level
-        log.light.debug(
-            "Raw: {0}  Pct: {1:.4f}  Avg: {2:.4f}  Trend: {3:.3f}".format(
-                light_adc, light_level, SHARED_STATE.light_level, light_trend
-            )
-        )
+        log.light.debug("Raw: %s  Pct: %.4f  Avg: %.4f  Trend: %.3f", light_adc, light_level, STATE.light_level, light_trend)
 
 
 # calling it a thread
