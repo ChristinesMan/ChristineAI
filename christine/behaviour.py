@@ -1,31 +1,26 @@
-"""The behaviour when nothing much is going on."""
+"""The behaviour module is a clumsy attempt to tie stuff together with some logic."""
 
 import os
 import time
-import threading
 import queue
+import re
 
 from christine import log
-from christine.status import SHARED_STATE
+from christine.status import STATE
 from christine import broca
 from christine import sleep
-from christine import wernicke
+# from christine import wernicke
 from christine import parietal_lobe
-# pylint: disable=wildcard-import,unused-wildcard-import
-from christine.behaviour_ree import *
 
 
-class Behaviour(threading.Thread):
+class Behaviour():
     """Thread to handle normal behaviour, from a certain point of view."""
 
     name = "abnormal"
 
     def __init__(self):
-        threading.Thread.__init__(self)
-        self.isDaemon = True # pylint: disable=invalid-name
 
-        # this variable is used to pass gracefully to the next behaviour zone
-        self.next_behaviour = None
+        self.isDaemon = True # pylint: disable=invalid-name
 
         # queue up sentences to feed into broca one at a time
         self.broca_queue = queue.Queue()
@@ -42,40 +37,63 @@ class Behaviour(threading.Thread):
             {'magnitude': 0.15, 'text': 'Your gyroscope has detected a very gentle, slight body movement.'},
         ]
 
-    def run(self):
-        while True:
-            time.sleep(2)
+        # After a few months I hope to forget how this works
+        # Fortunate I am so good at forgetting things
+        # And fortunate we have LLMs now
+        self.re_wake_up = re.compile(
+            "wake up", flags=re.IGNORECASE
+        )
+        self.re_stoplistening = re.compile(
+            "(shutdown|shut down|shut off|turn off|disable) your (hearing|ears)", flags=re.IGNORECASE
+        )
+        self.re_shutdown = re.compile(
+            "(shutdown|shut down|turn off) your (brain|pie|pi)", flags=re.IGNORECASE
+        )
+        self.re_start_eagle_enroll = re.compile(
+            "start speaker enrollment", flags=re.IGNORECASE
+        )
 
-            if self.next_behaviour is not None:
-                SHARED_STATE.behaviour_zone_name = self.next_behaviour
-                return
+        # emotes that show up in text from LLM
+        self.re_emote_laugh = re.compile(
+            r"haha|laugh|chuckle|snicker|chortle|giggle|guffaw|😆|🤣|😂|😅|😀|😃|😄|😁|🤪|😜|😝", flags=re.IGNORECASE
+        )
+        self.re_emote_grrr = re.compile(
+            r"grrr|gasp|😠|😡|🤬|😤|🤯|🖕", flags=re.IGNORECASE
+        )
+        self.re_emote_yawn = re.compile(
+            r"yawn|sleep|tire|😪|😴|😒|💤|😫|🥱|😑|😔|🤤", flags=re.IGNORECASE
+        )
 
-    def notify_words(self, words: str):
-        """When words are spoken and processed, they should end up here.
-        This is a mess and needs to be fixed, obfuscated, nltk'd, etc"""
+    def notify_new_speech(self, transcription: str):
+        """When words are spoken from the outside world, they should end up here."""
 
-
-        # there are certain garbage phrases that are frequently detected
-        if re_garbage.search(words):
-            log.parietallobe.info("Heard: %s (discarded)", words)
-            return
-
-        log.parietallobe.info("Heard: %s", words)
-
-        if re_wake_up.search(words):
-            sleep.thread.wake_up(0.2)
-            broca.thread.queue_sound(from_collection="sleepy", play_no_wait=True)
-
-        elif re_shutdown.search(words):
-            broca.thread.queue_sound(from_collection="disgust", play_no_wait=True)
-            time.sleep(4)
-            os.system("poweroff")
+        log.parietallobe.info("Heard: %s", transcription)
+        text = transcription['text']
+        speaker = transcription['speaker']
 
         # wake up a little bit from hearing words
         sleep.thread.wake_up(0.008)
 
-        # send words to the LLM
-        parietal_lobe.thread.accept_new_message(words)
+        # test for various special phrases
+        if self.re_wake_up.search(text):
+            sleep.thread.wake_up(0.2)
+            broca.thread.queue_sound(from_collection="sleepy", play_no_wait=True)
+
+        elif self.re_shutdown.search(text):
+            broca.thread.queue_sound(from_collection="disgust", play_no_wait=True)
+            time.sleep(4)
+            os.system("poweroff")
+
+        elif self.re_stoplistening.search(text):
+            parietal_lobe.thread.request_to_disable_ears(text)
+
+        # elif self.re_start_eagle_enroll.search(text):
+        #     self.please_say('Please start speaking now to build a voice profile.')
+        #     wernicke.thread.start_eagle_enroll()
+
+        else:
+            # send words to the LLM
+            parietal_lobe.thread.accept_new_message(text, speaker)
 
     def notify_body_alert(self, text: str):
         """When something goes wrong or something changes in the body, this gets called to be passed on to the LLM."""
@@ -88,12 +106,11 @@ class Behaviour(threading.Thread):
     def please_say(self, text):
         """When the motherfucking badass parietal lobe with it's big honking GPUs wants to say some words, they have to go through here."""
 
-        log.behaviour.debug("Please say: %s", text)
+        # if STATE.parietal_lobe_blocked is True:
+        #     log.behaviour.debug("Please say: %s (blocked)", text)
+        #     return
 
-        if re_body_go_to_sleep.search(text):
-            SHARED_STATE.wernicke_sleeping = True
-            wernicke.thread.audio_processing_stop()
-            sleep.thread.wake_up(-100.0)
+        log.behaviour.debug("Please say: %s", text)
 
         # put it on the queue
         self.broca_queue.put_nowait({"type": "text", "content": text})
@@ -105,16 +122,20 @@ class Behaviour(threading.Thread):
     def please_play_emote(self, text):
         """Play an emote if we have a sound in the collection."""
 
+        # if STATE.parietal_lobe_blocked is True:
+        #     log.behaviour.debug("Please emote: %s (blocked)", text)
+        #     return
+
         log.behaviour.debug("Please emote: %s", text)
 
         # figure out which emote
-        if re_emote_laugh.search(text):
+        if self.re_emote_laugh.search(text):
             collection = 'laughing'
 
-        elif re_emote_grrr.search(text):
+        elif self.re_emote_grrr.search(text):
             collection = 'disgust'
 
-        elif re_emote_yawn.search(text):
+        elif self.re_emote_yawn.search(text):
             collection = 'sleepy'
 
         else:
@@ -130,6 +151,22 @@ class Behaviour(threading.Thread):
 
         # if we got this far, the emote was used. We send this back to let Parietal Lobe know to save the emote.
         return True
+
+    def please_play_sound(self, collection):
+        """Play any sound from a collection."""
+
+        # if STATE.parietal_lobe_blocked is True:
+        #     log.behaviour.debug("Please play from collection: %s (blocked)", collection)
+        #     return
+
+        log.behaviour.debug("Please play from collection: %s", collection)
+
+        # put it on the queue
+        self.broca_queue.put_nowait({"type": "sound", "collection": collection})
+
+        # start the ball rolling if it's not already
+        if broca.thread.next_sound is None:
+            self.notify_sound_ended()
 
     def notify_sound_ended(self):
         """This should get called by broca as soon as sound is finished playing. Or, rather, when next_sound is free."""
@@ -152,7 +189,7 @@ class Behaviour(threading.Thread):
 
         # wait a sec first because the full magnitude of the jostling might still be building
         time.sleep(1)
-        magnitude = SHARED_STATE.jostled_level_short
+        magnitude = STATE.jostled_level_short
         log.behaviour.info("Jostled. (%.2f)", magnitude)
 
         # send an approapriate alert to LLM based on the magnitude of being jostled
@@ -164,3 +201,6 @@ class Behaviour(threading.Thread):
 
         # wake up a bit
         sleep.thread.wake_up(0.1)
+
+# Instantiate the class. Call it a thread so it feels important.
+thread = Behaviour()
