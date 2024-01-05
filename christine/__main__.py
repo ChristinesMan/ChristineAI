@@ -8,10 +8,11 @@ import time
 from christine import log
 from christine import database
 from christine import sounds
-from christine.status import SHARED_STATE
-from christine import cputemp
-from christine import gyro
+from christine.status import STATE
 from christine import broca
+from christine import cputemp
+from christine import behaviour
+from christine import gyro
 from christine import sleep
 from christine import light
 from christine import vagina
@@ -22,7 +23,7 @@ from christine import touch
 from christine import horny
 from christine import sex
 from christine import killsignal
-from christine import behaviour_conductor
+# from christine import behaviour_conductor
 
 log.main.info("Script started")
 
@@ -36,7 +37,7 @@ while not killer.kill_now:
 log.main.info("Caught kill signal")
 
 # all the threads monitor this variable and try to shutdown
-SHARED_STATE.please_shut_down = True
+STATE.please_shut_down = True
 
 # disconnect the sqlite db because around this time we tend to get kill nined
 database.conn.disconnect()

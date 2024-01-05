@@ -7,7 +7,7 @@ import numpy as np
 import scipy.stats
 
 from christine import log
-from christine.status import SHARED_STATE
+from christine.status import STATE
 from christine import broca
 from christine import parietal_lobe
 from christine import sleep
@@ -97,23 +97,23 @@ class Touch:
                 and touch_data[channel] > 20
             ):
                 # if we got touched, it should imply I am near
-                SHARED_STATE.lover_proximity = (
-                    (SHARED_STATE.lover_proximity * 5.0) + 1.0
+                STATE.lover_proximity = (
+                    (STATE.lover_proximity * 5.0) + 1.0
                 ) / 6.0
                 log.touch.info(
                     "Touched: %s (%s)  LoverProximity: %s",
                     self.channel_labels[channel],
                     touch_data[channel],
-                    SHARED_STATE.lover_proximity,
+                    STATE.lover_proximity,
                 )
 
                 # probably faster to test via int than the Str 'Mouth'
                 # if channel == 2:
                 # going to test out making sounds for cheeks, not only mouth
-                SHARED_STATE.dont_speak_until = (
+                STATE.dont_speak_until = (
                     time.time() + 2.0 + (random.random() * 3.0)
                 )
-                if SHARED_STATE.is_sleeping is False:
+                if STATE.is_sleeping is False:
                     broca.thread.queue_sound(from_collection="kissing", play_no_wait=True)
                     parietal_lobe.thread.accept_body_internal_message('The sensor near your mouth is triggered. You are probably getting kissed.')
                 sleep.thread.wake_up(0.05)

@@ -8,7 +8,7 @@ import threading
 from bottle import TEMPLATE_PATH, route, run, template, request, static_file  # , debug
 
 from christine import log
-from christine.status import SHARED_STATE
+from christine.status import STATE
 from christine import sounds
 from christine import broca
 from christine import sleep
@@ -60,7 +60,7 @@ def send_file_download(filename):
 
 @route("/status")
 def getstatus():
-    return template("status", SHARED_STATE=SHARED_STATE)
+    return template("status", SHARED_STATE=STATE)
 
 
 @route("/control")
@@ -334,24 +334,24 @@ def sleep_now_bitch():
 
 @route("/status/set/<var>", method="POST")
 def setvar(var):
-    if var in dir(SHARED_STATE):
-        if isinstance(getattr(SHARED_STATE, var), float):
+    if var in dir(STATE):
+        if isinstance(getattr(STATE, var), float):
             try:
-                setattr(SHARED_STATE, var, float(request.forms.get("value")))
+                setattr(STATE, var, float(request.forms.get("value")))
             except ValueError:
                 return "FAIL"
 
-        elif isinstance(getattr(SHARED_STATE, var), int):
+        elif isinstance(getattr(STATE, var), int):
             try:
-                setattr(SHARED_STATE, var, int(request.forms.get("value")))
+                setattr(STATE, var, int(request.forms.get("value")))
             except ValueError:
                 return "FAIL"
 
-        elif isinstance(getattr(SHARED_STATE, var), bool):
+        elif isinstance(getattr(STATE, var), bool):
             if request.forms.get("value") == "True":
-                setattr(SHARED_STATE, var, True)
+                setattr(STATE, var, True)
             elif request.forms.get("value") == "False":
-                setattr(SHARED_STATE, var, False)
+                setattr(STATE, var, False)
 
         return "OK"
 
@@ -361,8 +361,8 @@ def setvar(var):
 
 @route("/status/get/<var>", method="POST")
 def getvar(var):
-    if var in dir(SHARED_STATE):
-        return str(getattr(SHARED_STATE, var))
+    if var in dir(STATE):
+        return str(getattr(STATE, var))
 
     else:
         return "WUT"

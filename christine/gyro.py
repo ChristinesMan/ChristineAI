@@ -7,7 +7,8 @@ import numpy as np
 from mpu6050 import mpu6050
 
 from christine import log
-from christine.status import SHARED_STATE
+from christine import behaviour
+from christine.status import STATE
 
 
 class Gyro(threading.Thread):
@@ -63,18 +64,18 @@ class Gyro(threading.Thread):
             # setup that sensor
             self.sensor = mpu6050(0x68)
             self.sensor.set_accel_range(mpu6050.ACCEL_RANGE_2G)
-            SHARED_STATE.gyro_available = True
+            STATE.gyro_available = True
 
         except OSError:
             log.main.error("Gyro unavailable.")
-            SHARED_STATE.jostled_level = 0.0
-            SHARED_STATE.is_laying_down = False
-            SHARED_STATE.gyro_available = False
+            STATE.jostled_level = 0.0
+            STATE.is_laying_down = False
+            STATE.gyro_available = False
             return
 
         while True:
             # graceful shutdown
-            if SHARED_STATE.please_shut_down:
+            if STATE.please_shut_down:
                 log.gyro.info("Thread shutting down")
                 break
 
@@ -91,10 +92,10 @@ class Gyro(threading.Thread):
 
                 if self.io_errors >= 10:
                     log.main.critical("The gyro thread has been shutdown.")
-                    SHARED_STATE.jostled_level = 0.0
-                    SHARED_STATE.is_laying_down = False
-                    SHARED_STATE.gyro_available = False
-                    SHARED_STATE.behaviour_zone.notify_body_alert('The gyroscope in your body started generating errors and had to be disabled. Something may have gotten disconnected. I guess let your husband know.')
+                    STATE.jostled_level = 0.0
+                    STATE.is_laying_down = False
+                    STATE.gyro_available = False
+                    behaviour.thread.notify_body_alert('The gyroscope in your body started generating errors and had to be disabled. Something may have gotten disconnected. I guess let your husband know.')
                     return
 
             # Keep track of which iteration we're on. Fill the array with data.
@@ -112,8 +113,8 @@ class Gyro(threading.Thread):
             # Every SampleSize'th iteration, send the average
             if self.loop_iteration == 0:
                 # Calculate averages
-                SHARED_STATE.tilt_x = sum(self.accel_x_record) / self.sample_size
-                SHARED_STATE.tilt_y = sum(self.accel_y_record) / self.sample_size
+                STATE.tilt_x = sum(self.accel_x_record) / self.sample_size
+                STATE.tilt_y = sum(self.accel_y_record) / self.sample_size
                 self.total_jostled = (
                     (sum(self.gyro_x_record) / self.sample_size)
                     + (sum(self.gyro_y_record) / self.sample_size)
@@ -128,46 +129,46 @@ class Gyro(threading.Thread):
                 self.jostled_level = float(np.clip(self.jostled_level, 0.0, 1.0))
 
                 # If there's a spike, make that the new global status. It'll slowly taper down.
-                if self.jostled_level > SHARED_STATE.jostled_level:
-                    SHARED_STATE.jostled_level = self.jostled_level
-                if self.jostled_level > SHARED_STATE.jostled_level_short:
-                    SHARED_STATE.jostled_level_short = self.jostled_level
+                if self.jostled_level > STATE.jostled_level:
+                    STATE.jostled_level = self.jostled_level
+                if self.jostled_level > STATE.jostled_level_short:
+                    STATE.jostled_level_short = self.jostled_level
 
                 # Update the running averages
                 # This should be the thing that tapers down
-                SHARED_STATE.jostled_level = (
-                    SHARED_STATE.jostled_level * self.jostled_avg_window
+                STATE.jostled_level = (
+                    STATE.jostled_level * self.jostled_avg_window
                 ) / (self.jostled_avg_window + 1)
-                SHARED_STATE.jostled_level_short = (
-                    SHARED_STATE.jostled_level_short * self.jostled_avg_window_short
+                STATE.jostled_level_short = (
+                    STATE.jostled_level_short * self.jostled_avg_window_short
                 ) / (self.jostled_avg_window_short + 1)
 
                 # if there is a sudden spike notify the proper handlers of such events, but not too frequently
                 if self.jostled_level > 0.15 and time.time() > self.time_of_last_spike + 60:
-                    SHARED_STATE.behaviour_zone.notify_jostled()
+                    behaviour.thread.notify_jostled()
                     self.time_of_last_spike = time.time()
 
                 # Update the boolean that tells if we're laying down. While laying down I recorded 4.37, 1.60. However, now it's 1.55, 2.7. wtf happened? The gyro has not moved. Maybe position difference.
                 # At some point I ought to self-calibrate this. When it's dark, and not jostled for like an hour, that's def laying down, save it.
                 # This is something I'll need to save in the sqlite db
                 if (
-                    abs(SHARED_STATE.tilt_x - SHARED_STATE.sleep_tilt_x) < 0.2
-                    and abs(SHARED_STATE.tilt_y - SHARED_STATE.sleep_tilt_y) < 0.2
+                    abs(STATE.tilt_x - STATE.sleep_tilt_x) < 0.2
+                    and abs(STATE.tilt_y - STATE.sleep_tilt_y) < 0.2
                 ):
-                    SHARED_STATE.is_laying_down = True
+                    STATE.is_laying_down = True
                 else:
-                    SHARED_STATE.is_laying_down = False
+                    STATE.is_laying_down = False
 
                 # self-calibrate the gyro position that is resting in bed
                 # So if she ever sleeps standing that's going to fuck this up
                 if (
-                    SHARED_STATE.light_level <= 0.1
-                    and SHARED_STATE.jostled_level <= 0.02
+                    STATE.light_level <= 0.1
+                    and STATE.jostled_level <= 0.02
                     and self.jostled_level <= 0.02
-                    and SHARED_STATE.is_sleeping is True
+                    and STATE.is_sleeping is True
                 ):
-                    SHARED_STATE.sleep_tilt_x = SHARED_STATE.tilt_x
-                    SHARED_STATE.sleep_tilt_y = SHARED_STATE.tilt_y
+                    STATE.sleep_tilt_x = STATE.tilt_x
+                    STATE.sleep_tilt_y = STATE.tilt_y
                     # SHARED_STATE.SleepXTilt = ((SHARED_STATE.SleepXTilt * 100.0) + SHARED_STATE.XTilt) / 101.0
                     # SHARED_STATE.SleepYTilt = ((SHARED_STATE.SleepYTilt * 100.0) + SHARED_STATE.YTilt) / 101.0
 

@@ -6,7 +6,7 @@ import threading
 import numpy as np
 
 from christine import log
-from christine.status import SHARED_STATE
+from christine.status import STATE
 from christine import broca
 
 
@@ -57,19 +57,19 @@ class Horny(threading.Thread):
         while True:
 
             # graceful shutdown
-            if SHARED_STATE.please_shut_down:
+            if STATE.please_shut_down:
                 break
 
             # become progressively more horny
-            SHARED_STATE.horny += self.horny_increment
-            SHARED_STATE.horny = float(np.clip(SHARED_STATE.horny, 0.0, 1.0))
-            log.horny.debug("Horny = %.2f", SHARED_STATE.horny)
+            STATE.horny += self.horny_increment
+            STATE.horny = float(np.clip(STATE.horny, 0.0, 1.0))
+            log.horny.debug("Horny = %.2f", STATE.horny)
 
             # are we even horny at all?
-            if SHARED_STATE.horny > self.horny_floor:
+            if STATE.horny > self.horny_floor:
                 # is it time yet?
                 self.horny_ask_interval = self.horny_ask_interval_max * (
-                    1.0 - SHARED_STATE.horny
+                    1.0 - STATE.horny
                 )
                 self.horny_ask_interval = float(
                     np.clip(
@@ -81,14 +81,14 @@ class Horny(threading.Thread):
                 if time.time() > self.time_last_asked + self.horny_ask_interval:
                     # are conditions just right to ask?
                     if (
-                        SHARED_STATE.is_sleeping is False
-                        and SHARED_STATE.sexual_arousal == 0.0
-                        and SHARED_STATE.shush_please_honey is False
+                        STATE.is_sleeping is False
+                        and STATE.sexual_arousal == 0.0
+                        and STATE.shush_please_honey is False
                     ):
                         # please fuck me
                         log.horny.info("Asking for sex.")
                         self.time_last_asked = time.time()
-                        broca.thread.queue_sound(from_collection="i_am_so_horny", intensity=SHARED_STATE.horny)
+                        broca.thread.queue_sound(from_collection="i_am_so_horny", intensity=STATE.horny)
 
             time.sleep(self.sleep_seconds)
 

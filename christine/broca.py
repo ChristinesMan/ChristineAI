@@ -13,16 +13,16 @@ import random
 from multiprocessing import Process, Pipe
 import wave
 from math import ceil
-import socket
 
 # pyalsaaudio seems to have died after the recent drastic Raspbian and python upgrades
 # import alsaaudio
 import pyaudio
 
 from christine import log
-from christine.status import SHARED_STATE
+from christine.status import STATE
 from christine import sounds
 from christine import wernicke
+from christine import behaviour
 
 class Broca(threading.Thread):
     """
@@ -63,7 +63,7 @@ class Broca(threading.Thread):
         while True:
 
             # graceful shutdown
-            if SHARED_STATE.please_shut_down:
+            if STATE.please_shut_down:
                 log.broca.info("Thread shutting down")
                 self.to_shuttlecraft.send({"wavfile": "selfdestruct", "vol": 0})
                 break
@@ -101,8 +101,8 @@ class Broca(threading.Thread):
         """
 
         # select a random breathing sound
-        next_breath = sounds.db.get_random_sound(collection_name='breathing', intensity=SHARED_STATE.breath_intensity)
-        
+        next_breath = sounds.db.get_random_sound(collection_name='breathing', intensity=STATE.breath_intensity)
+
         # Fail gracefully
         if next_breath is None:
             log.main.error('No breathing sound was available!')
@@ -144,7 +144,7 @@ class Broca(threading.Thread):
             (
                 1.0
                 - (1.0 - float(self.next_sound["proximity_volume_adjust"]))
-                * (1.0 - SHARED_STATE.lover_proximity)
+                * (1.0 - STATE.lover_proximity)
             )
             * 100
         )
@@ -181,7 +181,7 @@ class Broca(threading.Thread):
         self.next_sound = None
 
         # well, it didn't really end, but it's definitely ready for the next sound
-        SHARED_STATE.behaviour_zone.notify_sound_ended()
+        behaviour.thread.notify_sound_ended()
 
     def queue_sound(
         self,

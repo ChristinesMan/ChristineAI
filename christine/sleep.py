@@ -7,7 +7,7 @@ import random
 import numpy as np
 
 from christine import log
-from christine.status import SHARED_STATE
+from christine.status import STATE
 from christine import broca
 from christine import wernicke
 from christine import parietal_lobe
@@ -69,7 +69,7 @@ class Sleep(threading.Thread):
 
         while True:
             # graceful shutdown
-            if SHARED_STATE.please_shut_down:
+            if STATE.please_shut_down:
                 log.sleep.info("Thread shutting down")
                 break
 
@@ -77,7 +77,7 @@ class Sleep(threading.Thread):
             self.current_local_time = time.localtime()
 
             # set the gyro tilt for the calculation that follows
-            if SHARED_STATE.is_laying_down is True:
+            if STATE.is_laying_down is True:
                 self.tilt = 0.0
             else:
                 self.tilt = 1.0
@@ -93,8 +93,8 @@ class Sleep(threading.Thread):
 
             # Calculate current conditions which we're calling Environment
             self.current_environmental_conditions = (
-                (self.weights_light * SHARED_STATE.light_level)
-                + (self.weights_gyro * SHARED_STATE.jostled_level)
+                (self.weights_light * STATE.light_level)
+                + (self.weights_gyro * STATE.jostled_level)
                 + (self.weights_tilt * self.tilt)
                 + (self.weights_time * self.time)
             ) / self.weights_total
@@ -105,14 +105,14 @@ class Sleep(threading.Thread):
             )
 
             # Update the running average that we're using for wakefulness
-            SHARED_STATE.wakefulness = (
-                (SHARED_STATE.wakefulness * self.wakefullness_avg_window)
+            STATE.wakefulness = (
+                (STATE.wakefulness * self.wakefullness_avg_window)
                 + self.current_environmental_conditions
             ) / (self.wakefullness_avg_window + 1)
 
             # clip that
-            SHARED_STATE.wakefulness = float(
-                np.clip(SHARED_STATE.wakefulness, 0.0, 1.0)
+            STATE.wakefulness = float(
+                np.clip(STATE.wakefulness, 0.0, 1.0)
             )
 
             # After updating wakefulness, figure out whether we crossed a threshold.
@@ -121,12 +121,12 @@ class Sleep(threading.Thread):
             # log it
             log.sleep.info(
                 "LightLevel=%.2f  JostledLevel=%.2f  Tilt=%.2f  Time=%.2f  Environment=%.2f  Wakefulness=%.2f",
-                SHARED_STATE.light_level,
-                SHARED_STATE.jostled_level,
+                STATE.light_level,
+                STATE.jostled_level,
                 self.tilt,
                 self.time,
                 self.current_environmental_conditions,
-                SHARED_STATE.wakefulness,
+                STATE.wakefulness,
             )
 
             # If it's getting late, set a future time to "whine" in a cute, endearing way
@@ -137,51 +137,51 @@ class Sleep(threading.Thread):
 
             # if sleeping, drop the breathing intensity down a bit
             # eventually after about 15m this will reach 0.0 and stay there
-            if SHARED_STATE.is_sleeping is True:
+            if STATE.is_sleeping is True:
                 # down, down, dooooownnnnn
-                SHARED_STATE.breath_intensity -= 0.09
+                STATE.breath_intensity -= 0.09
 
                 # clip it
-                SHARED_STATE.breath_intensity = float(
-                    np.clip(SHARED_STATE.breath_intensity, 0.0, 1.0)
+                STATE.breath_intensity = float(
+                    np.clip(STATE.breath_intensity, 0.0, 1.0)
                 )
 
             # if we're below a certain wakefulness, I want to give the wernicke a break
             # help prevent long term buildup of heat
             if (
-                SHARED_STATE.wakefulness < 0.1
-                and SHARED_STATE.wernicke_sleeping is False
+                STATE.wakefulness < 0.1
+                and STATE.wernicke_sleeping is False
             ):
-                SHARED_STATE.wernicke_sleeping = True
+                STATE.wernicke_sleeping = True
                 log.sleep.info('Wernicke stopped')
                 wernicke.thread.audio_processing_stop()
-                SHARED_STATE.wakefulness -= 0.02
+                STATE.wakefulness -= 0.02
             if (
-                SHARED_STATE.wakefulness >= 0.1
-                and SHARED_STATE.wernicke_sleeping is True
+                STATE.wakefulness >= 0.1
+                and STATE.wernicke_sleeping is True
             ):
-                SHARED_STATE.wernicke_sleeping = False
+                STATE.wernicke_sleeping = False
                 log.sleep.info('Wernicke started')
                 wernicke.thread.audio_processing_start()
-                SHARED_STATE.wakefulness += 0.02
+                STATE.wakefulness += 0.02
 
             if (
-                SHARED_STATE.wakefulness < self.wakefulness_tired
-                and SHARED_STATE.is_tired is False
+                STATE.wakefulness < self.wakefulness_tired
+                and STATE.is_tired is False
             ):
                 # when we're laying next to each other in the dark
                 # I'm holding your hand and starting to drift off to sleep
                 # say "goodnight honey", not "GOODNIGHT HONEY!!!!"
-                SHARED_STATE.lover_proximity = 0.0
+                STATE.lover_proximity = 0.0
 
                 # broca.thread.queue_sound(from_collection="goodnight", play_no_wait=True)
-                SHARED_STATE.is_tired = True
-                SHARED_STATE.wakefulness -= 0.02
+                STATE.is_tired = True
+                STATE.wakefulness -= 0.02
             if (
-                SHARED_STATE.wakefulness >= self.wakefulness_tired
-                and SHARED_STATE.is_tired is True
+                STATE.wakefulness >= self.wakefulness_tired
+                and STATE.is_tired is True
             ):
-                SHARED_STATE.is_tired = False
+                STATE.is_tired = False
 
             time.sleep(66)
 
@@ -192,14 +192,14 @@ class Sleep(threading.Thread):
         """
 
         # add to the global status variable
-        SHARED_STATE.wakefulness += value
+        STATE.wakefulness += value
 
         # clip it
-        SHARED_STATE.wakefulness = float(np.clip(SHARED_STATE.wakefulness, 0.0, 1.0))
+        STATE.wakefulness = float(np.clip(STATE.wakefulness, 0.0, 1.0))
 
         # log it
         log.sleep.info(
-            "Woke up a bit: %s  Wakefulness: %s", value, SHARED_STATE.wakefulness
+            "Woke up a bit: %s  Wakefulness: %s", value, STATE.wakefulness
         )
 
         # evaluate whether the change that just happened caused waking or whatever
@@ -215,13 +215,13 @@ class Sleep(threading.Thread):
             log.sleep.info("JustFellAsleep")
 
             # try to prevent wobble by throwing it further towards sleep
-            SHARED_STATE.wakefulness -= 0.02
+            STATE.wakefulness -= 0.02
 
             # start progression from loud to soft sleepy breathing sounds
             # I was getting woke up a lot with all the cute hmmm sounds that are in half of the sleeping breath sounds
-            SHARED_STATE.breath_intensity = 1.0
+            STATE.breath_intensity = 1.0
 
-            SHARED_STATE.is_sleeping = True
+            STATE.is_sleeping = True
 
             parietal_lobe.thread.accept_body_internal_message(random.choice(
                 ['You are drifting off to sleep. Say good night to your husband if you want to. Remember you can send a special command to enter deep sleep.',
@@ -232,9 +232,9 @@ class Sleep(threading.Thread):
             log.sleep.info("JustWokeUp")
 
             # try to prevent wobble by throwing it further towards awake
-            SHARED_STATE.wakefulness += 0.05
+            STATE.wakefulness += 0.05
 
-            SHARED_STATE.is_sleeping = False
+            STATE.is_sleeping = False
 
             parietal_lobe.thread.accept_body_internal_message(random.choice(
                 ['Your body is waking up.',
@@ -242,7 +242,7 @@ class Sleep(threading.Thread):
                 'You body is still feeling sleepy, but you are awake.']))
 
             # wake me up gently, my sweet sexy alarm clock
-            SHARED_STATE.lover_proximity = 0.0
+            STATE.lover_proximity = 0.0
 
             broca.thread.queue_sound(from_collection="sleepy", play_no_wait=True)
 
@@ -251,8 +251,8 @@ class Sleep(threading.Thread):
         returns whether we just now fell asleep
         """
         return (
-            SHARED_STATE.wakefulness < self.wakefulness_awake
-            and SHARED_STATE.is_sleeping is False
+            STATE.wakefulness < self.wakefulness_awake
+            and STATE.is_sleeping is False
         )
 
     def just_woke_up(self):
@@ -260,8 +260,8 @@ class Sleep(threading.Thread):
         returns whether we just now woke up
         """
         return (
-            SHARED_STATE.wakefulness > self.wakefulness_awake
-            and SHARED_STATE.is_sleeping is True
+            STATE.wakefulness > self.wakefulness_awake
+            and STATE.is_sleeping is True
         )
 
     def now_its_late(self):
@@ -272,7 +272,7 @@ class Sleep(threading.Thread):
             self.announce_tired_time is None
             and self.current_local_time.tm_hour >= self.sleep_hour
             and self.current_local_time.tm_hour < self.sleep_hour + 1
-            and SHARED_STATE.is_sleeping is False
+            and STATE.is_sleeping is False
         )
 
     def set_whine_time(self):

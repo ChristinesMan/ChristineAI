@@ -16,7 +16,7 @@ import socket
 import numpy as np
 
 from christine import log
-from christine.status import SHARED_STATE
+from christine.status import STATE
 from christine import database
 from christine import broca
 
@@ -43,7 +43,7 @@ class MyTTSServer(threading.Thread):
         self.text_queue = queue.Queue(maxsize=30)
         self.audio_queue = queue.Queue(maxsize=30)
         self.server_shutdown = False
-        SHARED_STATE.broca_connected = False
+        STATE.broca_connected = False
 
     def run(self):
 
@@ -52,7 +52,7 @@ class MyTTSServer(threading.Thread):
 
         while True:
 
-            if SHARED_STATE.broca_connected is True:
+            if STATE.broca_connected is True:
 
                 # get something out of the queue if there's anything. Don't block.
                 try:
@@ -101,7 +101,7 @@ class MyTTSServer(threading.Thread):
             )
             log.broca.info("Connected")
             self.say_connected()
-            SHARED_STATE.broca_connected = True
+            STATE.broca_connected = True
 
         except Exception as ex: # pylint: disable=broad-exception-caught
 
@@ -112,7 +112,7 @@ class MyTTSServer(threading.Thread):
     def destroy_manager(self):
         """Disconnect and utterly destroy the manager"""
 
-        SHARED_STATE.broca_connected = False
+        STATE.broca_connected = False
 
         try:
             del self.text_queue
@@ -136,7 +136,7 @@ class MyTTSServer(threading.Thread):
         """This is called when another machine other than myself says hi"""
 
         # if somehow we're still connected, get outta there
-        if SHARED_STATE.broca_connected is True:
+        if STATE.broca_connected is True:
             self.destroy_manager()
 
         # save the server ip
@@ -228,7 +228,7 @@ class SoundsDB(threading.Thread):
         """
 
         # if there's no server available, just stop it right there
-        if SHARED_STATE.broca_connected is False:
+        if STATE.broca_connected is False:
             return None
 
         # standardize the text to just the words, no spaces
@@ -397,7 +397,7 @@ class ReceiveLoveFromUDP(threading.Thread):
 
             time.sleep(15)
 
-            if SHARED_STATE.broca_connected is False:
+            if STATE.broca_connected is False:
 
                 log.broca.debug('Waiting for UDP packet')
                 data, addr = sock.recvfrom(1024)

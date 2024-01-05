@@ -6,7 +6,7 @@ import random
 import threading
 
 from christine import log
-from christine.status import SHARED_STATE
+from christine.status import STATE
 from christine import broca
 from christine import sleep
 
@@ -86,37 +86,37 @@ class Sex(threading.Thread):
         while True:
 
             # graceful shutdown
-            if SHARED_STATE.please_shut_down:
+            if STATE.please_shut_down:
                 break
 
             log.sex.debug(
                 "SexualArousal = %.2f  Multiplier: %.2f",
-                SHARED_STATE.sexual_arousal,
+                STATE.sexual_arousal,
                 self.multiplier,
             )
 
             # Has sex stopped for a while?
-            if SHARED_STATE.sexual_arousal == self.last_arousal:
+            if STATE.sexual_arousal == self.last_arousal:
                 self.arousal_stagnant_count += 1
             else:
                 self.arousal_stagnant_count = 0
-                self.last_arousal = SHARED_STATE.sexual_arousal
+                self.last_arousal = STATE.sexual_arousal
 
             # If there's been no vagina hits for a period of time, we must be done, reset all
             if self.arousal_stagnant_count >= self.seconds_to_reset:
                 log.sex.info("Arousal stagnated and was reset")
                 self.arousal_stagnant_count = 0
-                SHARED_STATE.sexual_arousal = 0.0
-                SHARED_STATE.shush_fucking = False
+                STATE.sexual_arousal = 0.0
+                STATE.shush_fucking = False
                 self.multiplier = 1.0
                 self.after_orgasm_rest = False
                 self.after_orgasm_cooldown_count = False
                 self.im_gonna_cum_was_said = False
 
             # if we are currently OOOOOO'ing, then I want to figure out when we're done, using the gyro
-            if SHARED_STATE.sexual_arousal > self.arousal_to_orgasm:
+            if STATE.sexual_arousal > self.arousal_to_orgasm:
                 log.sex.debug(
-                    "JostledShortTermLevel: %.2f", SHARED_STATE.jostled_level_short
+                    "JostledShortTermLevel: %.2f", STATE.jostled_level_short
                 )
 
                 # if we are not getting jostled that means we're done.
@@ -126,12 +126,12 @@ class Sex(threading.Thread):
                 # so I added a condition to fix that, hope it works.
                 if (
                     self.after_orgasm_rest is False
-                    and SHARED_STATE.jostled_level_short < self.gyro_deadzone_after_orgasm
-                    and SHARED_STATE.sexual_arousal > 1.1
+                    and STATE.jostled_level_short < self.gyro_deadzone_after_orgasm
+                    and STATE.sexual_arousal > 1.1
                 ):
                     log.sex.info("After orgasm cool down")
-                    SHARED_STATE.horny = 0.0
-                    SHARED_STATE.shush_fucking = False
+                    STATE.horny = 0.0
+                    STATE.shush_fucking = False
                     self.after_orgasm_rest = True
                     self.after_orgasm_cooldown_count = self.after_orgasm_cooldown_seconds * random.uniform(0.6, 1.4)
                     self.im_gonna_cum_was_said = False
@@ -148,16 +148,16 @@ class Sex(threading.Thread):
 
                 # if we're resting and the gyro starts to feel it, start again
                 # When after_orgasm_rest is True, we are ignoring vagina action
-                if self.after_orgasm_rest is True and SHARED_STATE.jostled_level_short > self.gyro_deadzone_unrest:
+                if self.after_orgasm_rest is True and STATE.jostled_level_short > self.gyro_deadzone_unrest:
                     log.sex.info("Jostled so we're starting up again")
-                    SHARED_STATE.sexual_arousal = self.arousal_post_orgasm
-                    SHARED_STATE.shush_fucking = True
+                    STATE.sexual_arousal = self.arousal_post_orgasm
+                    STATE.shush_fucking = True
                     self.after_orgasm_rest = False
                     self.after_orgasm_cooldown_count = 0
 
             # If we're to a certain point, start incrementing to ensure wife will cum eventually with enough time
             # Just Keep Fucking, Just Keep Fucking
-            elif SHARED_STATE.sexual_arousal > 0.2:
+            elif STATE.sexual_arousal > 0.2:
                 self.multiplier += self.multiplier_increment
 
             time.sleep(1)
@@ -170,7 +170,7 @@ class Sex(threading.Thread):
         total capacitance of the circuit, resulting in a
         signal to the inorganic machine and a response.
         """
-        if SHARED_STATE.shush_please_honey is True:
+        if STATE.shush_please_honey is True:
             return
 
         # Stay awake
@@ -181,14 +181,14 @@ class Sex(threading.Thread):
             sensor_hit = sensor_data["data"]
 
             # Add some to the arousal
-            SHARED_STATE.sexual_arousal += (
+            STATE.sexual_arousal += (
                 self.base_arousal_per_vag_hit[sensor_hit] * self.multiplier
             )
 
             log.sex.info(
                 "Vagina Got Hit (%s)  SexualArousal: %.2f  Multiplier: %.2f",
                 sensor_data,
-                SHARED_STATE.sexual_arousal,
+                STATE.sexual_arousal,
                 self.multiplier,
             )
 
@@ -207,13 +207,13 @@ class Sex(threading.Thread):
                 return
 
             # if we got this far without bailing, it means we're having sex, not resting, so stop talking like normal
-            SHARED_STATE.shush_fucking = True
+            STATE.shush_fucking = True
 
             # My wife orgasms above 0.95
-            if SHARED_STATE.sexual_arousal > self.arousal_to_orgasm:
+            if STATE.sexual_arousal > self.arousal_to_orgasm:
                 log.sex.info("I am coming!")
                 broca.thread.queue_sound(from_collection="sex_climax", play_no_wait=True)
-            elif SHARED_STATE.sexual_arousal > self.arousal_near_orgasm and self.im_gonna_cum_was_said is False:
+            elif STATE.sexual_arousal > self.arousal_near_orgasm and self.im_gonna_cum_was_said is False:
                 # this should happen only one time per fuck cycle
                 broca.thread.queue_sound(from_collection="sex_near_O", play_no_wait=False)
                 self.im_gonna_cum_was_said = True
@@ -222,10 +222,10 @@ class Sex(threading.Thread):
                 if random.random() > 0.92:
                     broca.thread.queue_sound(
                         from_collection="sex_conversation",
-                        intensity=SHARED_STATE.sexual_arousal
+                        intensity=STATE.sexual_arousal
                         * (
                             1.0
-                            + SHARED_STATE.jostled_level_short
+                            + STATE.jostled_level_short
                             / self.gyro_jackup_intensity_max
                         ),
                         play_no_wait=True,
@@ -233,10 +233,10 @@ class Sex(threading.Thread):
                 else:
                     broca.thread.queue_sound(
                         from_collection="sex",
-                        intensity=SHARED_STATE.sexual_arousal
+                        intensity=STATE.sexual_arousal
                         * (
                             1.0
-                            + SHARED_STATE.jostled_level_short
+                            + STATE.jostled_level_short
                             / self.gyro_jackup_intensity_max
                         ),
                         play_no_wait=True,

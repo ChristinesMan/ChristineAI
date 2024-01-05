@@ -14,8 +14,9 @@ import busio
 import adafruit_mpr121
 
 from christine import log
-from christine.status import SHARED_STATE
+from christine.status import STATE
 from christine import sex
+from christine import behaviour
 
 
 class Vagina(threading.Thread):
@@ -47,7 +48,7 @@ class Vagina(threading.Thread):
 
         while True:
             # graceful shutdown
-            if SHARED_STATE.please_shut_down:
+            if STATE.please_shut_down:
                 log.vagina.info("Thread shutting down")
                 break
 
@@ -61,18 +62,18 @@ class Vagina(threading.Thread):
 
             # if there was a failure even starting the sensor, just die
             if sensor_data["msg"] == "INIT_FAIL":
-                SHARED_STATE.vagina_available = False
+                STATE.vagina_available = False
                 return
 
             # if there was a series of consecutive failures, just let the LLM know and die
             elif sensor_data["msg"] == "FAIL":
-                SHARED_STATE.behaviour_zone.notify_body_alert('The lower level sensor in your body started generating errors and had to be disabled. Something may have gotten disconnected. I guess let your husband know.')
-                SHARED_STATE.vagina_available = False
+                behaviour.thread.notify_body_alert('The lower level sensor in your body started generating errors and had to be disabled. Something may have gotten disconnected. I guess let your husband know.')
+                STATE.vagina_available = False
                 return
 
             # if there was a series of consecutive failures, just die
             elif sensor_data["msg"] == "INIT_SUCCESS":
-                SHARED_STATE.vagina_available = True
+                STATE.vagina_available = True
                 return
 
             # otherwise, pass the message over to the sex thread

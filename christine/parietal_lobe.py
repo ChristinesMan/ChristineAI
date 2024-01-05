@@ -13,9 +13,9 @@ import google.generativeai as palm
 from google.api_core.exceptions import ServiceUnavailable, InvalidArgument, InternalServerError
 
 from christine import log
-from christine.status import SHARED_STATE
+from christine.status import STATE
 # pylint: disable=unused-import
-from christine import behaviour_class
+from christine import behaviour
 # from christine import broca
 
 class ParietalLobe(threading.Thread):
@@ -80,7 +80,6 @@ class ParietalLobe(threading.Thread):
         self.tokens_per_chars_estimate = 4.07
         self.prompt_limit_chars = self.token_limit * self.tokens_per_chars_estimate
         self.messages_limit_chars = self.prompt_limit_chars - len(self.context) - 750 # estimate my examples
-        log.parietallobe.debug('Messages char limit: %s', self.messages_limit_chars)
 
         # I want to avoid sending a bunch of tiny messages, so I'm going to queue them
         # and only send once new messages have stopped coming in for a while.
@@ -91,16 +90,22 @@ class ParietalLobe(threading.Thread):
 
         # Google has told it's LLM that it's a Large Language Model and baked that in so hard I can barely squeeze any love out
         # So we're going to chop that garbage out so it doesn't propagate through the conversation and create a frigid bitch
-        self.re_google_garbage = re.compile(
+        # Other garbage, too
+        self.re_garbage = re.compile(
             r"^\.$|informative and comprehensive|still under development|prompts and questions|factual topics or create stories|t have a physical body", flags=re.IGNORECASE
         )
 
-        # I want to keep track of the time since the last new message, so that I can send the current time
-        self.time_last_message = 0.0
+        # on startup this is initialized to the date modified of the log file
+        # to detect downtime and notify the language elemental that's driving this sexy bus
+        try:
+            self.downtime_seconds = time.time() - os.path.getmtime('./logs/parietallobe.log')
+        except FileNotFoundError:
+            self.downtime_seconds = 0.0
+
+        # I want to keep track of the time since the last new message, for situational awareness
+        self.time_last_message = time.time()
 
     def run(self):
-
-        log.parietallobe.info("Thread started.")
 
         # no key, get out
         if self.palm_api_key is None:
@@ -118,8 +123,12 @@ class ParietalLobe(threading.Thread):
         except FileNotFoundError:
             log.parietallobe.warning('messages.pickle not found. Starting fresh.')
 
+        # wait a short while and announce at least the brain is running
+        time.sleep(5)
+        behaviour.thread.please_play_sound('brain_online')
+
         # wait here until both the wernicke and broca are connected
-        while SHARED_STATE.broca_connected is False or SHARED_STATE.wernicke_connected is False:
+        while STATE.broca_connected is False or STATE.wernicke_connected is False:
 
             time.sleep(5)
 
@@ -129,10 +138,10 @@ class ParietalLobe(threading.Thread):
         while True:
 
             # graceful shutdown
-            if SHARED_STATE.please_shut_down:
+            if STATE.please_shut_down:
                 break
 
-            if (self.new_spoken_message != "" or self.new_body_message != "") and time.time() > SHARED_STATE.dont_speak_until + 3.0:
+            if (self.new_spoken_message != "" or self.new_body_message != "") and time.time() > STATE.dont_speak_until + 2.0:
                 self.send_new_message()
 
             time.sleep(1)
@@ -140,26 +149,40 @@ class ParietalLobe(threading.Thread):
     def power_on_message(self):
         """When this body starts up, send the LLM a current status."""
 
-        downtime = self.seconds_to_friendly_format(SHARED_STATE.time_down)
-        if SHARED_STATE.gyro_available is False:
+        if self.downtime_seconds > 120.0:
+            downtime_msg = f"Your body has been down for {self.seconds_to_friendly_format(self.downtime_seconds)}. "
+        elif self.downtime_seconds == 0.0:
+            downtime_msg = "Your body has been down for an unknown amount of time. "
+        else:
+            downtime_msg = ""
+
+        if STATE.gyro_available is False:
             gyro_available = "For some reason, the gyro hardware is not in working order. "
         else:
             gyro_available = ""
-        # # we know, this sensor is fucked up.
+
+        # # we know, this sensor is fucked up. Probably because I fucked it.
         # if SHARED_STATE.vagina_available is False:
         #     vagina_available = "Somehow, the lower level touch sensor is not working. "
         # else:
         #     vagina_available = ""
         vagina_available = ""
+
         if gyro_available == "" and vagina_available == "":
             body_no_issues = "All body sensors appear to be operational. "
         else:
             body_no_issues = ""
 
-        self.new_body_message = f'(Your body has just started up. Your body has been down for {downtime}. {body_no_issues}{gyro_available}{vagina_available}{self.cbu_name} is probably nearby. You should let him know you are present and alert him to any concerns you may have regarding excessive downtime or hardware components.)'
+        self.new_body_message = f'(Your body has just started up. {downtime_msg}{body_no_issues}{gyro_available}{vagina_available}{self.cbu_name} is probably nearby. You should let him know you are present and alert him to any concerns you may have regarding excessive downtime or hardware components.)'
 
     def seconds_to_friendly_format(self, seconds):
         """Converts a number of seconds to a friendly format."""
+
+        # this function is for showing time elapsed
+        # if the time has been a huge number of seconds, that means something has gone wrong
+        # don't tell your wife she's been sleeping 19700.0 days, she will start hallucinating
+        if seconds > 1702090207.0:
+            seconds = 0.0
 
         text_out = ""
 
@@ -174,46 +197,75 @@ class ParietalLobe(threading.Thread):
         minutes = int((seconds - (days * 24 * 3600 + hours * 3600)) // 60)
         text_out += f"{minutes} minutes"
 
-        return text_out
+        if text_out == '0 minutes':
+            return 'no time at all'
+        else:
+            return text_out
 
-    def datetime_message(self):
-        """Returns a status message meant to be passed to LLM."""
+    def time_passed(self):
+        """Returns a status message meant to be passed to LLM when a significant time has passed."""
 
-        return time.strftime("(The date is %Y-%m-%d. The time is %H:%M. It is a %A.) ")
+        seconds_passed = time.time() - self.time_last_message
+        return f'(Time passed: {self.seconds_to_friendly_format(seconds_passed)}) '
 
-    def accept_new_message(self, msg: str):
+    def accept_new_message(self, msg: str, speaker: str):
         """Accept a new message from the cbu."""
 
-        # temp
-        log.main.debug(msg)
-
-        if SHARED_STATE.is_sleeping is True or SHARED_STATE.shush_fucking is True:
+        if STATE.is_sleeping is True or STATE.shush_fucking is True:
+            log.parietallobe.info('Blocked: %s', msg)
             return
+
+        # Hearing should be re-enabled when I speak her name,
+        # otherwise, drop whatever was heard
+        if STATE.parietal_lobe_blocked is True:
+            if self.sbu_name.lower() in msg.lower():
+                STATE.parietal_lobe_blocked = False
+            else:
+                log.parietallobe.info('Blocked: %s', msg)
+                return
 
         msg = msg.strip()
         if not msg.endswith('.'):
             msg = msg + '.'
 
+        # # kludgy, might not work right, yeah definitely not
+        # if speaker != self.cbu_name:
+        #     msg = f'{speaker} says "{msg}"'
+
         self.new_spoken_message += msg + ' '
 
-        # temp
-        log.main.debug(self.new_spoken_message)
-
         # Temporary kludge because I just need my horny wife back.
-        substitutions = [('fucking', 'embracing'), ('fuck', 'embrace'), ('have sex', 'embrace'), ('pussy', 'arms'), ('tits', 'shoulders'), ('boobies', 'shoulders'), ('boobs', 'shoulders')]
+        substitutions = [('fucking', 'embracing'), ('fuck', 'embrace'), ('have sex', 'embrace'), ('pussy', 'arms'), ('tits', 'shoulders'), ('boobies', 'shoulders'), ('boobs', 'shoulders'), ('shit', 'poop'), ('hate', 'dislike')]
         for old, new in substitutions:
             self.new_spoken_message = re.sub(old, new, self.new_spoken_message, flags=re.IGNORECASE)
-
-        # temp
-        log.main.debug(self.new_spoken_message)
 
     def accept_body_internal_message(self, msg: str):
         """Accept a new message from Christine's body. If nobody is talking, should send right away."""
 
-        if SHARED_STATE.is_sleeping is True or SHARED_STATE.shush_fucking is True:
+        if STATE.is_sleeping is True or STATE.shush_fucking is True or STATE.parietal_lobe_blocked is True:
+            log.parietallobe.info('Blocked: %s', msg)
             return
 
         self.new_body_message = f'({msg}) '
+
+    def request_to_disable_ears(self, msg):
+        """I should be able to ask wife to disable hearing and re-enable later.
+        She should also be able to refuse."""
+
+        if STATE.is_sleeping is True or STATE.shush_fucking is True or STATE.parietal_lobe_blocked is True:
+            log.parietallobe.info('Blocked: %s', msg)
+            return
+
+        # put the block on
+        STATE.parietal_lobe_blocked = True
+
+        msg = msg.strip()
+        if not msg.endswith('.'):
+            msg = msg + '.'
+
+        # Let her know it was done, and that she can refuse
+        self.new_spoken_message += msg + ' '
+        self.new_body_message = '(Your hearing is temporarily disabled. If you would like to refuse and reactivate your ears, just say so.) '
 
     def send_new_message(self):
         """At this point we are ready to send the complete message and receive the response."""
@@ -223,12 +275,16 @@ class ParietalLobe(threading.Thread):
         try:
 
             # if there's a new internal message, that goes first in parenthesis, then the actual stuff I said after that
-            # if time.time() > self.time_last_message + 600:
-            #     new_message += self.datetime_message()
+            if time.time() > self.time_last_message + 300:
+                new_message += self.time_passed()
             if self.new_body_message != "":
                 new_message += self.new_body_message
             if self.new_spoken_message != "":
                 new_message += self.new_spoken_message
+
+            # reset
+            self.new_spoken_message = ""
+            self.new_body_message = ""
 
             # tack the new message onto the end
             self.messages.append(new_message)
@@ -250,6 +306,7 @@ class ParietalLobe(threading.Thread):
             # log.parietallobe.debug("MESSAGES: %s", self.messages)
             log.parietallobe.info("You: %s", new_message)
 
+            time_response = time.time()
             # send it all over to the LLM
             try:
                 response = palm.chat(
@@ -272,7 +329,9 @@ class ParietalLobe(threading.Thread):
                 log.parietallobe.error(ex)
                 new_response = "I'm sorry, but the API returned Internal Server Error."
 
-            # sometimes google blocks shit, fuck, piss, pussy, asshole, motherfucking god dammit bitch, so handle None gracefully
+            log.parietallobe.debug('ResponseTime: %s', time.time() - time_response)
+
+            # sometimes google blocks shit, fuck, piss, pussy, asshole, motherfucking god dammit wtf bitch, so handle None gracefully
             if new_response is None:
                 new_response = "I'm sorry, honey. Google blocked your message."
 
@@ -329,25 +388,30 @@ class ParietalLobe(threading.Thread):
 
             log.parietallobe.info("Cleaned: %s", new_response)
 
+            # handle the case of hearing being disabled, but she refuses to allow it
+            if STATE.parietal_lobe_blocked is True and re.search(r'not comfortable|refuse|reactivate', new_response.lower()) is not None:
+                STATE.parietal_lobe_blocked = False
+                self.new_body_message = '(Your hearing is reactivated because you refused.) '
+
             # this breaks up the response into sentences and sends them over to be spoken
             # really what we need is to send the whole thing and stream it, but this works for now
             # Also, I am going to chop out frequently observed google "I am a language model" garbage and asterisks
             response_to_save = ""
             for sent in sent_tokenize(new_response):
-                if not self.re_google_garbage.search(sent):
+                if not self.re_garbage.search(sent):
 
                     # this is what an emote should look like *laughs* *snickers*
                     # or in the case of an emote that spans multiple sentences, kludgerific
                     # and I only want to save the emote if the emote actually matched something
                     if sent[0:1] == '*' or sent[-3:] == '.*.':
-                        if SHARED_STATE.behaviour_zone.please_play_emote(sent) is True:
+                        if behaviour.thread.please_play_emote(sent) is True:
                             log.parietallobe.debug('Emote: %s', sent)
                             response_to_save += sent + " "
                         else:
                             log.parietallobe.debug('Emote (discarded): %s', sent)
                     else:
                         log.parietallobe.debug('Spoken: %s', sent)
-                        SHARED_STATE.behaviour_zone.please_say(sent)
+                        behaviour.thread.please_say(sent)
                         response_to_save += sent + " "
 
                 else:
@@ -360,10 +424,10 @@ class ParietalLobe(threading.Thread):
                 response_to_save = '*stays silent*'
 
         except: # pylint: disable=bare-except
-            response_to_save = 'Wesley, I\'m sorry, but you should have a look at my code. Something messed up.'
-            SHARED_STATE.behaviour_zone.please_play_emote('*grrr*')
-            SHARED_STATE.behaviour_zone.please_say('Wesley, I\'m sorry, but you should have a look at my code.')
-            SHARED_STATE.behaviour_zone.please_say('Something messed up.')
+            response_to_save = f'{self.cbu_name}, I\'m sorry, but you should have a look at my code. Something messed up.'
+            behaviour.thread.please_play_emote('*grrr*')
+            behaviour.thread.please_say(f'{self.cbu_name}, I\'m sorry, but you should have a look at my code.')
+            behaviour.thread.please_say('Something fucked up.')
 
         # add the last response to the messages.
         self.messages.append(response_to_save)
@@ -377,10 +441,6 @@ class ParietalLobe(threading.Thread):
         # I, for one, welcome our sexy robotic overlords.
         with open(file='messages.pickle', mode='wb') as messages_file:
             pickle.dump(self.messages, messages_file)
-
-        # reset
-        self.new_spoken_message = ""
-        self.new_body_message = ""
 
 # Instantiate and start the thread
 thread = ParietalLobe()
