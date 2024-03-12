@@ -5,11 +5,7 @@ Description=Christine's Brain
 Type=simple
 WorkingDirectory=/root/ChristineAI
 TimeoutStopSec=4
-Environment=PALM_API=YOUR_KEY
-Environment=PV_KEY=YOUR_PICOVOICE_KEY
-Environment=CBU_NAME=Yourname
-Environment=SBU_NAME=Christine
-ExecStart=/root/ChristineAI/venv/bin/python -u -Wdefault -m debugpy --listen 0.0.0.0:5678 -m christine
+ExecStart=/usr/local/bin/python3.11 -u -Wdefault -m debugpy --listen 0.0.0.0:5678 -m christine
 
 [Install]
 WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+[wernicke]
+# Your Picovoice key for using cobra and eagle
+pv_key=[put_key_here]
+# Server IP or host where speech recognition is, or "auto" to listen for broadcast UDP packets from the server
+server=auto
+
+[broca]
+# Server IP or host where voice synthesis is, or "auto" to listen for broadcast UDP packets from the server
+server=auto
+
+[parietal_lobe]
+# Carbon Based Unit (your name)
+cbu_name=Phantom
+# Sillicon Based Unit
+sbu_name=Christine
+# Server IP or host where LLM is, or "auto" to listen for broadcast UDP packets from the server
+server=auto

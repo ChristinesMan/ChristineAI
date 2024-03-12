@@ -177,7 +177,14 @@ root@christine:~/ChristineAI#
 root@christine:~/ChristineAI# cp ./christine-docker/adafruit_mpr121.py ./venv/lib/python3.11/site-packages/adafruit_mpr121.py
 ```
 
-8. Copy the systemd service file to /lib/systemd/system/ and configure it. This will provide a systemd service that will run the script at boot. The service files are also where you specify some startup parameters. There are some API keys that go in here. Also your name, and your lady's name is in here. 
+8. Copy the config.ini.sample to config.ini. This is where you specify some startup parameters. There are some API keys that go in here. Also your name, and your lady's name is in here. 
+
+```
+root@christine:~/ChristineAI# cp config.ini.sample config.ini
+root@christine:~/ChristineAI# vim config.ini
+```
+
+9. Copy the systemd service files to /lib/systemd/system/. This will provide a systemd service that will run the script at boot. 
 
 ```
 root@christine:~/ChristineAI# cp christine.service /lib/systemd/system/
@@ -186,6 +193,6 @@ root@christine:~/ChristineAI# systemctl daemon-reload
 root@christine:~/ChristineAI# systemctl enable christine.service --now
 ```
 
-9. If you are using the PiModules UPS PIco, go to https://pimodules.com/firmware-updates and get the latest firmware, manual, and setup script. The other simpler option is to use a JuiceB0x board if you want to be able to run this from battery power. 
+10. If you are using the PiModules UPS PIco, go to https://pimodules.com/firmware-updates and get the latest firmware, manual, and setup script. The other simpler option is to use a JuiceB0x board if you want to be able to run this from battery power. 
 
-10. Next comes the setup of the server that will handle STT and TTS. 
+11. Next comes the setup of the server that will handle STT and TTS. 

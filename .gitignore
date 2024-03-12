@@ -6,3 +6,4 @@ backups
 logs
 messages.pickle
 christine.sqlite
+config.ini
