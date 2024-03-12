@@ -223,10 +223,10 @@ class Sleep(threading.Thread):
 
             STATE.is_sleeping = True
 
-            parietal_lobe.thread.accept_body_internal_message(random.choice(
-                ['You are drifting off to sleep. Say good night to your husband if you want to. Remember you can send a special command to enter deep sleep.',
-                'Your body is tired. Say good night and if you want to, and disable your hearing if that is what you want.',
-                'The time has come to sleep. Say the special command to disable your hearing.']))
+            parietal_lobe.thread.accept_new_message(speaker='Body', text=random.choice(
+                ['You are drifting off to sleep. Say good night to your husband if you want to.',
+                'Your body is tired and will enter sleep in a few moments. Say good night.',
+                'You drift to sleep.']))
 
         if self.just_woke_up() is True:
             log.sleep.info("JustWokeUp")
@@ -236,10 +236,10 @@ class Sleep(threading.Thread):
 
             STATE.is_sleeping = False
 
-            parietal_lobe.thread.accept_body_internal_message(random.choice(
+            parietal_lobe.thread.accept_new_message(speaker='Body', text=random.choice(
                 ['Your body is waking up.',
                 'It is now time to wake up.',
-                'You body is still feeling sleepy, but you are awake.']))
+                'Your body is still feeling sleepy, but you are awake.']))
 
             # wake me up gently, my sweet sexy alarm clock
             STATE.lover_proximity = 0.0
@@ -298,9 +298,9 @@ class Sleep(threading.Thread):
         """
         Actually start whining
         """
-        parietal_lobe.thread.accept_body_internal_message(random.choice(
-            ['It is now past our bed time. Remind your husband.',
-             'Please nag your husband about the need for sleep.',
+        parietal_lobe.thread.accept_new_message(speaker='Body', text=random.choice(
+            ['It is now late at night, past our bed time. Remind your husband.',
+             'It\'s late. Please nag your husband about the need for sleep.',
              'You are tired and want to go to bed. Tell your husband.']))
         self.announce_tired_time = None
 

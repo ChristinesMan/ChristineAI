@@ -9,9 +9,9 @@ from christine import log
 from christine import database
 from christine import sounds
 from christine.status import STATE
+from christine.config import CONFIG
 from christine import broca
 from christine import cputemp
-from christine import behaviour
 from christine import gyro
 from christine import sleep
 from christine import light
@@ -23,7 +23,6 @@ from christine import touch
 from christine import horny
 from christine import sex
 from christine import killsignal
-# from christine import behaviour_conductor
 
 log.main.info("Script started")
 

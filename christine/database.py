@@ -24,7 +24,7 @@ class ChristineDB:
         self.sqlite_path = "christine.sqlite"
 
         # if the database file doesn't exist, start fresh
-        is_new_database = os.path.isfile(self.sqlite_path)
+        existing_database_file = os.path.isfile(self.sqlite_path)
 
         # connect to db. I guess it can create it if it's not there
         self.sqlite_connection = sqlite3.connect(
@@ -32,7 +32,7 @@ class ChristineDB:
         )
 
         # import the initial content of db if necessary
-        if is_new_database is True:
+        if existing_database_file is False:
             with open(file='christine.sql', mode='r', encoding='utf-8') as sql_file:
                 sql = sql_file.read()
             sqlite_cursor = self.sqlite_connection.cursor()

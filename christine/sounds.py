@@ -125,6 +125,11 @@ class MyTTSServer(threading.Thread):
             pass
 
         try:
+            del self.server_shutdown
+        except AttributeError:
+            pass
+
+        try:
             del self.manager
         except AttributeError:
             pass
@@ -232,7 +237,7 @@ class SoundsDB(threading.Thread):
             return None
 
         # standardize the text to just the words, no spaces
-        text_stripped = re.sub("[^a-zA-Z0-9 ]", "", text).lower().strip().replace(' ', '_')[0:200]
+        text_stripped = re.sub("[^a-zA-Z0-9 ]", "", text).lower().strip().replace(' ', '_')[0:100]
         file_path = f"sounds/synth/{text_stripped}.wav"
 
         # if there's already a cached synthesized sound, use the same cached stuff and return it

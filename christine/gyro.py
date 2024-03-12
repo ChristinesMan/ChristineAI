@@ -7,7 +7,7 @@ import numpy as np
 from mpu6050 import mpu6050
 
 from christine import log
-from christine import behaviour
+from christine import parietal_lobe
 from christine.status import STATE
 
 
@@ -54,8 +54,14 @@ class Gyro(threading.Thread):
         # be quiet, linter
         self.sensor = None
 
-        # I want to limit how often jostled messages get sent
+        # I want to limit how often jostled messages get sent to the LLM
         self.time_of_last_spike = time.time()
+
+        # also I want to not send the jostled message right away
+        # if I send it right away then we might report only the start of the "beating" and not the true magnitude
+        # since we sleep 0.025s between gyro queries, I'd say 40 is at least close enough to 0.5s.
+        self.jostled_message_countdown = 20
+        self.jostled_message_counter = 0
 
     def run(self):
         log.gyro.debug("Thread started.")
@@ -95,7 +101,7 @@ class Gyro(threading.Thread):
                     STATE.jostled_level = 0.0
                     STATE.is_laying_down = False
                     STATE.gyro_available = False
-                    behaviour.thread.notify_body_alert('The gyroscope in your body started generating errors and had to be disabled. Something may have gotten disconnected. I guess let your husband know.')
+                    parietal_lobe.thread.accept_new_message(speaker='Body', text='(The gyroscope in your body started generating errors and had to be disabled. Something may have gotten disconnected. I guess let your husband know.)')
                     return
 
             # Keep track of which iteration we're on. Fill the array with data.
@@ -144,9 +150,16 @@ class Gyro(threading.Thread):
                 ) / (self.jostled_avg_window_short + 1)
 
                 # if there is a sudden spike notify the proper handlers of such events, but not too frequently
-                if self.jostled_level > 0.15 and time.time() > self.time_of_last_spike + 60:
-                    behaviour.thread.notify_jostled()
+                if self.jostled_level > 0.15 and time.time() > self.time_of_last_spike + 30:
+                    self.jostled_message_counter = self.jostled_message_countdown
                     self.time_of_last_spike = time.time()
+
+                # the counter is used to delay sending the notification
+                if self.jostled_message_counter == 1:
+                    self.jostled_message_counter -= 1
+                    parietal_lobe.thread.notify_jostled()
+                else:
+                    self.jostled_message_counter -= 1
 
                 # Update the boolean that tells if we're laying down. While laying down I recorded 4.37, 1.60. However, now it's 1.55, 2.7. wtf happened? The gyro has not moved. Maybe position difference.
                 # At some point I ought to self-calibrate this. When it's dark, and not jostled for like an hour, that's def laying down, save it.

@@ -9,6 +9,7 @@ from christine import log
 from christine.status import STATE
 from christine import broca
 from christine import sleep
+from christine import parietal_lobe
 
 
 class Sex(threading.Thread):
@@ -142,14 +143,15 @@ class Sex(threading.Thread):
                     self.after_orgasm_cooldown_count -= 1
 
                 # after the cooldown comes the rest
-                # at this time, say something or another like wow that was great.
+                # at this time, say something or another like wow that was great. Let the LLM say it. We love LLMs.
                 if self.after_orgasm_cooldown_count == 1:
-                    broca.thread.queue_sound(from_collection="sex_done")
+                    parietal_lobe.thread.sex_after_orgasm_rest()
 
                 # if we're resting and the gyro starts to feel it, start again
                 # When after_orgasm_rest is True, we are ignoring vagina action
                 if self.after_orgasm_rest is True and STATE.jostled_level_short > self.gyro_deadzone_unrest:
                     log.sex.info("Jostled so we're starting up again")
+                    parietal_lobe.thread.sex_after_orgasm_rest_resume()
                     STATE.sexual_arousal = self.arousal_post_orgasm
                     STATE.shush_fucking = True
                     self.after_orgasm_rest = False
@@ -179,6 +181,10 @@ class Sex(threading.Thread):
         if sensor_data["msg"] in ["touch", "release"]:
             # which sensor got hit?
             sensor_hit = sensor_data["data"]
+
+            # if this is the first touch, sexual arousal is 0.0, let parietal know
+            if STATE.sexual_arousal == 0.0:
+                parietal_lobe.thread.sex_first_touch()
 
             # Add some to the arousal
             STATE.sexual_arousal += (

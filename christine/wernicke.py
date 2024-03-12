@@ -22,11 +22,11 @@ import pvcobra
 
 from christine import log
 from christine.status import STATE
-# from christine.settings import SETTINGS
+from christine.config import CONFIG
 from christine import light
 from christine import touch
 from christine import broca
-from christine import behaviour
+from christine import parietal_lobe
 
 
 class Wernicke(threading.Thread):
@@ -97,7 +97,7 @@ class Wernicke(threading.Thread):
             # Words from the speech recognition server
             elif comm["class"] == "words":
                 log.wernicke.info("Received words: %s", comm["text"])
-                behaviour.thread.notify_new_speech(comm)
+                parietal_lobe.thread.notify_new_speech(comm)
 
             # the audio data contains embedded sensor and voice proximity data
             elif comm["class"] == "sensor_data":
@@ -314,6 +314,11 @@ class Wernicke(threading.Thread):
 
                 try:
                     del self.eagle_enroll_name
+                except AttributeError:
+                    pass
+
+                try:
+                    del self.server_shutdown
                 except AttributeError:
                     pass
 
@@ -589,7 +594,7 @@ class Wernicke(threading.Thread):
             def __init__(self):
 
                 # get the key from this environment variable
-                self.pv_key = os.getenv("PV_KEY")
+                self.pv_key = CONFIG['wernicke']['pv_key']
 
                 # no key, no vad, no service, no shoes, no shirt, no pants
                 if self.pv_key is None:
@@ -611,21 +616,21 @@ class Wernicke(threading.Thread):
                 # and we're also amplifying here
                 # I should really run some real tests to nail down what amplification is best for accuracy
                 # Seriously, I threw in "24" and maybe listened to a sample, that's it
+
+                # turns out the best amps after much testing was 42
+                # decided later on that's a bit excessive. 40?
+                # favoring her right ear now, because that's the ear I whisper sweet good nights in, and that's her best ear
+                # or is it? I have not tested for a long time
                 in_audio = (
                     AudioSegment(
                         data=buffer_queue.get(),
                         sample_width=2,
                         frame_rate=16000,
                         channels=2,
-                    )
-                    + 24
+                    ).split_to_mono()[1] + 40
                 )
 
-                # Split the interleaved data into separate channels
-                in_audio_split = in_audio.split_to_mono()
-
-                # favoring her right ear now, because that's the ear I whisper sweet good nights in
-                return in_audio_split[1].raw_data
+                return in_audio.raw_data
 
             def collector(self):
                 """Generator that yields series of consecutive audio blocks comprising each utterence, separated by yielding a single None.

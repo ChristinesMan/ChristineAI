@@ -63,7 +63,6 @@ class Status(threading.Thread):
         self.shush_please_honey = False
 
         # Best I could think of to prevent normal conversation during sex, except during rest periods
-        # This will probably go away and get replaced with a behaviour zone
         self.shush_fucking = False
 
         # I was getting woke up a lot with all the cute hmmm sounds that are in half of the sleeping breath sounds
@@ -88,9 +87,10 @@ class Status(threading.Thread):
         # this is to signal all threads to properly shutdown
         self.please_shut_down = False
 
-        # is wernicke/broca connected to the server
+        # is wernicke/broca/parietal_lobe connected to the server
         self.wernicke_connected = False
         self.broca_connected = False
+        self.parietal_lobe_connected = False
 
         # is shit fucked up
         self.gyro_available = False

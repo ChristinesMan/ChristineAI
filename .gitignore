@@ -5,5 +5,7 @@ httpserver/multipurpose_tabcontent
 backups
 logs
 messages.pickle
+messages.log
 christine.sqlite
 config.ini
+prompt_logs

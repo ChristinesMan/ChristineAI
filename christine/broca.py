@@ -8,7 +8,8 @@ import os.path
 import time
 # from ast import literal_eval
 import threading
-# from collections import deque
+import queue
+import re
 import random
 from multiprocessing import Process, Pipe
 import wave
@@ -22,7 +23,6 @@ from christine import log
 from christine.status import STATE
 from christine import sounds
 from christine import wernicke
-from christine import behaviour
 
 class Broca(threading.Thread):
     """
@@ -45,6 +45,20 @@ class Broca(threading.Thread):
 
         # capture the priority of whatever sound is playing now
         self.playing_now_priority = 5
+
+        # queue up sentences to feed into broca one at a time
+        self.broca_queue = queue.Queue()
+
+        # emotes that show up in text from LLM
+        self.re_emote_laugh = re.compile(
+            r"haha|laugh|chuckle|snicker|chortle|giggle|guffaw|smile|blush|😆|🤣|😂|😅|😀|😃|😄|😁|🤪|😜|😝", flags=re.IGNORECASE
+        )
+        self.re_emote_grrr = re.compile(
+            r"grrr|gasp|😠|😡|🤬|😤|🤯|🖕", flags=re.IGNORECASE
+        )
+        self.re_emote_yawn = re.compile(
+            r"yawn|sleep|tire|sigh|😪|😴|😒|💤|😫|🥱|😑|😔|🤤", flags=re.IGNORECASE
+        )
 
         # setup the separate process with pipe that we're going to be fucking
         # lol I put the most insane things in code omg, but this will help keep it straight!
@@ -181,7 +195,7 @@ class Broca(threading.Thread):
         self.next_sound = None
 
         # well, it didn't really end, but it's definitely ready for the next sound
-        behaviour.thread.notify_sound_ended()
+        self.notify_sound_ended()
 
     def queue_sound(
         self,
@@ -226,6 +240,13 @@ class Broca(threading.Thread):
         if text is not None:
 
             sound = sounds.db.get_sound_synthesis(text=text)
+
+            # handle cases where broca is unavailable
+            if sound is None:
+                log.broca.warning('queue_text got a None. text was "%s"', text)
+                self.queue_sound(from_collection='broca_failure')
+                return
+
             sound.update({"collection": "synth", "priority": 10, "play_no_wait": True})
             self.next_sound = sound
 
@@ -234,6 +255,97 @@ class Broca(threading.Thread):
 
         if self.next_sound is not None:
             self.next_sound['synth_wait'] = False
+
+
+    def please_say(self, text):
+        """When the parietal lobe wants to say some words, they have to go through here."""
+
+        log.broca.debug("Please say: %s", text)
+
+        # put it on the queue after a quick inhalation sound
+        self.broca_queue.put_nowait({"type": "sound", "collection": "inhalation"})
+        self.broca_queue.put_nowait({"type": "text", "content": text})
+
+        # start the ball rolling if it's not already
+        if self.next_sound is None:
+            self.notify_sound_ended()
+
+    def please_play_emote(self, text):
+        """Play an emote if we have a sound in the collection."""
+
+        # # no emotes while fucking, but now not so sure
+        # if STATE.shush_fucking is True:
+        #     return False
+
+        # figure out which emote
+        if self.re_emote_laugh.search(text):
+            collection = 'laughing'
+
+        elif self.re_emote_grrr.search(text):
+            collection = 'disgust'
+
+        elif self.re_emote_yawn.search(text):
+            collection = 'sleepy'
+
+        else:
+            # if it doesn't match anything known, just discard, but let the caller know and log it
+            # I intend to review these logs later to see where emotes could be expanded
+            log.broca.debug("Cannot emote: %s", text)
+            return False
+
+        log.broca.debug("Please emote: %s", text)
+
+        # put it on the queue
+        self.broca_queue.put_nowait({"type": "sound", "collection": collection})
+
+        # start the ball rolling if it's not already
+        if self.next_sound is None:
+            self.notify_sound_ended()
+
+        # if we got this far, the emote was used. We send this back to let Parietal Lobe know to save the emote in the message history.
+        return True
+
+    def please_play_sound(self, collection):
+        """Play any sound from a collection."""
+
+        log.broca.debug("Please play from collection: %s", collection)
+
+        # put it on the queue
+        self.broca_queue.put_nowait({"type": "sound", "collection": collection})
+
+        # start the ball rolling if it's not already
+        if self.next_sound is None:
+            self.notify_sound_ended()
+
+    def please_stop(self):
+        """Immediately stop speaking."""
+
+        log.broca.debug("Full stop.")
+
+        try:
+            # suck the queue dry
+            while self.broca_queue.qsize() > 0:
+                self.broca_queue.get_nowait()
+        except queue.Empty:
+            pass
+
+        # stop the ball from rolling
+        self.next_sound = None
+
+    def notify_sound_ended(self):
+        """This should get called by broca as soon as sound is finished playing. Or, rather, when next_sound is free."""
+
+        if self.broca_queue.qsize() > 0:
+            try:
+                queue_item = self.broca_queue.get_nowait()
+            except queue.Empty:
+                log.broca.warning('self.broca_queue was empty. Not supposed to happen.')
+
+            if queue_item['type'] == "sound":
+                self.queue_sound(from_collection=queue_item['collection'], priority=10)
+            elif queue_item['type'] == "text":
+                self.queue_text(text=queue_item['content'])
+
 
     def shuttlecraft(self, to_starship):
         """
@@ -272,12 +384,22 @@ class Broca(threading.Thread):
         # Start the pyaudio stream
         pya_stream = pya.open(format=8, channels=1, rate=44100, output=True, stream_callback=wav_data_feeder)
 
+        # So, often there's nothing playing from the speaker, and after 3-4s the speaker goes into standby mode
+        # This causes some sounds to get cut off. So this var is an attempt to detect when that will be a problem
+        # and play a sound to get it started back up
+        # before I implement this fix I need to stop using readframes and start using bytes
+        # work in progress
+        seconds_idle = 0.0
+        seconds_idle_to_play_presound = 3.0
+        silent_bytes = 512
+
         while True:
 
             # So basically, if there's something in the pipe, get it all out
             if to_starship.poll():
                 comms = to_starship.recv()
                 log.broca.debug("Shuttlecraft received: %s", comms)
+                log.broca.info("seconds_idle: %s", seconds_idle)
 
                 # graceful shutdown
                 if comms["wavfile"] == "selfdestruct":
@@ -301,6 +423,7 @@ class Broca(threading.Thread):
                 to_starship.send(pya_stream.is_active())
 
                 # just masturbate for a little while
+                seconds_idle += 0.1
                 time.sleep(0.1)
 
 # Instantiate and start the thread

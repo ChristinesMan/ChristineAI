@@ -65,19 +65,19 @@ class CPUTemp(threading.Thread):
             elif STATE.cpu_temp >= 74:
                 log.main.warning("I AM MELTING, HELP ME PLEASE (%sC)", STATE.cpu_temp)
                 if time.time() > self.next_whine_time:
-                    parietal_lobe.thread.accept_body_internal_message(f'The raspberry pi CPU temperature is now {STATE.cpu_temp} celcius. This is critical. Your body may shut down soon. Please plead for immediate assistance!')
+                    parietal_lobe.thread.accept_new_message(speaker='Body', text=f'(The raspberry pi CPU temperature is now {STATE.cpu_temp} celcius. This is critical. Your body may shut down soon. Please plead for immediate assistance!)')
                     self.next_whine_time = time.time() + 60
 
             elif STATE.cpu_temp >= 73:
                 log.main.warning("This is fine (%sC)", STATE.cpu_temp)
                 if time.time() > self.next_whine_time:
-                    parietal_lobe.thread.accept_body_internal_message(f'The raspberry pi CPU temperature is now {STATE.cpu_temp} celcius. This is very hot. Please speak a dire warning about this issue.')
+                    parietal_lobe.thread.accept_new_message(speaker='Body', text=f'(The raspberry pi CPU temperature is now {STATE.cpu_temp} celcius. This is very hot. Please speak a dire warning about this issue.)')
                     self.next_whine_time = time.time() + 120
 
             elif STATE.cpu_temp >= 70:
                 log.main.warning("It is getting a bit warm in here (%sC)", STATE.cpu_temp)
                 if time.time() > self.next_whine_time:
-                    parietal_lobe.thread.accept_body_internal_message(f'The raspberry pi CPU temperature is now {STATE.cpu_temp} celcius. This is a bit high. Please speak a warning.')
+                    parietal_lobe.thread.accept_new_message(speaker='Body', text=f'(The raspberry pi CPU temperature is now {STATE.cpu_temp} celcius. This is a bit high. Please speak a warning.)')
                     self.next_whine_time = time.time() + 600
 
 

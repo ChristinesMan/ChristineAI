@@ -34,7 +34,7 @@ class Touch:
         self.sensitivity = [
             None,
             None,
-            120,
+            50,
             None,
             50,
             None,
@@ -50,11 +50,11 @@ class Touch:
         self.channel_labels = [
             None,
             None,
-            "Mouth",
+            "MouthHerLeft",
             None,
-            "LeftCheek",
+            "MouthMiddle",
             None,
-            "RightCheek",
+            "MouthHerRight",
             None,
             None,
             None,
@@ -115,7 +115,7 @@ class Touch:
                 )
                 if STATE.is_sleeping is False:
                     broca.thread.queue_sound(from_collection="kissing", play_no_wait=True)
-                    parietal_lobe.thread.accept_body_internal_message('The sensor near your mouth is triggered. You are probably getting kissed.')
+                    parietal_lobe.thread.accept_new_message(speaker='Body', text='(The sensor near your mouth is triggered. You are probably getting kissed.)')
                 sleep.thread.wake_up(0.05)
 
         self.counter += 1
