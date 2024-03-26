@@ -223,10 +223,7 @@ class Sleep(threading.Thread):
 
             STATE.is_sleeping = True
 
-            parietal_lobe.thread.accept_new_message(text=random.choice(
-                ['You are drifting off to sleep. Say good night to your husband if you want to.',
-                'Your body is tired and will enter sleep in a few moments. Say good night.',
-                'You drift to sleep.']))
+            parietal_lobe.thread.sleep_sleeping()
 
         if self.just_woke_up() is True:
             log.sleep.info("JustWokeUp")
@@ -234,17 +231,13 @@ class Sleep(threading.Thread):
             # try to prevent wobble by throwing it further towards awake
             STATE.wakefulness += 0.05
 
-            STATE.is_sleeping = False
-
-            parietal_lobe.thread.accept_new_message(text=random.choice(
-                ['Your body is waking up.',
-                'It is now time to wake up.',
-                'Your body is still feeling sleepy, but you are awake.']))
-
             # wake me up gently, my sweet sexy alarm clock
             STATE.lover_proximity = 0.0
 
+            STATE.is_sleeping = False
+
             broca.thread.queue_sound(from_collection="sleepy", play_no_wait=True)
+            parietal_lobe.thread.sleep_waking()
 
     def just_fell_asleep(self):
         """
@@ -298,10 +291,7 @@ class Sleep(threading.Thread):
         """
         Actually start whining
         """
-        parietal_lobe.thread.accept_new_message(text=random.choice(
-            ['It is now late at night, past our bed time. Remind your husband.',
-             'It\'s late. Please nag your husband about the need for sleep.',
-             'You are tired and want to go to bed. Tell your husband.']))
+        parietal_lobe.thread.sleep_tired()
         self.announce_tired_time = None
 
     def random_minutes_later(self, minutes_min, minutes_max):

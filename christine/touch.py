@@ -83,8 +83,9 @@ class Touch:
         Called to deliver new data point
         """
 
-        # for all 12 channels
+        # for whatever of the 12 channels is hooked up
         for channel in self.used_channels:
+
             # save data in an array
             self.data[channel][
                 self.counter % self.baseline_data_length
@@ -107,15 +108,13 @@ class Touch:
                     STATE.lover_proximity,
                 )
 
-                # probably faster to test via int than the Str 'Mouth'
-                # if channel == 2:
-                # going to test out making sounds for cheeks, not only mouth
+                # all channels are now various areas of mouth
                 STATE.dont_speak_until = (
                     time.time() + 2.0 + (random.random() * 3.0)
                 )
                 if STATE.is_sleeping is False:
                     broca.thread.queue_sound(from_collection="kissing", play_no_wait=True)
-                    parietal_lobe.thread.accept_new_message(text='(The sensor near your mouth is triggered. You are probably getting kissed.)')
+                    parietal_lobe.thread.mouth_touched()
                 sleep.thread.wake_up(0.05)
 
         self.counter += 1

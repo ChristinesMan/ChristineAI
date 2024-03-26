@@ -24,7 +24,33 @@ from christine import parietal_lobe
 class Vagina(threading.Thread):
     """
     This handles the capacitive touch sensor that is connected to vagina sensors.
-    there are 3 sloppily installed sensors, hope they last
+    There are 4 sensors currently
+    Build steps:
+    Get yerself a stiff metal rod, thin as possible but still rigid enough. About 1ft long.
+    Attach somehow to the end of rod the thinnest available nitinol muscle wire
+    Muscle wire is the only stuff that is going to take years of pounding and bending
+    Push rod through TPE starting at wherever you'd like the sensor to be
+    You'll probably like one outside near clit area, one just inside, mid-canal, etc
+    Push rod all the way through TPE and into a little pocket where the touch sensor is
+    Detach muscle wire from the rod, and then remove rod
+    Cut muscle wire, allowing plenty of length on either end
+    On the business end of the wire, thread wire through something tiny and cylindrical
+    I have used about 5mm of Q-tip stick, or 5mm of wire insulation
+    Wrap wire around cylindrical thing you're using and back in so that the wire grabs it
+    Glue the cylindrical thing with super glue to hold it in place, let glue dry a bit
+    Pull the sensor end of the wire until the cylindrical thing is near the opening in the TPE
+    Put more super glue on the cylindrical tube thing and then quickly pull from the sensor end
+    until the thing and the glue mess have gone inside the body about 1cm. This will keep
+    the wire secure inside body. After glue drys just dab some oil on it and pick all the glue off. 
+    Trim the business end of the wire so that only about 1cm protrudes.
+    On the touch sensor end, trim wire. You don't want any of the sensor wires to ever even get
+    close to each other, so I have been wrapping them with little flexible foam pieces. 
+    Find some sort of round shit to place into the wound to hold it open.
+    Solder the sensor ends of the wires to the sensor pads on the touch sensor.
+    When you'd got everything routed, wrapped, soldered, secured, and fuck tested,
+    I recommend mixing up some 5 minute epoxy and drizzle it over touch sensor and wires
+    Because that shit is going to get smashed every night and twice on Sundays.
+    Should last a few years if wired securely.
 
     omg lol yeah I just did that.
     root@christine:~# touch vagina.py
@@ -69,11 +95,11 @@ class Vagina(threading.Thread):
 
             # if there was a series of consecutive failures, just let the LLM know and die
             elif sensor_data["msg"] == "FAIL":
-                parietal_lobe.thread.accept_new_message(text='(The lower level sensor in your body started generating errors and had to be disabled. Something may have gotten disconnected. I guess let your husband know.)')
                 STATE.vagina_available = False
+                parietal_lobe.thread.vagina_failure()
                 return
 
-            # if there was a series of consecutive failures, just die
+            # get a signal when the sensor init was successful
             elif sensor_data["msg"] == "INIT_SUCCESS":
                 STATE.vagina_available = True
 

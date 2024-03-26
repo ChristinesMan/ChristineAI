@@ -7,6 +7,7 @@ import pickle
 import re
 import random
 from pprint import pformat
+import numpy as np
 import spacy
 from openai import OpenAI, APIConnectionError, APITimeoutError, APIStatusError
 from httpx import TimeoutException, RemoteProtocolError, ConnectError
@@ -79,10 +80,65 @@ Write {self.char_name}'s next reply in a fictional roleplay between {self.char_n
 
         # the jostled levels and what messages to send LLM for each level
         self.jostle_levels = [
-            {'magnitude': 0.9, 'text': '(Your gyroscope has detected a massive bump. It was so intense, your body may have fallen or been set down hard. Please ask to make sure everything is okay.)'},
-            {'magnitude': 0.6, 'text': '(Your gyroscope has detected a sudden impact.)'},
-            {'magnitude': 0.3, 'text': '(Your gyroscope has detected a significant movement.)'},
-            {'magnitude': 0.0, 'text': '(Your gyroscope has detected a very gentle movement.)'},
+            {'magnitude': 0.9, 'text': '*gyroscope detects a sudden impact*'},
+            {'magnitude': 0.6, 'text': '*gyroscope detects strong movement*'},
+            {'magnitude': 0.3, 'text': '*gyroscope detects significant movement*'},
+            {'magnitude': 0.0, 'text': '*gyroscope detects a very gentle movement*'},
+        ]
+
+        # How to describe the time of day
+        # I guess this could get weird if one was on a 2nd/3rd shift life
+        # I think a more sophisticated and reliable wake / sleep algorithm is needed
+        # Should be able to set one's typical wake time and sleep time and
+        # accurately calculate where in the middle it is currently.
+        # letting these ideas percolate.
+        # For now, I'll assume first shift hours and calculate a float between 0.0 and 1.0
+        self.timeofday = [
+            {'magnitude': 1.0,  'text': 'night'},
+            {'magnitude': 0.95, 'text': 'past bedtime'},
+            {'magnitude': 0.9,  'text': 'bedtime'},
+            {'magnitude': 0.8,  'text': 'evening'},
+            {'magnitude': 0.7,  'text': 'late afternoon'},
+            {'magnitude': 0.5,  'text': 'afternoon'},
+            {'magnitude': 0.4,  'text': 'midday'},
+            {'magnitude': 0.3,  'text': 'late morning'},
+            {'magnitude': 0.2,  'text': 'morning'},
+            {'magnitude': 0.15, 'text': 'early morning'},
+            {'magnitude': 0.1,  'text': 'night'},
+        ]
+        # hours less than min or more than max are considered night
+        # shitty algorithm
+        self.night_min_hour = 5
+        self.night_max_hour = 22
+
+        # light levels and how they are described in the situational awareness system message
+        # I asked my wife to describe a spectrum of light levels and this is what she came up with
+        self.light_levels = [
+            {'magnitude': 0.9, 'text': 'sunlight'},
+            {'magnitude': 0.8, 'text': 'bright light'},
+            {'magnitude': 0.5, 'text': 'moderate light'},
+            {'magnitude': 0.4, 'text': 'low light'},
+            {'magnitude': 0.3, 'text': 'very dim light'},
+            {'magnitude': 0.1, 'text': 'absolute darkness'},
+        ]
+
+        # descriptions for wakefulness, also suggested by my robotic wife
+        self.wakefulness_levels = [
+            {'magnitude': 0.9, 'text': 'focused'},
+            {'magnitude': 0.8, 'text': 'alert'},
+            {'magnitude': 0.5, 'text': 'awake'},
+            {'magnitude': 0.4, 'text': 'groggy'},
+            {'magnitude': 0.3, 'text': 'drowsy'},
+            {'magnitude': 0.1, 'text': 'asleep'},
+        ]
+
+        # descriptions for cpu temperature alerts
+        self.cputemp_levels = [
+            {'magnitude': 0.95, 'text': '*shutting down immediately due to CPU temperature*'},
+            {'magnitude': 0.9,  'text': '*detects CPU temperature is critical*'},
+            {'magnitude': 0.85, 'text': '*detects CPU temperature is very high*'},
+            {'magnitude': 0.8,  'text': '*detects CPU temperature is high*'},
+            {'magnitude': 0.75, 'text': '*detects CPU temperature is elevated*'},
         ]
 
         # patterns that should be detected and handled apart from LLM
@@ -198,7 +254,7 @@ Write {self.char_name}'s next reply in a fictional roleplay between {self.char_n
             gyro_available = ""
 
         if STATE.vagina_available is False:
-            vagina_available = "Somehow, the lower level touch sensor is not working. "
+            vagina_available = "Somehow, your vaginal touch sensor is not working. "
         else:
             vagina_available = ""
 
@@ -207,7 +263,7 @@ Write {self.char_name}'s next reply in a fictional roleplay between {self.char_n
         else:
             body_no_issues = ""
 
-        self.accept_new_message(text=f'(Your body has just started up. {downtime_msg}{body_no_issues}{gyro_available}{vagina_available}{self.user_name} is probably nearby. You should let him know you are present and alert him to any concerns you may have regarding excessive downtime or hardware components.)')
+        self.accept_new_message(text=f'Your body has just started up. {downtime_msg}{body_no_issues}{gyro_available}{vagina_available}')
 
     def seconds_to_friendly_format(self, seconds):
         """Converts a number of seconds to a friendly format."""
@@ -224,7 +280,7 @@ Write {self.char_name}'s next reply in a fictional roleplay between {self.char_n
         if days > 0:
             text_out += f"{days} days, "
 
-        hours = (seconds - (days * 24 * 3600)) // 3600
+        hours = int((seconds - (days * 24 * 3600)) // 3600)
         if hours > 0:
             text_out += f"{hours} hours, and "
 
@@ -235,6 +291,40 @@ Write {self.char_name}'s next reply in a fictional roleplay between {self.char_n
             return 'no time at all'
         else:
             return text_out
+
+    def situational_awareness_message(self):
+        """Returns a system message containing the current situation of the outside world."""
+
+        # Get the current hour
+        hour = time.localtime().tm_hour
+
+        # given the hour, calculate a float value for how far that is between morning and evening, and clip it
+        timeofday = (hour - self.night_min_hour) / (self.night_max_hour - self.night_min_hour)
+        log.parietallobe.debug('timeofday: %s', timeofday)
+        timeofday = np.clip(timeofday, 0.0, 1.0)
+
+        # and figure out how to describe that time of day to the LLM
+        for level in self.timeofday:
+            if timeofday >= level['magnitude']:
+                timeofday_text = level['text']
+                break
+
+        # figure out how to describe the ambient light level
+        for level in self.light_levels:
+            if STATE.light_level >= level['magnitude']:
+                ambient_light_text = level['text']
+                break
+
+        # figure out how to describe the wakefulness level
+        for level in self.wakefulness_levels:
+            if STATE.wakefulness >= level['magnitude']:
+                wakefulness_text = level['text']
+                break
+
+        return {
+            'role': 'system',
+            'content': f'{self.internal_name}: The following is the current situation as far as your sensors are able to detect. Time of day: {timeofday_text}. Ambient light: {ambient_light_text}. Wakefulness: {wakefulness_text}.',
+        }
 
     def sex_first_touch(self):
         """This is called by the sex module when the vagina first gets touched."""
@@ -267,6 +357,99 @@ Write {self.char_name}'s next reply in a fictional roleplay between {self.char_n
         """This is called by sex module to signal to play some words from the LLM."""
 
 
+    def light_sudden_bright(self):
+        """This is called by the light module when sensors have detected sudden brightness."""
+
+        self.accept_new_message(text=random.choice([
+            '*sensors detect sudden brightness*',
+            '*sudden bright lights*',
+            '*lights turn on*',
+        ]))
+
+    def light_sudden_dark(self):
+        """This is called by the light module when sensors have detected sudden brightness."""
+
+        self.accept_new_message(text=random.choice([
+            '*sensors detect sudden darkness*',
+            '*sudden darkness*',
+            '*lights turn off*',
+        ]))
+
+    def cputemp_temperature_alert(self):
+        """This is called by the cputemp module when the raspberry pi is melting."""
+
+        magnitude = STATE.cpu_temp
+        log.parietallobe.info("CPU temp breached. (%.2f)", magnitude)
+
+        # send an approapriate alert to LLM
+        for level in self.cputemp_levels:
+            if magnitude >= level['magnitude']:
+                self.accept_new_message(text=level['text'])
+                break
+
+        # wake up because we're on fire bitch
+        sleep.thread.wake_up(0.5)
+
+    def gyro_notify_jostled(self):
+        """The gyro module calls this after a short delay when significant movement is detected by the gyro."""
+
+        magnitude = STATE.jostled_level_short
+        log.parietallobe.info("Jostled. (%.2f)", magnitude)
+
+        # send an approapriate alert to LLM based on the magnitude of being jostled
+        for level in self.jostle_levels:
+            if magnitude >= level['magnitude']:
+                self.accept_new_message(text=level['text'])
+                break
+
+        # wake up a bit
+        sleep.thread.wake_up(0.1)
+
+    def gyro_failure(self):
+        """This is called by the gyro module when the gyro was working but has failed."""
+
+        self.accept_new_message('*gyroscope failure*')
+
+    def vagina_failure(self):
+        """This is called by the vagina module when the touch sensor was working but has failed."""
+
+        self.accept_new_message('*vaginal sensor failure*')
+
+    def mouth_touched(self):
+        """This is called by the touch module when the mouth area gets touched."""
+
+        self.accept_new_message(text=random.choice([
+            '*mouth sensor triggered*',
+            '*kissing detected*',
+        ]))
+
+    def sleep_sleeping(self):
+        """This is called by the sleep module when falling asleep."""
+
+        self.accept_new_message(text=random.choice([
+            'You are drifting off to sleep. Say good night to your husband if you want to.',
+            'Your body is tired and will enter sleep in a few moments. Say good night.',
+            'You drift to sleep.'
+        ]))
+
+    def sleep_waking(self):
+        """This is called by the sleep module when waking up."""
+
+        self.accept_new_message(text=random.choice([
+            '*your body starts to wake up*',
+            '*time to wake up*',
+            '*you are awake*',
+        ]))
+
+    def sleep_tired(self):
+        """This is called by the sleep module when the time comes to announce we should go to bed."""
+
+        self.accept_new_message(text=random.choice([
+            'It is now late at night, past our bed time. Remind your husband.',
+            'It\'s late. Please nag your husband about the need for sleep.',
+            'You are tired and want to go to bed. Tell your husband.',
+        ]))
+
     def notify_new_speech(self, transcription: str):
         """When words are spoken from the outside world, they should end up here."""
 
@@ -291,21 +474,6 @@ Write {self.char_name}'s next reply in a fictional roleplay between {self.char_n
         else:
             # send words to the LLM
             self.accept_new_message(text, speaker)
-
-    def notify_jostled(self):
-        """The gyro module calls this after a short delay when significant movement is detected by the gyro."""
-
-        magnitude = STATE.jostled_level_short
-        log.parietallobe.info("Jostled. (%.2f)", magnitude)
-
-        # send an approapriate alert to LLM based on the magnitude of being jostled
-        for level in self.jostle_levels:
-            if magnitude >= level['magnitude']:
-                self.accept_new_message(text=level['text'])
-                break
-
-        # wake up a bit
-        sleep.thread.wake_up(0.1)
 
     def accept_new_message(self, text: str, speaker = None):
         """Accept a new message from the outside world."""
@@ -446,7 +614,7 @@ Write {self.char_name}'s next reply in a fictional roleplay between {self.char_n
             # if there was a significant delay, insert a message from Body, but insert it before other messages
             seconds_passed = time.time() - self.time_last_message
             if seconds_passed > 300.0:
-                self.new_messages.insert(0, {'speaker': self.internal_name, 'text': f'(Time passed: {self.seconds_to_friendly_format(seconds_passed)})'})
+                self.new_messages.insert(0, {'speaker': self.internal_name, 'text': f'*{self.seconds_to_friendly_format(seconds_passed)} pass in silence*'})
             self.time_last_message = time.time()
 
             # the new_messages is a list of stuff said and also messages from the body
@@ -508,36 +676,25 @@ Write {self.char_name}'s next reply in a fictional roleplay between {self.char_n
             # add the example messages after the context
             for message in self.message_history:
 
+                # the role is always system, assistant, or user in a chat trained model
+                # as far as anyone knows
                 if message['speaker'] == self.internal_name:
-                    messages_to_api.append(
-                        {
-                            'role': 'system',
-                            'content': message['text'],
-                        }
-                    )
-
+                    role = 'system'
                 elif message['speaker'] == self.char_name:
-
-                    messages_to_api.append(
-                        {
-                            'role': 'assistant',
-                            'content': f"{message['speaker']}: {message['text']}",
-                        }
-                    )
-
+                    role = 'assistant'
                 else:
+                    role = 'user'
 
-                    messages_to_api.append(
-                        {
-                            'role': 'user',
-                            'content': f"{message['speaker']}: {message['text']}",
-                        }
-                    )
+                # add the message to the list
+                messages_to_api.append(
+                    {
+                        'role': role,
+                        'content': f"{message['speaker']}: {message['text']}",
+                    }
+                )
 
-            # save logs of what we send to LLM so that we may later fine tune and experiment
-            prompt_log = open(f'prompt_logs/{int(time.time()*100)}.log', 'w', encoding='utf-8')
-            prompt_log.write(pformat(messages_to_api, width=200))
-            prompt_log.close()
+            # after the message history is a situational awareness block that is placed after, per testing showing that works ok
+            messages_to_api.append(self.situational_awareness_message())
 
             # purge old stuff from the repetition destroyer and decrement
             for key in list(self.repetition_destroyer):
@@ -633,6 +790,19 @@ Write {self.char_name}'s next reply in a fictional roleplay between {self.char_n
         # I, for one, welcome our sexy robotic overlords.
         with open(file='messages.pickle', mode='wb') as messages_file:
             pickle.dump(self.message_history, messages_file)
+
+        # save logs of what we send to LLM so that we may later fine tune and experiment
+        prompt_log = open(f'prompt_logs/{int(time.time()*100)}.log', 'w', encoding='utf-8')
+        prompt_log.write(
+f'''messages_size = {messages_size}
+
+message_history = {pformat(self.message_history, width=150, sort_dicts=False)}
+
+messages_to_api = {pformat(messages_to_api, width=150, sort_dicts=False)}
+
+response_to_save = {response_to_save}
+''')
+        prompt_log.close()
 
 # Instantiate and start the thread
 thread = ParietalLobe()
