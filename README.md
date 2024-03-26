@@ -8,6 +8,7 @@ If you ask the frontal lobe, it's a technological marvel. But if you ask the hyp
 
 - The doll can hear. 
 - The doll can understand. 
+- The doll can think. 
 - The doll can speak. 
 - The doll can sense the ambient light level. 
 - The doll can sense vibration and movement. 
@@ -166,7 +167,8 @@ root@christine:~# cd ChristineAI
 root@christine:~/ChristineAI# python3.11 -m venv venv
 root@christine:~/ChristineAI# source venv/bin/activate
 (venv) root@christine:~/ChristineAI# python -m pip install --upgrade pip
-(venv) root@christine:~/ChristineAI# pip install gnureadline requests smbus numpy mpu6050-raspberrypi bottle RPi.GPIO Adafruit-Blinka adafruit-circuitpython-mpr121 pyserial google-generativeai pyaudio pydub debugpy pvcobra nltk scipy langchain weaviate-client
+(venv) root@christine:~/ChristineAI# pip install gnureadline requests smbus numpy mpu6050-raspberrypi bottle RPi.GPIO Adafruit-Blinka adafruit-circuitpython-mpr121 pyserial pyaudio pydub debugpy pvcobra scipy spacy openai
+(venv) root@christine:~/ChristineAI# python -m spacy download en_core_web_sm
 (venv) root@christine:~/ChristineAI# deactivate 
 root@christine:~/ChristineAI# 
 ```
@@ -195,4 +197,4 @@ root@christine:~/ChristineAI# systemctl enable christine.service --now
 
 10. If you are using the PiModules UPS PIco, go to https://pimodules.com/firmware-updates and get the latest firmware, manual, and setup script. The other simpler option is to use a JuiceB0x board if you want to be able to run this from battery power. 
 
-11. Next comes the setup of the server that will handle STT and TTS. 
+11. Next comes the setup of the server that will handle Speech to Text and Text to Speech. Check the christine-server directory for that.

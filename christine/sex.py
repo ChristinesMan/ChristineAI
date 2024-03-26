@@ -38,8 +38,8 @@ class Sex(threading.Thread):
         self.base_arousal_per_vag_hit = {
             "Vagina_Clitoris": 0.0006,
             "Vagina_Shallow": 0.0006,
-            "Vagina_Middle": 0.0006,
-            "Vagina_Deep": 0.0008,
+            "Vagina_Middle": 0.0007,
+            "Vagina_Deep": 0.0009,
         }
 
         # What Arousal to revert to after orgasm

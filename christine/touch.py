@@ -115,7 +115,7 @@ class Touch:
                 )
                 if STATE.is_sleeping is False:
                     broca.thread.queue_sound(from_collection="kissing", play_no_wait=True)
-                    parietal_lobe.thread.accept_new_message(speaker='Body', text='(The sensor near your mouth is triggered. You are probably getting kissed.)')
+                    parietal_lobe.thread.accept_new_message(text='(The sensor near your mouth is triggered. You are probably getting kissed.)')
                 sleep.thread.wake_up(0.05)
 
         self.counter += 1

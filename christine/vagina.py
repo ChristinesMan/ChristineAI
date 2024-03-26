@@ -69,7 +69,7 @@ class Vagina(threading.Thread):
 
             # if there was a series of consecutive failures, just let the LLM know and die
             elif sensor_data["msg"] == "FAIL":
-                parietal_lobe.thread.accept_new_message(speaker='Body', text='(The lower level sensor in your body started generating errors and had to be disabled. Something may have gotten disconnected. I guess let your husband know.)')
+                parietal_lobe.thread.accept_new_message(text='(The lower level sensor in your body started generating errors and had to be disabled. Something may have gotten disconnected. I guess let your husband know.)')
                 STATE.vagina_available = False
                 return
 
@@ -119,7 +119,7 @@ class Vagina(threading.Thread):
         # The two proximity sensors on the inside will be manually sampled, I think, due to the broken baseline handling problem on the hardware.
         # The outside channel is 0, and that is the one we're going to use
         standby_mode = True
-        activation_channel = 5
+        activation_channel = 11
 
         # how fast to poll the touch sensors. Wait time in seconds
         sleep_standby_mode = 1.0
@@ -146,13 +146,13 @@ class Vagina(threading.Thread):
             0.0,
             None,
             0.0,
+            None,
+            None,
+            None,
+            None,
             0.0,
             None,
-            None,
-            None,
-            None,
-            None,
-            None,
+            0.0,
         ]
 
         # How fast will the baseline get adjusted during sex?
@@ -168,13 +168,13 @@ class Vagina(threading.Thread):
             13.0,
             None,
             13.0,
+            None,
+            None,
+            None,
+            None,
             13.0,
             None,
-            None,
-            None,
-            None,
-            None,
-            None,
+            13.0,
         ]
 
         # Number of cycles where no touch before the touch is considered released
@@ -184,13 +184,13 @@ class Vagina(threading.Thread):
             2,
             None,
             2,
+            None,
+            None,
+            None,
+            None,
             2,
             None,
-            None,
-            None,
-            None,
-            None,
-            None,
+            2,
         ]
         release_counter = [0] * 12
 
@@ -202,13 +202,13 @@ class Vagina(threading.Thread):
             60,
             None,
             60,
+            None,
+            None,
+            None,
+            None,
             60,
             None,
-            None,
-            None,
-            None,
-            None,
-            None,
+            60,
         ]
         hangout_counter = [0] * 12
         hangout_baseline_adjust_window = 4.0
@@ -220,14 +220,14 @@ class Vagina(threading.Thread):
             None,
             "Vagina_Deep",
             None,
+            "Vagina_Middle",
+            None,
+            None,
+            None,
+            None,
             "Vagina_Shallow",
+            None,
             "Vagina_Clitoris",
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
         ]
 
         # How many raw values do we want to accumulate before re-calculating the baselines
@@ -258,8 +258,8 @@ class Vagina(threading.Thread):
         try:
             mpr121 = adafruit_mpr121.MPR121(
                 i2c,
-                touch_sensitivity=[50, 50, 50, 50, 50, 15, 50, 50, 50, 50, 50, 50],
-                release_sensitivity=[6, 6, 4, 6, 6, 6, 6, 6, 6, 6, 6, 6],
+                touch_sensitivity=[50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 15],
+                release_sensitivity=[6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 4],
                 debounce=2,
             )
             log.vagina.info("Touch sensor init success")
@@ -428,14 +428,17 @@ class Vagina(threading.Thread):
                             ) / (baseline_active_adjust_window + 1.0)
 
                     log.vagina.debug(
-                        "[%s|%s|%s] [%s][%s][%s] [%s][%s][%s]",
-                        touch_data_x[5],
+                        "[%s|%s|%s|%s] [%s][%s][%s][%s] [%s][%s][%s][%s]",
+                        touch_data_x[11],
+                        touch_data_x[9],
                         touch_data_x[4],
                         touch_data_x[2],
-                        str(round(touch_data[5], 1)).rjust(5, " "),
+                        str(round(touch_data[11], 1)).rjust(5, " "),
+                        str(round(touch_data[9], 1)).rjust(5, " "),
                         str(round(touch_data[4], 1)).rjust(5, " "),
                         str(round(touch_data[2], 1)).rjust(5, " "),
-                        str(round(baselines[5], 1)).rjust(5, " "),
+                        str(round(baselines[11], 1)).rjust(5, " "),
+                        str(round(baselines[9], 1)).rjust(5, " "),
                         str(round(baselines[4], 1)).rjust(5, " "),
                         str(round(baselines[2], 1)).rjust(5, " "),
                     )

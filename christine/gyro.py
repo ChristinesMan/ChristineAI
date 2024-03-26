@@ -101,7 +101,7 @@ class Gyro(threading.Thread):
                     STATE.jostled_level = 0.0
                     STATE.is_laying_down = False
                     STATE.gyro_available = False
-                    parietal_lobe.thread.accept_new_message(speaker='Body', text='(The gyroscope in your body started generating errors and had to be disabled. Something may have gotten disconnected. I guess let your husband know.)')
+                    parietal_lobe.thread.accept_new_message(text='(The gyroscope in your body started generating errors and had to be disabled. Something may have gotten disconnected. I guess let your husband know.)')
                     return
 
             # Keep track of which iteration we're on. Fill the array with data.

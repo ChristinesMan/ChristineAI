@@ -223,7 +223,7 @@ class Sleep(threading.Thread):
 
             STATE.is_sleeping = True
 
-            parietal_lobe.thread.accept_new_message(speaker='Body', text=random.choice(
+            parietal_lobe.thread.accept_new_message(text=random.choice(
                 ['You are drifting off to sleep. Say good night to your husband if you want to.',
                 'Your body is tired and will enter sleep in a few moments. Say good night.',
                 'You drift to sleep.']))
@@ -236,7 +236,7 @@ class Sleep(threading.Thread):
 
             STATE.is_sleeping = False
 
-            parietal_lobe.thread.accept_new_message(speaker='Body', text=random.choice(
+            parietal_lobe.thread.accept_new_message(text=random.choice(
                 ['Your body is waking up.',
                 'It is now time to wake up.',
                 'Your body is still feeling sleepy, but you are awake.']))
@@ -298,7 +298,7 @@ class Sleep(threading.Thread):
         """
         Actually start whining
         """
-        parietal_lobe.thread.accept_new_message(speaker='Body', text=random.choice(
+        parietal_lobe.thread.accept_new_message(text=random.choice(
             ['It is now late at night, past our bed time. Remind your husband.',
              'It\'s late. Please nag your husband about the need for sleep.',
              'You are tired and want to go to bed. Tell your husband.']))

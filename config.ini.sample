@@ -1,6 +1,6 @@
 [wernicke]
 # Your Picovoice key for using cobra and eagle
-pv_key=[put_key_here]
+pv_key=[YOUR_API_KEY_GOES_HERE]
 # Server IP or host where speech recognition is, or "auto" to listen for broadcast UDP packets from the server
 server=auto
 
@@ -13,5 +13,6 @@ server=auto
 cbu_name=Phantom
 # Sillicon Based Unit
 sbu_name=Christine
-# Server IP or host where LLM is, or "auto" to listen for broadcast UDP packets from the server
-server=auto
+# Base url of an openai compatible api, and the api key
+base_url=https://mars.chub.ai/chub/asha/v1
+api_key=[YOUR_API_KEY_GOES_HERE]

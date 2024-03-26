@@ -77,7 +77,7 @@ class Light:
         if light_trend > 6.0:
             log.sleep.debug("LightTrend: %s waking up fast", light_trend)
             if time.time() > self.time_of_last_body_message + 300.0:
-                parietal_lobe.thread.accept_new_message(speaker='Body', text='(The light sensors near your eyes are detecting a sudden brightness.)')
+                parietal_lobe.thread.accept_new_message(text='(The light sensors near your eyes are detecting a sudden brightness.)')
                 self.time_of_last_body_message = time.time()
             sleep.thread.wake_up(0.03)
 
@@ -85,7 +85,7 @@ class Light:
         if light_trend < 0.4:
             log.sleep.debug("LightTrend: %s who turned out the lights?", light_trend)
             if time.time() > self.time_of_last_body_message + 300.0:
-                parietal_lobe.thread.accept_new_message(speaker='Body', text='(The light sensors near your eyes are detecting a sudden darkness.)')
+                parietal_lobe.thread.accept_new_message(text='(The light sensors near your eyes are detecting a sudden darkness.)')
                 self.time_of_last_body_message = time.time()
 
         # Log the light level
