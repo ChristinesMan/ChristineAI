@@ -40,8 +40,8 @@ class MyTTSServer(threading.Thread):
         # init these to make linter happy
         self.server_ip = None
         self.manager = None
-        self.text_queue = queue.Queue(maxsize=30)
-        self.audio_queue = queue.Queue(maxsize=30)
+        self.text_queue = queue.Queue(maxsize=90)
+        self.audio_queue = queue.Queue(maxsize=90)
         self.server_shutdown = False
         STATE.broca_connected = False
 
@@ -242,13 +242,13 @@ class SoundsDB(threading.Thread):
 
         # if there's already a cached synthesized sound, use the same cached stuff and return it
         if os.path.isfile(file_path):
-            sound = {'id': 0, 'file_path': file_path, 'text': text, 'proximity_volume_adjust': 1.0, 'intensity': 0.0, 'replay_wait': 0, 'skip_until': 0, 'synth_wait': False}
+            sound = {'id': 0, 'file_path': file_path, 'text': text, 'proximity_volume_adjust': 1.0, 'intensity': 0.0, 'replay_wait': 0, 'skip_until': 0, 'pause_processing': 1, 'synth_wait': False}
             return sound
 
         # No cache, so send it over there to be generated, but don't wait. The broca module will do the waiting.
         else:
 
-            sound = {'id': 0, 'file_path': file_path, 'text': text, 'proximity_volume_adjust': 1.0, 'intensity': 0.0, 'replay_wait': 0, 'skip_until': 0, 'synth_wait': True}
+            sound = {'id': 0, 'file_path': file_path, 'text': text, 'proximity_volume_adjust': 1.0, 'intensity': 0.0, 'replay_wait': 0, 'skip_until': 0, 'pause_processing': 1, 'synth_wait': True}
             self.tts_server.synthesize(sound)
             return sound
 

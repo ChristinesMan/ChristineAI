@@ -23,6 +23,7 @@ from christine import log
 from christine.status import STATE
 from christine import sounds
 from christine import wernicke
+from christine import parietal_lobe
 
 class Broca(threading.Thread):
     """
@@ -59,6 +60,10 @@ class Broca(threading.Thread):
         self.re_emote_yawn = re.compile(
             r"yawn|sleep|tire|sigh|😪|😴|😒|💤|😫|🥱|😑|😔|🤤", flags=re.IGNORECASE
         )
+
+        # detect trailing punctuation, for inserting approapriate pauses
+        self.re_period = re.compile(r"[\.;]\s*$")
+        self.re_question = re.compile(r"\?\s*$")
 
         # setup the separate process with pipe that we're going to be fucking
         # lol I put the most insane things in code omg, but this will help keep it straight!
@@ -145,56 +150,66 @@ class Broca(threading.Thread):
         """
         log.broca.info("Playing: %s", self.next_sound)
 
-        # Now that we're actually playing the sound,
-        # tell the sound collection to not play it for a while
-        if self.next_sound["replay_wait"] != 0:
-            sounds.db.set_skip_until(sound_id=self.next_sound["id"])
+        # wrapping this all in a try because next_sound can get None'd at any time
+        try:
 
-        # calculate what volume this should play at adjusting for proximity
-        # this was really hard math to figure out for some reason
-        # I was very close to giving up and writing a bunch of rediculous if statements
-        # a proximity_volume_adjust of 1.0 means don't reduce the volume at all
-        volume = int(
-            (
-                1.0
-                - (1.0 - float(self.next_sound["proximity_volume_adjust"]))
-                * (1.0 - STATE.lover_proximity)
+            # Now that we're actually playing the sound,
+            # tell the sound collection to not play it for a while
+            if self.next_sound["replay_wait"] != 0:
+                sounds.db.set_skip_until(sound_id=self.next_sound["id"])
+
+            # notify the parietal lobe that something that was queued by it is now playing
+            if self.next_sound["text"] != '':
+                parietal_lobe.thread.broca_has_spoken(self.next_sound["text"])
+
+            # calculate what volume this should play at adjusting for proximity
+            # this was really hard math to figure out for some reason
+            # I was very close to giving up and writing a bunch of rediculous if statements
+            # a proximity_volume_adjust of 1.0 means don't reduce the volume at all
+            volume = int(
+                (
+                    1.0
+                    - (1.0 - float(self.next_sound["proximity_volume_adjust"]))
+                    * (1.0 - STATE.lover_proximity)
+                )
+                * 100
             )
-            * 100
-        )
 
-        # pop out the file path
-        file_path = self.next_sound["file_path"]
+            # pop out the file path
+            file_path = self.next_sound["file_path"]
 
-        # if the file doesn't exist somehow, fail graceful like
-        if os.path.isfile(file_path) is False:
-            log.main.warning('Sound file %s does not exist.', file_path)
+            # if the file doesn't exist somehow, fail graceful like
+            if os.path.isfile(file_path) is False:
+                log.main.warning('Sound file %s does not exist.', file_path)
+                self.next_sound = None
+                return
+
+            # let the ears know that the mouth is going to emit noises that are not breathing
+            # estimating the total sound play time by file size
+            # and some sounds are marked as needing a pause vs others that do not
+            if self.next_sound["pause_processing"] == 1:
+                wernicke.thread.audio_processing_pause(ceil( os.stat(file_path).st_size / 2100 ))
+
+            # send the message to the subprocess
+            self.to_shuttlecraft.send(
+                {
+                    "wavfile": file_path,
+                    "vol": volume,
+                }
+            )
+
+            # save the priority so that we can tell what can interrupt it
+            self.playing_now_priority = self.next_sound['priority']
+
+            # now that the sound is playing, we can discard this
             self.next_sound = None
-            return
 
-        # let the ears know that the mouth is going to emit noises that are not breathing
-        # since I stopped TTS from appending silence to synthesized voice audio I have noticed some garbage heard after speaking
-        # so that's why I'm adjusting this by 0.5s.
-        # the number of seconds in the wav file are estimated based on the file size, then 0.5s is added as padding,
-        # then / 0.25 because blocks are 0.25s long.
-        # So now that I made the wernicke send about 32 times more tiny blocks, increasing this
-        wernicke.thread.audio_processing_pause(ceil( os.stat(file_path).st_size / 2100 ))
-
-        # send the message to the subprocess
-        self.to_shuttlecraft.send(
-            {
-                "wavfile": file_path,
-                "vol": volume,
-            }
-        )
-
-        # save the priority so that we can tell what can interrupt it
-        self.playing_now_priority = self.next_sound['priority']
-
-        # now that the sound is playing, we can discard this
-        self.next_sound = None
+        # this would usually occur when next_sound gets set to None by speaking being interrupted
+        except TypeError as ex:
+            log.broca.exception(ex)
 
         # well, it didn't really end, but it's definitely ready for the next sound
+        # someday will probably reorg this whole module
         self.notify_sound_ended()
 
     def queue_sound(
@@ -247,7 +262,7 @@ class Broca(threading.Thread):
                 self.queue_sound(from_collection='broca_failure')
                 return
 
-            sound.update({"collection": "synth", "priority": 10, "play_no_wait": True})
+            sound.update({"collection": "synth", "pause_processing": 1, "priority": 10, "play_no_wait": True})
             self.next_sound = sound
 
     def notify_synth_done(self):
@@ -258,13 +273,24 @@ class Broca(threading.Thread):
 
 
     def please_say(self, text):
-        """When the parietal lobe wants to say some words, they have to go through here."""
+        """When the parietal lobe wants to say some words, they have to go through here.
+        First an inhalation sound is queued. So much more realistic.
+        If the text ends with certain punctuation, a pause is inserted to allow time for interruption.
+        """
 
         log.broca.debug("Please say: %s", text)
 
         # put it on the queue after a quick inhalation sound
         self.broca_queue.put_nowait({"type": "sound", "collection": "inhalation"})
         self.broca_queue.put_nowait({"type": "text", "content": text})
+
+        # if the utterance ends with period, pause
+        if self.re_period.search(text):
+            self.broca_queue.put_nowait({"type": "pause", "duration": 3.0})
+
+        # if the utterance ends with question, pause a lot
+        if self.re_question.search(text):
+            self.broca_queue.put_nowait({"type": "pause", "duration": 5.0})
 
         # start the ball rolling if it's not already
         if self.next_sound is None:
@@ -322,30 +348,39 @@ class Broca(threading.Thread):
 
         log.broca.debug("Full stop.")
 
+        # if there was a sound waiting, let parietal lobe know speech was interrupted
+        if self.next_sound is not None:
+            parietal_lobe.thread.broca_speech_interrupted()
+
+        # stop the ball from rolling
+        self.next_sound = None
+
+        # suck the queue dry
         try:
-            # suck the queue dry
             while self.broca_queue.qsize() > 0:
                 self.broca_queue.get_nowait()
         except queue.Empty:
             pass
 
-        # stop the ball from rolling
-        self.next_sound = None
-
     def notify_sound_ended(self):
-        """This should get called by broca as soon as sound is finished playing. Or, rather, when next_sound is free."""
+        """This should get called as soon as sound is finished playing.
+        Or, rather, when next_sound is free. Due to confused state of mind and the fact this module has evolved over time."""
 
         if self.broca_queue.qsize() > 0:
             try:
                 queue_item = self.broca_queue.get_nowait()
+                log.broca.debug('From broca_queue: %s', queue_item)
             except queue.Empty:
                 log.broca.warning('self.broca_queue was empty. Not supposed to happen.')
+                return
 
             if queue_item['type'] == "sound":
                 self.queue_sound(from_collection=queue_item['collection'], priority=10)
             elif queue_item['type'] == "text":
                 self.queue_text(text=queue_item['content'])
-
+            elif queue_item['type'] == "pause":
+                time.sleep(queue_item['duration'])
+                self.notify_sound_ended()
 
     def shuttlecraft(self, to_starship):
         """
@@ -389,14 +424,18 @@ class Broca(threading.Thread):
         # and play a sound to get it started back up
         # before I implement this fix I need to stop using readframes and start using bytes
         # work in progress
+        # really I'm not hearing stuff interrupted anymore so I dunno if I really need this
         seconds_idle = 0.0
-        seconds_idle_to_play_presound = 3.0
-        silent_bytes = 512
+        # seconds_idle_to_play_presound = 3.0
+        # silent_bytes = 512
 
         while True:
 
             # So basically, if there's something in the pipe, get it all out
             if to_starship.poll():
+
+                # if there was some communication in the pipe, probably is the next sound to play
+                # so we stop whatever wav file is playing now, and start the new one
                 comms = to_starship.recv()
                 log.broca.debug("Shuttlecraft received: %s", comms)
                 log.broca.info("seconds_idle: %s", seconds_idle)
@@ -418,12 +457,20 @@ class Broca(threading.Thread):
                 wav_data = wave.open(comms["wavfile"])
                 pya_stream.start_stream()
 
+                # reset this counter
+                seconds_idle = 0.0
+
             else:
-                # otherwise, in this case the current wav has been sucked dry and we need something else
-                to_starship.send(pya_stream.is_active())
+                # send back to the main process a boolean every 0.1s.
+                # True if there's a wav file actively playing, or False if we're playing nothing
+                we_active_yo = pya_stream.is_active()
+                to_starship.send(we_active_yo)
+
+                # if nothing is playing, add to this counter
+                if we_active_yo is False:
+                    seconds_idle += 0.1
 
                 # just masturbate for a little while
-                seconds_idle += 0.1
                 time.sleep(0.1)
 
 # Instantiate and start the thread

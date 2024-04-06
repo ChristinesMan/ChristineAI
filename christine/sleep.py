@@ -214,6 +214,9 @@ class Sleep(threading.Thread):
         if self.just_fell_asleep() is True:
             log.sleep.info("JustFellAsleep")
 
+            # let parietal lobe know we're falling asleep
+            parietal_lobe.thread.sleep_sleeping()
+
             # try to prevent wobble by throwing it further towards sleep
             STATE.wakefulness -= 0.02
 
@@ -221,12 +224,17 @@ class Sleep(threading.Thread):
             # I was getting woke up a lot with all the cute hmmm sounds that are in half of the sleeping breath sounds
             STATE.breath_intensity = 1.0
 
+            # wait a sec to allow the parietal lobe to get the thing in first
+            time.sleep(1)
             STATE.is_sleeping = True
-
-            parietal_lobe.thread.sleep_sleeping()
 
         if self.just_woke_up() is True:
             log.sleep.info("JustWokeUp")
+
+            STATE.is_sleeping = False
+
+            # let parietal lobe know
+            parietal_lobe.thread.sleep_waking()
 
             # try to prevent wobble by throwing it further towards awake
             STATE.wakefulness += 0.05
@@ -234,10 +242,8 @@ class Sleep(threading.Thread):
             # wake me up gently, my sweet sexy alarm clock
             STATE.lover_proximity = 0.0
 
-            STATE.is_sleeping = False
 
             broca.thread.queue_sound(from_collection="sleepy", play_no_wait=True)
-            parietal_lobe.thread.sleep_waking()
 
     def just_fell_asleep(self):
         """

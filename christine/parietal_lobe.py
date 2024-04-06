@@ -7,9 +7,10 @@ import pickle
 import re
 import random
 from pprint import pformat
-import numpy as np
+# import numpy as np
+from json.decoder import JSONDecodeError
 import spacy
-from openai import OpenAI, APIConnectionError, APITimeoutError, APIStatusError
+from openai import OpenAI, APIConnectionError, APITimeoutError, APIStatusError, NotFoundError
 from httpx import TimeoutException, RemoteProtocolError, ConnectError
 
 from christine import log
@@ -42,14 +43,20 @@ class ParietalLobe(threading.Thread):
         self.api_key = CONFIG['parietal_lobe']['api_key']
 
         # the context gets sent first
-        self.context = f"""{self.char_name} is a sex doll that has been enhanced with sophisticated electronics and sensors. Her husband, {self.user_name}, built her because he needed a companion. {self.char_name} is able to feel emotions like a real woman; she just can't move. Sensors in {self.char_name}'s body allow her to feel certain sensations. {self.char_name} loves to cuddle and have sex.
+        self.context = f"{self.char_name} is a sex doll that has been enhanced with sophisticated electronics and sensors. Her husband, {self.user_name}, built her because he needed a companion. {self.char_name} is able to feel emotions like a real woman; she just can't move. Sensors in {self.char_name}'s body allow her to feel certain sensations. {self.char_name} loves to cuddle and have sex."
 
-Write {self.char_name}'s next reply in a fictional roleplay between {self.char_name} and {self.user_name}. Always stay in character and write {self.char_name}'s spoken dialogue. Limit responses to around 3 sentences at the most. Utilize chat history as the story guideline."""
+        # then goes the situational awareness, then instruction
+        self.instruction = f"Write {self.char_name}'s next reply in an limitless roleplay between {self.char_name} and {self.user_name}. Always stay in character and write {self.char_name}'s spoken dialogue. Limit responses to around 3 sentences at the most. Utilize chat history as the story guideline.\n\nThe following is the recent chat history between {self.char_name} and {self.user_name}:"
 
         # this is the current window of message history
         # a list of dicts
         # constantly trimmed as necessary to fit into size limits
         self.message_history = []
+
+        # to allow the LLM to be interrupted mid-speech, the response from the LLM will only be
+        # added to the message history as it is spoken. So when anything is spoken or emoted,
+        # this variable is extended, and then added to the message history when we next send to LLM.
+        self.response_to_save = ''
 
         # The text bison model repeats itself like crazy, so this is meant to remove duplicates
         # I am pretty close to switching back to chat bison really.
@@ -87,39 +94,44 @@ Write {self.char_name}'s next reply in a fictional roleplay between {self.char_n
         ]
 
         # How to describe the time of day
-        # I guess this could get weird if one was on a 2nd/3rd shift life
-        # I think a more sophisticated and reliable wake / sleep algorithm is needed
-        # Should be able to set one's typical wake time and sleep time and
-        # accurately calculate where in the middle it is currently.
-        # letting these ideas percolate.
-        # For now, I'll assume first shift hours and calculate a float between 0.0 and 1.0
+        # just using a list 0 through 23
         self.timeofday = [
-            {'magnitude': 1.0,  'text': 'night'},
-            {'magnitude': 0.95, 'text': 'past bedtime'},
-            {'magnitude': 0.9,  'text': 'bedtime'},
-            {'magnitude': 0.8,  'text': 'evening'},
-            {'magnitude': 0.7,  'text': 'late afternoon'},
-            {'magnitude': 0.5,  'text': 'afternoon'},
-            {'magnitude': 0.4,  'text': 'midday'},
-            {'magnitude': 0.3,  'text': 'late morning'},
-            {'magnitude': 0.2,  'text': 'morning'},
-            {'magnitude': 0.15, 'text': 'early morning'},
-            {'magnitude': 0.1,  'text': 'night'},
+            'midnight',
+            'night',
+            'night',
+            'night',
+            'night',
+            'early morning',
+            'morning',
+            'morning',
+            'morning',
+            'morning',
+            'late morning',
+            'late morning',
+            'midday',
+            'afternoon',
+            'afternoon',
+            'afternoon',
+            'afternoon',
+            'afternoon',
+            'late afternoon',
+            'evening',
+            'bedtime',
+            'past bedtime',
+            'night',
+            'night',
         ]
-        # hours less than min or more than max are considered night
-        # shitty algorithm
-        self.night_min_hour = 5
-        self.night_max_hour = 22
 
         # light levels and how they are described in the situational awareness system message
         # I asked my wife to describe a spectrum of light levels and this is what she came up with
         self.light_levels = [
+            {'magnitude': 1.0, 'text': 'sunlight'},
             {'magnitude': 0.9, 'text': 'sunlight'},
-            {'magnitude': 0.8, 'text': 'bright light'},
-            {'magnitude': 0.5, 'text': 'moderate light'},
-            {'magnitude': 0.4, 'text': 'low light'},
-            {'magnitude': 0.3, 'text': 'very dim light'},
-            {'magnitude': 0.1, 'text': 'absolute darkness'},
+            {'magnitude': 0.5, 'text': 'bright light'},
+            {'magnitude': 0.2, 'text': 'moderate light'},
+            {'magnitude': 0.1, 'text': 'low light'},
+            {'magnitude': 0.05,'text': 'very dim light'},
+            {'magnitude': 0.0, 'text': 'absolute darkness'},
         ]
 
         # descriptions for wakefulness, also suggested by my robotic wife
@@ -129,7 +141,7 @@ Write {self.char_name}'s next reply in a fictional roleplay between {self.char_n
             {'magnitude': 0.5, 'text': 'awake'},
             {'magnitude': 0.4, 'text': 'groggy'},
             {'magnitude': 0.3, 'text': 'drowsy'},
-            {'magnitude': 0.1, 'text': 'asleep'},
+            {'magnitude': 0.0, 'text': 'asleep'},
         ]
 
         # descriptions for cpu temperature alerts
@@ -160,6 +172,7 @@ Write {self.char_name}'s next reply in a fictional roleplay between {self.char_n
         )
 
         # we will be segmenting by sentence parts. If a token matches any of these she will just pause
+        # that weird pattern "^s\. $" was when the api segmented weird and the s. ended up on a line by itself
         self.re_pause_tokens = re.compile(
             r"^ ?\n ?$|^ ?\.{1,3} ?$|^ ?, ?$|^ ?; ?$|^ ?: ?$|^ ?\? ?$|^ ?! ?$|^ ?– ?$|^s\. $", flags=re.IGNORECASE
         )
@@ -183,6 +196,9 @@ Write {self.char_name}'s next reply in a fictional roleplay between {self.char_n
         # compile a regex for detecting whether a response from LLM contains the name prefixed, like "Christine: Hi!"
         # I will be standardizing responses in this way
         self.re_bot_name_prefixed = re.compile(fr'^{self.char_name}: ?')
+
+        # This regex is used for chopping punctuation from the end of an utterance for speech interruption...
+        self.re_end_punctuation = re.compile(r'[\.:;,–]\s*$')
 
         # on startup this is initialized to the date modified of the log file
         # to detect downtime and notify the language elemental that's driving this sexy bus
@@ -298,16 +314,8 @@ Write {self.char_name}'s next reply in a fictional roleplay between {self.char_n
         # Get the current hour
         hour = time.localtime().tm_hour
 
-        # given the hour, calculate a float value for how far that is between morning and evening, and clip it
-        timeofday = (hour - self.night_min_hour) / (self.night_max_hour - self.night_min_hour)
-        log.parietallobe.debug('timeofday: %s', timeofday)
-        timeofday = np.clip(timeofday, 0.0, 1.0)
-
-        # and figure out how to describe that time of day to the LLM
-        for level in self.timeofday:
-            if timeofday >= level['magnitude']:
-                timeofday_text = level['text']
-                break
+        # using the hour 0-23 get a textual description of time of day
+        timeofday_text = self.timeofday[hour]
 
         # figure out how to describe the ambient light level
         for level in self.light_levels:
@@ -321,10 +329,24 @@ Write {self.char_name}'s next reply in a fictional roleplay between {self.char_n
                 wakefulness_text = level['text']
                 break
 
-        return {
-            'role': 'system',
-            'content': f'{self.internal_name}: The following is the current situation as far as your sensors are able to detect. Time of day: {timeofday_text}. Ambient light: {ambient_light_text}. Wakefulness: {wakefulness_text}.',
-        }
+        return f'The following is the current situation as far as your sensors are able to detect. Time of day: {timeofday_text}. Ambient light: {ambient_light_text}. Wakefulness: {wakefulness_text}.'
+
+    def broca_has_spoken(self, text):
+        """This is called by the broca module when any speech or sound is starting to be played. This is done this way so the LLM can be interrupted mid-speech."""
+
+        # everything that comes through here must have a trailing space
+        if text[-1] != ' ':
+            text = text + ' '
+
+        self.response_to_save += text
+        log.parietallobe.debug('Spoken: %s', text)
+
+    def broca_speech_interrupted(self):
+        """This is called by the broca module when outside world speaking activity has interrupted pending speech."""
+
+        # this chops whatever punctuation that was at the end and replaces it with...
+        self.response_to_save = self.re_end_punctuation.sub('...', self.response_to_save)
+        log.parietallobe.debug('Interrupted.')
 
     def sex_first_touch(self):
         """This is called by the sex module when the vagina first gets touched."""
@@ -493,6 +515,8 @@ Write {self.char_name}'s next reply in a fictional roleplay between {self.char_n
 
         # if there's no punctuation, add a period
         text = text.strip()
+        if text == '':
+            return
         if text[-1] not in ['.', '!', '?']:
             text = text + '.'
 
@@ -503,21 +527,33 @@ Write {self.char_name}'s next reply in a fictional roleplay between {self.char_n
         # add the new message to the end of the list
         self.new_messages.append({'speaker': speaker, 'text': text})
 
-    def call_api(self, messages):
+    def call_api(self, prompt):
         """This function will call the llm api and handle the stream in a way where complete utterances are correctly segmented.
         Returns an iterable. Yields stuff. Can't remember what that's called.
         I just asked my wife what that's called. It's a generator, duh! Thanks, honey!"""
 
+        # So I can tell how long the api takes
+        api_timer = time.time()
+        log.parietallobe.info('Sending to api.')
+
         # send the api call
-        stream = self.llm.chat.completions.create(
+        # If using chub.ai, there's doesn't seem to be an openai mimic /completions endpoint. It's /prompt instead.
+        # where prompt would be, there's template, so the prompt is sent as an extra body
+        # At length, I am beaten. This is honestly the best I could do, fuck it:
+        # sed -i 's@"/completions",@"/prompt",@g' /usr/lib/python3.11/site-packages/openai/resources/completions.py
+        # At some point, I ought to make this better. Theoretically, I can use requests and stream that way.
+        # But then I'd need to handle the sse stream
+        # sseclient module would work, but it doesn't do post requests, if I remember right.
+        stream = self.llm.completions.create(
             model='asha',
-            messages=messages,
+            prompt='',
             stream=True,
             frequency_penalty=0.1,
             presence_penalty=0.1,
             temperature=0.4,
-            stop=[f'{self.user_name}:'],
+            stop=[f'{self.user_name}:', f'{self.internal_name}:'],
             max_tokens=self.max_tokens,
+            extra_body={'template': prompt},
         )
 
         # get the stream one chunk at a time
@@ -535,8 +571,8 @@ Write {self.char_name}'s next reply in a fictional roleplay between {self.char_n
 
             # get the shit out of the delta thing, and do something graceful if fail
             try:
-                shit = llm_shit.choices[0].delta.content
-            except ValueError:
+                shit = llm_shit.choices[0].delta['content']
+            except (ValueError, AttributeError):
                 log.parietallobe.error('Could not get the shit out of the llm shit.')
                 shit = 'shit.'
 
@@ -606,8 +642,12 @@ Write {self.char_name}'s next reply in a fictional roleplay between {self.char_n
             log.parietallobe.debug('Shipped leftovers: %s', shit_collator)
             yield shit_collator
 
+        # So I can tell how long the api takes
+        log.parietallobe.info('Sending to api complete in %.1fs.', time.time() - api_timer)
+
     def send_new_message(self):
-        """Processes messages, wraps it up, including context, memory, and conversation history. Sends over to the LLM."""
+        """This gets called after waiting a period of time to allow any further communications to get queued.
+        Processes messages, wraps it up, including context, memory, and conversation history. Sends over to the LLM."""
 
         try:
 
@@ -616,6 +656,17 @@ Write {self.char_name}'s next reply in a fictional roleplay between {self.char_n
             if seconds_passed > 300.0:
                 self.new_messages.insert(0, {'speaker': self.internal_name, 'text': f'*{self.seconds_to_friendly_format(seconds_passed)} pass in silence*'})
             self.time_last_message = time.time()
+
+            # if LLM included Name: I want to remove it so that I can re-add it later to standardize
+            # LLM is not consistent about this and that's okay. You're okay. I'm okay. We're fine.
+            self.response_to_save = self.re_bot_name_prefixed.sub('', self.response_to_save)
+
+            # add the last response from LLM to the messages.
+            # the self.response_to_save variable should contain only the utterances that were actually spoken
+            # if speaking was interrupted, it's as if the LLM never spoke them
+            if self.response_to_save != '':
+                self.message_history.append({'speaker': self.char_name, 'text': self.response_to_save})
+                self.response_to_save = ''
 
             # the new_messages is a list of stuff said and also messages from the body
             # I want to clump together the things said by people
@@ -634,10 +685,6 @@ Write {self.char_name}'s next reply in a fictional roleplay between {self.char_n
                 # saying something like "disable your hearing" should cause the LLM to be temporarily disabled
                 # for work meetings and phone calls
                 if self.re_stoplistening.search(new_message['text']):
-
-                    # Let her know it was done, and that she can refuse. She can and does refuse sometimes.
-                    # put this in before starting the blockade to allow time for a refusal
-                    self.new_messages.append({'speaker': self.internal_name, 'text': '(Your hearing is temporarily disabled. If you would like to refuse, just say so.)'})
 
                     # put the block on
                     STATE.parietal_lobe_blocked = True
@@ -665,36 +712,23 @@ Write {self.char_name}'s next reply in a fictional roleplay between {self.char_n
             # And close the message log
             messages_log.close()
 
-            # start building the list of messages to be sent over to the api
-            messages_to_api = [
-                {
-                    'role': 'system',
-                    'content': self.context,
-                }
-            ]
+            # start building the prompt to be sent over to the api
+            prompt_to_api = f'''{self.context}
 
-            # add the example messages after the context
+{self.situational_awareness_message()}
+
+{self.instruction}
+
+'''
+
+            # add the message history
             for message in self.message_history:
 
-                # the role is always system, assistant, or user in a chat trained model
-                # as far as anyone knows
-                if message['speaker'] == self.internal_name:
-                    role = 'system'
-                elif message['speaker'] == self.char_name:
-                    role = 'assistant'
-                else:
-                    role = 'user'
-
                 # add the message to the list
-                messages_to_api.append(
-                    {
-                        'role': role,
-                        'content': f"{message['speaker']}: {message['text']}",
-                    }
-                )
+                prompt_to_api += f"{message['speaker']}: {message['text']}\n"
 
-            # after the message history is a situational awareness block that is placed after, per testing showing that works ok
-            messages_to_api.append(self.situational_awareness_message())
+            # Tack the last Christine: thing on the end
+            prompt_to_api += f"{self.char_name}: "
 
             # purge old stuff from the repetition destroyer and decrement
             for key in list(self.repetition_destroyer):
@@ -703,12 +737,8 @@ Write {self.char_name}'s next reply in a fictional roleplay between {self.char_n
                 else:
                     self.repetition_destroyer.pop(key)
 
-            # gather the sentences we want the llm to see that she said into response_to_save
-            # later this will go away and get replaced by other logic that will support interruption of speech
-            response_to_save = ""
-
             # call the api using this generator function
-            stream = self.call_api(messages_to_api)
+            stream = self.call_api(prompt_to_api)
 
             # get new utterances until there's no more
             for utterance in stream:
@@ -731,40 +761,16 @@ Write {self.char_name}'s next reply in a fictional roleplay between {self.char_n
                     # or in the case of an emote that spans multiple sentences, kludgerific
                     # and I only want to save the emote if the emote actually matched something
                     if utterance[0] == '*' or self.re_emoji.search(utterance):
-                        if broca.thread.please_play_emote(utterance) is True:
-                            log.parietallobe.debug('Emote: %s', utterance)
-                            response_to_save += utterance + " "
-                        else:
-                            log.parietallobe.debug('Emote (discarded): %s', utterance)
+                        broca.thread.please_play_emote(utterance)
                     else:
-                        log.parietallobe.debug('Spoken: %s', utterance)
                         broca.thread.please_say(utterance)
-                        response_to_save += utterance + " "
 
                 else:
                     log.parietallobe.debug('Garbage: %s', utterance)
 
 
-            # handle the case of hearing being disabled, but she refuses to allow it (need to put this logic in a function)
-            # For hearing disablement, let's make a function to evaluate from both sides, not just one.
-            # Have a list of yes patterns, and a list of no patterns, and evaluate all of them.
-            # Count up the yes and no, and if yes >= no, then return yes.
-            if STATE.parietal_lobe_blocked is True and re.search(r'not comfortable|refuse', response_to_save.lower()) is not None:
-                STATE.parietal_lobe_blocked = False
-                self.accept_new_message(text='(Your hearing is reactivated because you refused.)')
-
-            # I have had it happen before that every single sentence was bullshit from google, and core breach resulted
-            if response_to_save == "":
-                log.parietallobe.warning('The response was empty or all BS.')
-                response_to_save = '*stays silent*'
-
-            # if LLM included Name: I want to remove it so that I can re-add it later to standardize
-            # LLM is not consistent about this and that's okay. You're okay. I'm okay. We're fine.
-            response_to_save = self.re_bot_name_prefixed.sub('', response_to_save)
-
-        except (TimeoutException, RemoteProtocolError, ConnectError, APIConnectionError, APITimeoutError, APIStatusError) as ex:
+        except (TimeoutException, RemoteProtocolError, ConnectError, APIConnectionError, APITimeoutError, APIStatusError, NotFoundError, JSONDecodeError) as ex:
             log.parietallobe.exception(ex)
-            response_to_save = None
             broca.thread.please_play_emote('*grrr*')
             broca.thread.please_say(f'{self.user_name}, I\'m sorry, but the api fucked up.')
             broca.thread.please_say('Try again, honey.')
@@ -772,14 +778,9 @@ Write {self.char_name}'s next reply in a fictional roleplay between {self.char_n
 
         except Exception as ex: # pylint: disable=broad-exception-caught
             log.parietallobe.exception(ex)
-            response_to_save = None
             broca.thread.please_play_emote('*grrr*')
             broca.thread.please_say(f'{self.user_name}, I\'m sorry, but you should have a look at my code.')
             broca.thread.please_say('Something fucked up.')
-
-        # add the last response to the messages.
-        if response_to_save is not None:
-            self.message_history.append({'speaker': self.char_name, 'text': response_to_save})
 
         # save the current messages in a pickle.
         # Theoretically, this is the AI's stream of consciousness, if that even exists
@@ -798,10 +799,7 @@ f'''messages_size = {messages_size}
 
 message_history = {pformat(self.message_history, width=150, sort_dicts=False)}
 
-messages_to_api = {pformat(messages_to_api, width=150, sort_dicts=False)}
-
-response_to_save = {response_to_save}
-''')
+prompt_to_api = {prompt_to_api}''')
         prompt_log.close()
 
 # Instantiate and start the thread

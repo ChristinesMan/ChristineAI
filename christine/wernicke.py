@@ -86,6 +86,7 @@ class Wernicke(threading.Thread):
             # This is just a message to let wife know that I am now speaking and to wait until I'm finished
             if comm["class"] == "speaking_start":
                 STATE.dont_speak_until = time.time() + 5000.0
+                broca.thread.please_stop()
                 log.broca.debug("SpeakingStart")
 
             # Husband isn't speaking anymore, so go ahead and say what you gotta say
@@ -660,7 +661,7 @@ class Wernicke(threading.Thread):
                 unpack_string = '<'+'h'*512
 
                 # at what probability should we start being triggered
-                triggered_prob = 0.1
+                triggered_prob = 0.2
 
                 while True:
                     # forever read new blocks of audio data
@@ -672,7 +673,7 @@ class Wernicke(threading.Thread):
 
                     # Sweep the leg.
                     block_prob = self.cobra.process(block_unpacked)
-                    log.wernicke.debug("prob %.2f", block_prob)
+                    # log.wernicke.debug("prob %.2f", block_prob)
 
                     # NOT triggered
                     # when not triggered, it means we're not currently collecting audio for processing
