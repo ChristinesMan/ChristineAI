@@ -1,0 +1,10 @@
+[Unit]
+Description=Christine's Wernicke API
+
+[Service]
+Type=simple
+WorkingDirectory=/root/ChristineAI/christine-server
+ExecStart=/root/ChristineAI/christine-server/wernicke_venv/bin/python -u wernicke_api.py
+
+[Install]
+WantedBy=multi-user.target

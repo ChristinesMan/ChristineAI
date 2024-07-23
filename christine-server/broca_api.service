@@ -1,10 +1,10 @@
 [Unit]
-Description=Christine's Broca
+Description=Christine's Broca API
 
 [Service]
 Type=simple
 WorkingDirectory=/root/ChristineAI/christine-server
-ExecStart=/root/ChristineAI/christine-server/broca_venv/bin/python -u broca.py
+ExecStart=/root/ChristineAI/christine-server/broca_venv/bin/python -u broca_api.py
 
 [Install]
 WantedBy=multi-user.target
