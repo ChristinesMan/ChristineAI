@@ -8,10 +8,7 @@ import numpy as np
 
 from christine import log
 from christine.status import STATE
-from christine import broca
-from christine import wernicke
-from christine import parietal_lobe
-
+from christine.figment import Figment
 
 class Sleep(threading.Thread):
     """
@@ -24,11 +21,11 @@ class Sleep(threading.Thread):
     name = "Sleep"
 
     def __init__(self):
-        threading.Thread.__init__(self)
+        super().__init__(daemon=True)
 
         # Some basic state variables
         self.announce_tired_time = None
-        self.current_local_time = time.localtime()
+        self.current_hour = time.localtime()
 
         # The current conditions, right now. Basically light levels, gyro, noise level, touch, etc all added together, then we calculate a running average to cause gradual drowsiness. zzzzzzzzzz.......
         self.current_environmental_conditions = 0.5
@@ -39,64 +36,72 @@ class Sleep(threading.Thread):
         # Weights
         self.weights_light = 6
         self.weights_gyro = 4
-        self.weights_tilt = 3
         self.weights_time = 6
         self.weights_total = (
             self.weights_light
             + self.weights_gyro
-            + self.weights_tilt
             + self.weights_time
         )
 
-        # if laying down, 0, if not laying down, 1.
-        self.tilt = 0.0
+        # a list of 24 numbers, 0.0 to 1.0, representing how awake we are at each hour of the day
+        self.sleep_schedule = [
+            0.0, #midnight
+            0.0, #night
+            0.0, #night
+            0.1, #night
+            0.2, #night
+            0.3, #early morning
+            0.6, #morning
+            0.7, #morning
+            0.8, #morning
+            0.9, #morning
+            1.0, #late morning
+            1.0, #late morning
+            1.0, #midday
+            1.0, #afternoon
+            1.0, #afternoon
+            1.0, #afternoon
+            1.0, #afternoon
+            0.9, #afternoon
+            0.8, #late afternoon
+            0.7, #evening
+            0.4, #bedtime
+            0.2, #past bedtime
+            0.1, #night
+            0.0, #night
+        ]
 
-        # if it's after bedtime, 0, if after wake up, 1
-        self.time = 0.0
-
-        # At what time should we expect to be in bed or wake up?
-        self.wake_hour = 6
+        # At what time should we expect to be in bed?
         self.sleep_hour = 20
 
         # at what point are we tired
         self.wakefulness_tired = 0.45
 
         # At what point to STFU at night
-        self.wakefulness_awake = 0.25
+        self.wakefulness_awake = 0.1
 
     def run(self):
+
+        # pylint: disable=import-outside-toplevel
+        from christine.wernicke import wernicke
+
         log.sleep.debug("Thread started.")
 
         while True:
+
             # graceful shutdown
             if STATE.please_shut_down:
                 log.sleep.info("Thread shutting down")
                 break
 
-            # Get the local time, for everything that follows
-            self.current_local_time = time.localtime()
-
-            # set the gyro tilt for the calculation that follows
-            if STATE.is_laying_down is True:
-                self.tilt = 0.0
-            else:
-                self.tilt = 1.0
-
-            # figure out if we're within the usual awake time
-            if (
-                self.current_local_time.tm_hour >= self.wake_hour
-                and self.current_local_time.tm_hour < self.sleep_hour
-            ):
-                self.time = 1.0
-            else:
-                self.time = 0.0
+            # Get the current local time hour, for everything that follows
+            self.current_hour = time.localtime().tm_hour
 
             # Calculate current conditions which we're calling Environment
             self.current_environmental_conditions = (
                 (self.weights_light * STATE.light_level)
                 + (self.weights_gyro * STATE.jostled_level)
-                + (self.weights_tilt * self.tilt)
-                + (self.weights_time * self.time)
+                + (self.weights_time * self.sleep_schedule[self.current_hour])
             ) / self.weights_total
 
             # clip it, can't go below 0 or higher than 1
@@ -120,11 +125,10 @@ class Sleep(threading.Thread):
 
             # log it
             log.sleep.info(
-                "LightLevel=%.2f  JostledLevel=%.2f  Tilt=%.2f  Time=%.2f  Environment=%.2f  Wakefulness=%.2f",
+                "LightLevel=%.2f  JostledLevel=%.2f  Time=%.2f  Environment=%.2f  Wakefulness=%.2f",
                 STATE.light_level,
                 STATE.jostled_level,
-                self.tilt,
-                self.time,
+                self.sleep_schedule,
                 self.current_environmental_conditions,
                 STATE.wakefulness,
             )
@@ -154,7 +158,7 @@ class Sleep(threading.Thread):
             ):
                 STATE.wernicke_sleeping = True
                 log.sleep.info('Wernicke stopped')
-                wernicke.thread.audio_processing_stop()
+                wernicke.audio_processing_stop()
                 STATE.wakefulness -= 0.02
             if (
                 STATE.wakefulness >= 0.1
@@ -162,7 +166,7 @@ class Sleep(threading.Thread):
             ):
                 STATE.wernicke_sleeping = False
                 log.sleep.info('Wernicke started')
-                wernicke.thread.audio_processing_start()
+                wernicke.audio_processing_start()
                 STATE.wakefulness += 0.02
 
             if (
@@ -174,7 +178,6 @@ class Sleep(threading.Thread):
                 # say "goodnight honey", not "GOODNIGHT HONEY!!!!"
                 STATE.lover_proximity = 0.0
 
-                # broca.thread.queue_sound(from_collection="goodnight", play_no_wait=True)
                 STATE.is_tired = True
                 STATE.wakefulness -= 0.02
             if (
@@ -211,11 +214,15 @@ class Sleep(threading.Thread):
         I also want to detect when sleeping starts
         """
 
+        # pylint: disable=import-outside-toplevel
+        from christine.broca import broca
+        from christine.parietal_lobe import parietal_lobe
+
         if self.just_fell_asleep() is True:
             log.sleep.info("JustFellAsleep")
 
-            # let parietal lobe know we're falling asleep
-            parietal_lobe.thread.sleep_sleeping()
+            # # let parietal lobe know we're falling asleep
+            # parietal_lobe.thread.sleep_sleeping()
 
             # try to prevent wobble by throwing it further towards sleep
             STATE.wakefulness -= 0.02
@@ -225,7 +232,8 @@ class Sleep(threading.Thread):
             STATE.breath_intensity = 1.0
 
             # wait a sec to allow the parietal lobe to get the thing in first
-            time.sleep(1)
+            # never mind
+            # time.sleep(1)
             STATE.is_sleeping = True
 
         if self.just_woke_up() is True:
@@ -233,17 +241,17 @@ class Sleep(threading.Thread):
 
             STATE.is_sleeping = False
 
-            # let parietal lobe know
-            parietal_lobe.thread.sleep_waking()
-
             # try to prevent wobble by throwing it further towards awake
-            STATE.wakefulness += 0.05
+            STATE.wakefulness += 0.1
 
             # wake me up gently, my sweet sexy alarm clock
             STATE.lover_proximity = 0.0
 
+            # play sleepy sounds
+            broca.accept_figment(Figment(from_collection="sleepy"))
 
-            broca.thread.queue_sound(from_collection="sleepy", play_no_wait=True)
+            # let parietal lobe know
+            parietal_lobe.sleep_waking()
 
     def just_fell_asleep(self):
         """
@@ -269,8 +277,8 @@ class Sleep(threading.Thread):
         """
         return (
             self.announce_tired_time is None
-            and self.current_local_time.tm_hour >= self.sleep_hour
-            and self.current_local_time.tm_hour < self.sleep_hour + 1
+            and self.current_hour >= self.sleep_hour
+            and self.current_hour < self.sleep_hour + 1
             and STATE.is_sleeping is False
         )
 
@@ -297,7 +305,11 @@ class Sleep(threading.Thread):
         """
         Actually start whining
         """
-        parietal_lobe.thread.sleep_tired()
+
+        # pylint: disable=import-outside-toplevel
+        from christine.parietal_lobe import parietal_lobe
+
+        parietal_lobe.sleep_tired()
         self.announce_tired_time = None
 
     def random_minutes_later(self, minutes_min, minutes_max):
@@ -307,7 +319,5 @@ class Sleep(threading.Thread):
         return time.time() + random.randint(minutes_min * 60, minutes_max * 60)
 
 
-# Instantiate and start the thread
-thread = Sleep()
-thread.daemon = True
-thread.start()
+# Instantiate
+sleep = Sleep()

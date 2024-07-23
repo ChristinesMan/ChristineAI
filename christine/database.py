@@ -108,7 +108,7 @@ class ChristineDB:
 
 
 # Instantiate
-conn = ChristineDB()
+database = ChristineDB()
 
 # This provides a way to run sql from cli
 # This was super helpful: https://docs.python.org/3/howto/argparse.html#id1
@@ -118,5 +118,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     print(args.query)
-    print(conn.do_query(args.query))
-    conn.do_commit()
+    print(database.do_query(args.query))
+    database.do_commit()

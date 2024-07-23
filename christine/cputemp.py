@@ -8,7 +8,7 @@ import numpy as np
 
 from christine import log
 from christine.status import STATE
-from christine import parietal_lobe
+from christine.parietal_lobe import parietal_lobe
 
 
 class CPUTemp(threading.Thread):
@@ -20,7 +20,7 @@ class CPUTemp(threading.Thread):
     name = "CPUTemp"
 
     def __init__(self):
-        threading.Thread.__init__(self)
+        super().__init__(daemon=True)
 
         # typical min and max temperatures
         self.cputemp_min = 35.0
@@ -63,7 +63,7 @@ class CPUTemp(threading.Thread):
                 log.main.critical("SHUTTING DOWN FOR SAFETY (%sC)", STATE.cpu_temp)
 
                 # fucken A honey wft
-                parietal_lobe.thread.cputemp_temperature_alert()
+                parietal_lobe.cputemp_temperature_alert()
 
                 # wait 20s to allow LLM to respond before shutdown
                 time.sleep(20)
@@ -75,11 +75,9 @@ class CPUTemp(threading.Thread):
                 os.system("poweroff")
 
             elif STATE.cpu_temp >= 0.7 and time.time() > self.next_whine_time:
-                parietal_lobe.thread.cputemp_temperature_alert()
+                parietal_lobe.cputemp_temperature_alert()
                 self.next_whine_time = time.time() + self.alert_delay_seconds
 
 
-# Instantiate and start the thread
-thread = CPUTemp()
-thread.daemon = True
-thread.start()
+# Instantiate
+cputemp = CPUTemp()

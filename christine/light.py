@@ -6,8 +6,8 @@ import numpy as np
 
 from christine import log
 from christine.status import STATE
-from christine import sleep
-from christine import parietal_lobe
+from christine.parietal_lobe import parietal_lobe
+from christine.sleep import sleep
 
 
 class Light:
@@ -64,9 +64,7 @@ class Light:
         light_level = float(np.clip(light_level, 0.0, 1.0))
 
         # calculate the rolling average
-        STATE.light_level = (
-            (STATE.light_level * self.light_avg_window) + light_level
-        ) / (self.light_avg_window + 1)
+        STATE.light_level = ((STATE.light_level * self.light_avg_window) + light_level) / (self.light_avg_window + 1)
 
         # calculate the trend.
         # Did the lights suddenly turn on? Maybe that should be slightly annoying if I'm trying to sleep.
@@ -77,23 +75,19 @@ class Light:
         if light_trend > 6.0:
             log.sleep.debug("LightTrend: %s waking up fast", light_trend)
             if time.time() > self.time_of_last_body_message + 300.0:
-                parietal_lobe.thread.light_sudden_bright()
+                parietal_lobe.light_sudden_bright()
                 self.time_of_last_body_message = time.time()
-            sleep.thread.wake_up(0.03)
+            sleep.wake_up(0.03)
 
         # And what to do if the lights go out
         if light_trend < 0.4:
             log.sleep.debug("LightTrend: %s who turned out the lights?", light_trend)
             if time.time() > self.time_of_last_body_message + 300.0:
-                parietal_lobe.thread.light_sudden_dark()
+                parietal_lobe.light_sudden_dark()
                 self.time_of_last_body_message = time.time()
 
         # Log the light level
         log.light.debug("Raw: %s  Pct: %.4f  Avg: %.4f  Trend: %.3f", light_adc, light_level, STATE.light_level, light_trend)
 
 
-# calling it a thread
-# due to peer pressure
-# from the other modules that get to be threads
-# to prevent teasing from peer group
-thread = Light()
+light = Light()

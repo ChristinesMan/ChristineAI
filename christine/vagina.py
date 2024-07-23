@@ -17,8 +17,8 @@ import adafruit_mpr121
 
 from christine import log
 from christine.status import STATE
-from christine import sex
-from christine import parietal_lobe
+from christine.sex import sex
+from christine.parietal_lobe import parietal_lobe
 
 
 class Vagina(threading.Thread):
@@ -59,7 +59,7 @@ class Vagina(threading.Thread):
     name = "Vagina"
 
     def __init__(self):
-        threading.Thread.__init__(self)
+        super().__init__(daemon=True)
 
         # setup the separate process with pipe
         # A class 1 probe is released by the enterprise into a mysterious wall of squishy plastic stuff surrounding the planet
@@ -96,7 +96,7 @@ class Vagina(threading.Thread):
             # if there was a series of consecutive failures, just let the LLM know and die
             elif sensor_data["msg"] == "FAIL":
                 STATE.vagina_available = False
-                parietal_lobe.thread.vagina_failure()
+                parietal_lobe.vagina_failure()
                 return
 
             # get a signal when the sensor init was successful
@@ -105,7 +105,7 @@ class Vagina(threading.Thread):
 
             # otherwise, pass the message over to the sex thread
             else:
-                sex.thread.vagina_got_hit(sensor_data)
+                sex.vagina_got_hit(sensor_data)
 
 
     def class_one_probe(self, to_enterprise):
@@ -496,7 +496,5 @@ class Vagina(threading.Thread):
                 time.sleep(sleep_active_mode)
 
 
-# Instantiate and start the thread
-thread = Vagina()
-thread.daemon = True
-thread.start()
+# Instantiate
+vagina = Vagina()

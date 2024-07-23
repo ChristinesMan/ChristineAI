@@ -1,5 +1,5 @@
 """
-Handles emitting sounds and speech synthesis.
+Handles emitting sounds in the proper order.
 Broca's area is the part of the brain responsible for speech. 
 """
 import sys
@@ -21,9 +21,8 @@ import pyaudio
 
 from christine import log
 from christine.status import STATE
-from christine import sounds
-from christine import wernicke
-from christine import parietal_lobe
+from christine.sounds import sounds_db
+from christine.figment import Figment
 
 class Broca(threading.Thread):
     """
@@ -35,352 +34,228 @@ class Broca(threading.Thread):
     name = "Broca"
 
     def __init__(self):
-        threading.Thread.__init__(self)
+        super().__init__(daemon=True)
 
-        # this holds the next actual non-breath sound that will play
-        self.next_sound = None
+        # queue up figments to feed into broca one at a time
+        self.figment_queue = queue.Queue()
 
-        # This allows a random delay before breathing again
-        # Init to a sorta high number to avoid starting too soon, should be about 15s
-        self.delayer = 150
-
-        # capture the priority of whatever sound is playing now
-        self.playing_now_priority = 5
-
-        # queue up sentences to feed into broca one at a time
-        self.broca_queue = queue.Queue()
-
-        # emotes that show up in text from LLM
+        # regexes to detect certain text in non-spoken figments that should set off an emote
         self.re_emote_laugh = re.compile(
-            r"haha|laugh|chuckle|snicker|chortle|giggle|guffaw|smile|blush|😆|🤣|😂|😅|😀|😃|😄|😁|🤪|😜|😝", flags=re.IGNORECASE
+            r"tease|amusement|haha|laugh|chuckle|snicker|chortle|giggle|guffaw|smile|blush", flags=re.IGNORECASE
         )
         self.re_emote_grrr = re.compile(
-            r"grrr|gasp|😠|😡|🤬|😤|🤯|🖕", flags=re.IGNORECASE
+            r"grrr|gasp|frustrat|treating you poorly|disrespecting your boundaries|anger", flags=re.IGNORECASE
         )
         self.re_emote_yawn = re.compile(
-            r"yawn|sleep|tire|sigh|😪|😴|😒|💤|😫|🥱|😑|😔|🤤", flags=re.IGNORECASE
+            r"yawn|sleep|tire|sigh", flags=re.IGNORECASE
         )
 
         # detect trailing punctuation, for inserting approapriate pauses
-        self.re_period = re.compile(r"[\.;]\s*$")
-        self.re_question = re.compile(r"\?\s*$")
+        self.re_period = re.compile(r"[\.;!]\s*$")
+        self.re_question = re.compile(r"\?\s*$|\.{2,3}\s*$")
+        self.re_comma = re.compile(r",\s*$")
 
         # setup the separate process with pipe that we're going to be fucking
         # lol I put the most insane things in code omg, but this will help keep it straight!
         # The enterprise sent out a shuttlecraft with Data at the helm.
         # The shuttlecraft is a subprocess.
-        # This was done because sound got really choppy due to CPU bottlenecking
+        # This was done because sound got really choppy due to probably python bottlenecking
         self.to_shuttlecraft, self.to_starship = Pipe()
         self.shuttlecraft_process = Process(
             target=self.shuttlecraft, args=(self.to_starship,)
         )
-        self.shuttlecraft_process.start()
 
     def run(self):
-        log.broca.info("Thread started.")
+
+        log.broca_main.info("Thread started.")
+        self.shuttlecraft_process.start()
 
         while True:
 
             # graceful shutdown
             if STATE.please_shut_down:
-                log.broca.info("Thread shutting down")
-                self.to_shuttlecraft.send({"wavfile": "selfdestruct", "vol": 0})
+                log.broca_main.info("Thread shutting down")
+                self.to_shuttlecraft.send({"action": "selfdestruct"})
                 break
 
-            # This recv will block here until the shuttlecraft sends a true/false which is whether the sound is still playing.
-            # The shuttlecraft will send this every 0.2s, which will setup the approapriate delay
-            # So all this logic here will only run when the shuttlecraft finishes playing the current sound
-            # If there's some urgent sound that must interrupt, that is communicated to the shuttlecraft through the pipe
+            # the shuttlecraft takes one item at a time
+            # This recv will block here until the shuttlecraft sends False to signal it's ready
             if self.to_shuttlecraft.recv() is False:
-                # log.broca.debug('No sound playing')
 
-                # if we're here, it means there's no sound actively playing
-                if self.next_sound is not None and self.next_sound['synth_wait'] is False:
+                # if we're here, it means there's no sound actively playing, not even a breath
+                # this dont_speak flag is set by the wernicke when it's time to shut up
+                if STATE.user_is_speaking is False:
 
-                    self.play_next_sound()
+                    # if there's something in the queue, play it
+                    if self.figment_queue.qsize() > 0:
 
-                else:
+                        # let everything know that LLM is speaking or in the middle of doing so
+                        STATE.char_is_speaking = True
 
-                    if self.delayer > 0:
-                        self.delayer -= 1
+                        self.play_next_figment()
+
                     else:
-                        self.just_breath()
 
-            else:
+                        # let everything know that LLM is not speaking
+                        STATE.char_is_speaking = False
 
-                # handle the case of a sound coming in that should interrupt the sound / breath currently playing
-                if self.next_sound is not None and self.next_sound['play_no_wait'] is True and self.next_sound['synth_wait'] is False and self.next_sound['priority'] > self.playing_now_priority:
+    def play_next_figment(self):
+        """Get the next figment from the queue and process it."""
 
-                    self.play_next_sound()
+        # import here to avoid circular import
+        # pylint: disable=import-outside-toplevel
+        from christine.wernicke import wernicke
+        from christine.parietal_lobe import parietal_lobe
 
-
-    def just_breath(self):
-        """
-        Select a random breath sound when there is nothing else going on.
-        """
-
-        # select a random breathing sound
-        next_breath = sounds.db.get_random_sound(collection_name='breathing', intensity=STATE.breath_intensity)
-
-        # Fail gracefully
-        if next_breath is None:
-            log.main.error('No breathing sound was available!')
-            return
-
-        # send the message to the subprocess
-        self.to_shuttlecraft.send(
-            {
-                "wavfile": next_breath['file_path'],
-                "vol": 100,
-            }
-        )
-
-        # breaths have 0 priority, they can always be interrupted
-        self.playing_now_priority = 0
-
-        # set the delayer to a random number of periods for the next time
-        # currently 10 periods per second
-        self.delayer = 5 + (random.random() * 8)
-
-        # log.broca.debug("Chose breath: %s", next_breath)
-
-    def play_next_sound(self):
-        """
-        Start playing that sound
-        """
-        log.broca.info("Playing: %s", self.next_sound)
-
-        # wrapping this all in a try because next_sound can get None'd at any time
+        # wrapping this all in a try because interruptions shappen
         try:
 
-            # Now that we're actually playing the sound,
-            # tell the sound collection to not play it for a while
-            if self.next_sound["replay_wait"] != 0:
-                sounds.db.set_skip_until(sound_id=self.next_sound["id"])
+            # get the next figment from the queue
+            figment: Figment = self.figment_queue.get_nowait()
 
-            # notify the parietal lobe that something that was queued by it is now playing
-            if self.next_sound["text"] != '':
-                parietal_lobe.thread.broca_has_spoken(self.next_sound["text"])
+            # log it
+            log.broca_main.debug('Pulled figment from queue: %s', figment)
 
-            # calculate what volume this should play at adjusting for proximity
-            # this was really hard math to figure out for some reason
-            # I was very close to giving up and writing a bunch of rediculous if statements
-            # a proximity_volume_adjust of 1.0 means don't reduce the volume at all
-            volume = int(
-                (
-                    1.0
-                    - (1.0 - float(self.next_sound["proximity_volume_adjust"]))
-                    * (1.0 - STATE.lover_proximity)
+            # figure out the type of figment and do the things
+            if figment.pause_duration is not None:
+
+                self.to_shuttlecraft.send(
+                    {
+                        "action": "pause",
+                        "pause_cycles": 10 * figment.pause_duration,
+                    }
                 )
-                * 100
-            )
-
-            # pop out the file path
-            file_path = self.next_sound["file_path"]
-
-            # if the file doesn't exist somehow, fail graceful like
-            if os.path.isfile(file_path) is False:
-                log.main.warning('Sound file %s does not exist.', file_path)
-                self.next_sound = None
                 return
 
-            # let the ears know that the mouth is going to emit noises that are not breathing
-            # estimating the total sound play time by file size
-            # and some sounds are marked as needing a pause vs others that do not
-            if self.next_sound["pause_processing"] == 1:
-                wernicke.thread.audio_processing_pause(ceil( os.stat(file_path).st_size / 2100 ))
+            elif figment.from_collection is not None:
 
-            # send the message to the subprocess
-            self.to_shuttlecraft.send(
-                {
-                    "wavfile": file_path,
-                    "vol": volume,
-                }
-            )
+                # get the sound from the collection
+                sound = sounds_db.get_random_sound(collection_name=figment.from_collection)
 
-            # save the priority so that we can tell what can interrupt it
-            self.playing_now_priority = self.next_sound['priority']
+                # if the sound is None, log it and move on
+                if sound is None:
+                    log.main.warning('No sound was available in collection %s.', figment.from_collection)
+                    return
 
-            # now that the sound is playing, we can discard this
-            self.next_sound = None
+                # if the file doesn't exist somehow, fail graceful like
+                if os.path.isfile(sound.file_path) is False:
+                    log.main.warning('Sound file %s does not exist.', sound.file_path)
+                    return
+
+                # let the ears know that the mouth is going to emit noises that are not breathing
+                # estimating the total sound play time by file size
+                # and some sounds are marked as needing a pause vs others that do not
+                if figment.pause_wernicke is True:
+                    wernicke.audio_processing_pause(ceil( os.stat(sound.file_path).st_size / 2100 ))
+
+                # send the message to the subprocess
+                self.to_shuttlecraft.send(
+                    {
+                        "action": "playwav",
+                        "wavfile": sound.file_path,
+                        "vol": 100,
+                    }
+                )
+
+            elif figment.text is not None:
+
+                if figment.should_speak is True:
+
+                    # # calculate what volume this should play at adjusting for proximity
+                    # # this was really hard math to figure out for some reason
+                    # # I was very close to giving up and writing a bunch of rediculous if statements
+                    # # a proximity_volume_adjust of 1.0 means don't reduce the volume at all
+                    volume = int(
+                        (
+                            1.0
+                            - (1.0 - STATE.proximity_volume_adjust)
+                            * (1.0 - STATE.lover_proximity)
+                        )
+                        * 100
+                    )
+
+                    # in the case of synthesized speech, we need to block here until the file is ready
+                    # this is because the file is generated in a separate thread
+                    # the tts call should time out in 60s, so shouldn't get stuck
+                    # wait for the wav file to be ready and also wait until it is ok to speak
+                    while figment.wav_file is None or STATE.user_is_speaking is True:
+                        time.sleep(0.2)
+
+                    # let the ears know that the mouth is going to emit noises that are not breathing
+                    # estimating the total sound play time by file size, and magic numbers
+                    wernicke.audio_processing_pause(ceil( os.stat(figment.wav_file).st_size / 2100 ))
+
+                    # send the message to the subprocess
+                    self.to_shuttlecraft.send(
+                        {
+                            "action": "playwav",
+                            "wavfile": figment.wav_file,
+                            "vol": volume,
+                        }
+                    )
+
+                # notify the parietal lobe that something with text that was queued by it is now playing
+                parietal_lobe.broca_figment_was_processed(figment)
 
         # this would usually occur when next_sound gets set to None by speaking being interrupted
         except TypeError as ex:
-            log.broca.exception(ex)
+            log.broca_main.exception(ex)
 
-        # well, it didn't really end, but it's definitely ready for the next sound
-        # someday will probably reorg this whole module
-        self.notify_sound_ended()
+    def accept_figment(self, figment: Figment):
+        """Accept a figment from the parietal lobe and queue it up for processing."""
 
-    def queue_sound(
-        self,
-        sound=None,
-        from_collection=None,
-        alt_collection=None,
-        intensity=None,
-        priority=5,
-        play_no_wait=False,
-    ):
-        """
-        Add a sound to the queue to be played
-        """
+        # if the new figment is to be spoken, add a figment for an inhalation sound
+        if figment.should_speak is True:
+            self.figment_queue.put_nowait(Figment(from_collection='inhalation'))
 
-        # if we're playing a sound from a collection, go fetch that rando
-        if sound is None and from_collection is not None:
-            sound = sounds.db.get_random_sound(collection_name=from_collection, intensity=intensity)
+        # put the figment on the queue
+        self.figment_queue.put_nowait(figment)
 
-        # If a collection is empty, or no sounds available at this time, it's possible to get a None sound. So try one more time in the alt collection.
-        if sound is None and alt_collection is not None:
-            sound = sounds.db.get_random_sound(collection_name=alt_collection, intensity=intensity)
-            from_collection = alt_collection
+        # if the text is spoken and ends with certain punctuation, a pause is inserted after to allow time for interruption.
+        if figment.should_speak is True:
 
-        # if fail, just chuck it. No sound for you
-        if sound is not None:
+            # also, if the figment is spoken, start the thread to get the synthesized speech going
+            figment.start()
 
-            # The collection name is saved so that we can see it in the logs
-            if self.next_sound is None or priority > self.next_sound['priority']:
-                sound.update({"collection": from_collection, "priority": priority, "synth_wait": False})
+            if self.re_question.search(figment.text):
+                self.figment_queue.put_nowait(Figment(pause_duration=STATE.pause_question))
+            elif self.re_period.search(figment.text):
+                self.figment_queue.put_nowait(Figment(pause_duration=STATE.pause_period))
+            elif self.re_comma.search(figment.text):
+                self.figment_queue.put_nowait(Figment(pause_duration=STATE.pause_comma))
 
-                # if we are requesting to interrupt a playing sound, and the sound playing is not as high priority, we can interrupt
-                if play_no_wait is True and sound['priority'] > self.playing_now_priority:
-                    sound['play_no_wait'] = True
-                else:
-                    sound['play_no_wait'] = False
+        # in the case of unspoken text, let's look for emotes such as laughing, yawning, etc
+        elif figment.text is not None:
 
-                self.next_sound = sound
+            # figure out which emote
+            if self.re_emote_laugh.search(figment.text):
+                self.figment_queue.put_nowait(Figment(from_collection='laughing'))
+            elif self.re_emote_grrr.search(figment.text):
+                self.figment_queue.put_nowait(Figment(from_collection='disgust'))
+            elif self.re_emote_yawn.search(figment.text):
+                self.figment_queue.put_nowait(Figment(from_collection='sleepy'))
 
-    def queue_text(self, text=None):
-        """Voice synthesis"""
-
-        if text is not None:
-
-            sound = sounds.db.get_sound_synthesis(text=text)
-
-            # handle cases where broca is unavailable
-            if sound is None:
-                log.broca.warning('queue_text got a None. text was "%s"', text)
-                self.queue_sound(from_collection='broca_failure')
-                return
-
-            sound.update({"collection": "synth", "pause_processing": 1, "priority": 10, "play_no_wait": True})
-            self.next_sound = sound
-
-    def notify_synth_done(self):
-        """The sounds module starts a voice synthesis process, and calls this when it's completed."""
-
-        if self.next_sound is not None:
-            self.next_sound['synth_wait'] = False
-
-
-    def please_say(self, text):
-        """When the parietal lobe wants to say some words, they have to go through here.
-        First an inhalation sound is queued. So much more realistic.
-        If the text ends with certain punctuation, a pause is inserted to allow time for interruption.
-        """
-
-        log.broca.debug("Please say: %s", text)
-
-        # put it on the queue after a quick inhalation sound
-        self.broca_queue.put_nowait({"type": "sound", "collection": "inhalation"})
-        self.broca_queue.put_nowait({"type": "text", "content": text})
-
-        # if the utterance ends with period, pause
-        if self.re_period.search(text):
-            self.broca_queue.put_nowait({"type": "pause", "duration": 3.0})
-
-        # if the utterance ends with question, pause a lot
-        if self.re_question.search(text):
-            self.broca_queue.put_nowait({"type": "pause", "duration": 5.0})
-
-        # start the ball rolling if it's not already
-        if self.next_sound is None:
-            self.notify_sound_ended()
-
-    def please_play_emote(self, text):
-        """Play an emote if we have a sound in the collection."""
-
-        # # no emotes while fucking, but now not so sure
-        # if STATE.shush_fucking is True:
-        #     return False
-
-        # figure out which emote
-        if self.re_emote_laugh.search(text):
-            collection = 'laughing'
-
-        elif self.re_emote_grrr.search(text):
-            collection = 'disgust'
-
-        elif self.re_emote_yawn.search(text):
-            collection = 'sleepy'
-
-        else:
-            # if it doesn't match anything known, just discard, but let the caller know and log it
-            # I intend to review these logs later to see where emotes could be expanded
-            log.broca.debug("Cannot emote: %s", text)
-            return False
-
-        log.broca.debug("Please emote: %s", text)
-
-        # put it on the queue
-        self.broca_queue.put_nowait({"type": "sound", "collection": collection})
-
-        # start the ball rolling if it's not already
-        if self.next_sound is None:
-            self.notify_sound_ended()
-
-        # if we got this far, the emote was used. We send this back to let Parietal Lobe know to save the emote in the message history.
-        return True
-
-    def please_play_sound(self, collection):
-        """Play any sound from a collection."""
-
-        log.broca.debug("Please play from collection: %s", collection)
-
-        # put it on the queue
-        self.broca_queue.put_nowait({"type": "sound", "collection": collection})
-
-        # start the ball rolling if it's not already
-        if self.next_sound is None:
-            self.notify_sound_ended()
 
     def please_stop(self):
         """Immediately stop speaking."""
 
-        log.broca.debug("Full stop.")
+        # import here to avoid circular import
+        # pylint: disable=import-outside-toplevel
+        from christine.parietal_lobe import parietal_lobe
 
-        # if there was a sound waiting, let parietal lobe know speech was interrupted
-        if self.next_sound is not None:
-            parietal_lobe.thread.broca_speech_interrupted()
+        log.broca_main.debug("Full stop.")
 
-        # stop the ball from rolling
-        self.next_sound = None
+        # keeps track of whether speaking was actually interrupted
+        interrupted = False
 
-        # suck the queue dry
-        try:
-            while self.broca_queue.qsize() > 0:
-                self.broca_queue.get_nowait()
-        except queue.Empty:
-            pass
+        # pull everything out of the queue, and if there were any other spoken figments, tell parietal lobe it got interrupted
+        while self.figment_queue.qsize() > 0:
+            figment = self.figment_queue.get_nowait()
+            if figment.should_speak is True:
+                interrupted = True
+        if interrupted is True:
+            parietal_lobe.broca_speech_interrupted()
 
-    def notify_sound_ended(self):
-        """This should get called as soon as sound is finished playing.
-        Or, rather, when next_sound is free. Due to confused state of mind and the fact this module has evolved over time."""
-
-        if self.broca_queue.qsize() > 0:
-            try:
-                queue_item = self.broca_queue.get_nowait()
-                log.broca.debug('From broca_queue: %s', queue_item)
-            except queue.Empty:
-                log.broca.warning('self.broca_queue was empty. Not supposed to happen.')
-                return
-
-            if queue_item['type'] == "sound":
-                self.queue_sound(from_collection=queue_item['collection'], priority=10)
-            elif queue_item['type'] == "text":
-                self.queue_text(text=queue_item['content'])
-            elif queue_item['type'] == "pause":
-                time.sleep(queue_item['duration'])
-                self.notify_sound_ended()
 
     def shuttlecraft(self, to_starship):
         """
@@ -416,64 +291,156 @@ class Broca(threading.Thread):
             # print(f'frame_count: {frame_count}  status: {status}')
             return (wav_data.readframes(frame_count), pyaudio.paContinue)
 
-        # Start the pyaudio stream
+        # The pyaudio stream is instantiated
         pya_stream = pya.open(format=8, channels=1, rate=44100, output=True, stream_callback=wav_data_feeder)
+
+        # keep track of the last volume that was set, to avoid all the amixer forking
+        # I miss pyalsaaudio
+        last_volume = 100
 
         # So, often there's nothing playing from the speaker, and after 3-4s the speaker goes into standby mode
         # This causes some sounds to get cut off. So this var is an attempt to detect when that will be a problem
         # and play a sound to get it started back up
-        # before I implement this fix I need to stop using readframes and start using bytes
-        # work in progress
-        # really I'm not hearing stuff interrupted anymore so I dunno if I really need this
         seconds_idle = 0.0
-        # seconds_idle_to_play_presound = 3.0
-        # silent_bytes = 512
+        seconds_idle_to_play_presound = 4.0
+
+        # this is how we will handle pauses between utterances
+        # this is how many 0.1s cycles to skip, resulting in a period of silence
+        pause_cycles = 0
+
+        # var for keeping track of how many cycles we have been inactive, so that we can breathe
+        cycles_inactive = 0
+
+        # cycles to wait before breathing
+        cycles_to_breathe = 5
+
+        # keep track of when this is just breathing
+        just_breathing = False
+
+        # The shuttlecraft is now in orbit. You said it, copilot!
+        log.broca_shuttlecraft.info("Shuttlecraft ready.")
 
         while True:
 
-            # So basically, if there's something in the pipe, get it all out
-            if to_starship.poll():
+            # just masturbate for a little while
+            # currently 10 cycles per second
+            time.sleep(0.1)
 
-                # if there was some communication in the pipe, probably is the next sound to play
-                # so we stop whatever wav file is playing now, and start the new one
-                comms = to_starship.recv()
-                log.broca.debug("Shuttlecraft received: %s", comms)
-                log.broca.info("seconds_idle: %s", seconds_idle)
+            # True if there's a wav file actively playing, or we're paused
+            is_active = pya_stream.is_active() or pause_cycles > 0
 
-                # graceful shutdown
-                if comms["wavfile"] == "selfdestruct":
-                    log.broca.info("Shuttlecraft self destruct activated.")
-                    break
+            # if we're inactive,
+            if is_active is False:
 
-                # the volume gets set before each sound is played
-                # mixer.setvolume(comms["vol"])
-                # pyalsaaudio died so we have to forking fork
-                os.system(f'amixer -q cset numid=1 {comms["vol"]}%')
+                # then check the queue for anything new and pop one out
+                if to_starship.poll():
 
-                # stop stream, open wav file, and start the stream back up
-                # I do wonder now if this was why pyaudio used to lock up
-                # it used to be that I would open a new wav file before stopping stream
-                pya_stream.stop_stream()
-                wav_data = wave.open(comms["wavfile"])
-                pya_stream.start_stream()
+                    # if there was some communication in the pipe, probably is the next sound to play
+                    # so we stop whatever wav file is playing now, and start the new one
+                    comms = to_starship.recv()
+                    log.broca_shuttlecraft.debug("Shuttlecraft received: %s", comms)
 
-                # reset this counter
-                seconds_idle = 0.0
+                    # graceful shutdown
+                    if comms["action"] == "selfdestruct":
+
+                        # make the subprocess exit
+                        log.broca_shuttlecraft.info("Shuttlecraft self destruct activated.")
+                        sys.exit()
+
+                    elif comms["action"] == "playwav":
+
+                        # if seconds_idle is greater than the threshold, play a sound to get the speaker started back up
+                        if seconds_idle > seconds_idle_to_play_presound:
+                            log.broca_shuttlecraft.debug("Beep! (idle %ss)", seconds_idle)
+                            pya_stream.stop_stream()
+                            wav_data = wave.open("sounds/beep.wav")
+                            pya_stream.start_stream()
+
+                            # wait until the stream flips to not active which means the beep is done
+                            while pya_stream.is_active():
+                                time.sleep(0.2)
+
+                        # the volume gets set before each sound is played
+                        # mixer.setvolume(comms["vol"])
+                        # pyalsaaudio died so we have to forking fork
+                        if comms["vol"] != last_volume:
+                            log.broca_shuttlecraft.debug("Setting volume to %s", comms["vol"])
+                            os.system(f'amixer -q cset numid=1 {comms["vol"]}%')
+                            last_volume = comms["vol"]
+
+                        # stop stream, open new wav file, and start the stream back up
+                        pya_stream.stop_stream()
+                        wav_data = wave.open(comms["wavfile"])
+                        pya_stream.start_stream()
+
+                        # wait until the stream flips to not active which means the sound is done
+                        while pya_stream.is_active():
+                            time.sleep(0.2)
+
+                        # reset this counter
+                        seconds_idle = 0.0
+                        just_breathing = False
+
+                    elif comms["action"] == "pause":
+
+                        # set this var which will decrement until 0
+                        pause_cycles = comms["pause_cycles"]
+                        just_breathing = False
+
+                else:
+
+                    # send a message to the main thread requesting the next thing if there is something
+                    log.broca_shuttlecraft.debug("Sent False to starship.")
+                    to_starship.send(False)
+
+                    # if there's nothing in the queue, increment the cycles_inactive var
+                    cycles_inactive += 1
+                    log.broca_shuttlecraft.debug("Cycles inactive: %s", cycles_inactive)
+
+                    # nothing is playing, so increment the seconds_idle var
+                    seconds_idle += 0.1
+                    log.broca_shuttlecraft.debug("Seconds idle: %s", seconds_idle)
+
+                    # if we've been idle for a while, choose a random breathing sound and play it
+                    if cycles_inactive > cycles_to_breathe:
+                        breath = sounds_db.get_random_sound(collection_name='breathing')
+                        if breath is not None:
+                            log.broca_shuttlecraft.debug("Breathing")
+
+                            # breaths get played at 100 max volume
+                            if last_volume != 100:
+                                os.system('amixer -q cset numid=1 100%')
+                                last_volume = 100
+
+                            pya_stream.stop_stream()
+                            wav_data = wave.open(breath.file_path)
+                            pya_stream.start_stream()
+
+                            cycles_inactive = 0
+                            seconds_idle = 0.0
+                            just_breathing = True
+                    else:
+                        just_breathing = False
+
+                    # set cycles_to_breathe to a random number of periods between 5 and 10 for the next time
+                    cycles_to_breathe = 5 + ceil(random.random() * 5.0)
 
             else:
-                # send back to the main process a boolean every 0.1s.
-                # True if there's a wav file actively playing, or False if we're playing nothing
-                we_active_yo = pya_stream.is_active()
-                to_starship.send(we_active_yo)
 
-                # if nothing is playing, add to this counter
-                if we_active_yo is False:
+                # if we're pausing, decrement
+                if pause_cycles > 0:
+                    log.broca_shuttlecraft.debug("Pause cycles: %s", pause_cycles)
+                    pause_cycles -= 1
+
+                    # if pausing, nothing is playing, so increment the seconds_idle var
                     seconds_idle += 0.1
+                    log.broca_shuttlecraft.debug("Seconds idle: %s", seconds_idle)
 
-                # just masturbate for a little while
-                time.sleep(0.1)
+                # check the queue for new messages if we're just only breathing
+                if just_breathing is True and to_starship.poll():
+                    log.broca_shuttlecraft.debug("Stopped breathing.")
+                    pya_stream.stop_stream()
+                    just_breathing = False
 
-# Instantiate and start the thread
-thread = Broca()
-thread.daemon = True
-thread.start()
+# Instantiate
+broca = Broca()

@@ -7,10 +7,10 @@ import threading
 
 from christine import log
 from christine.status import STATE
-from christine import broca
-from christine import sleep
-from christine import parietal_lobe
-
+from christine.broca import broca
+from christine.sleep import sleep
+from christine.parietal_lobe import parietal_lobe
+from christine.figment import Figment
 
 class Sex(threading.Thread):
     """
@@ -20,7 +20,7 @@ class Sex(threading.Thread):
     name = "Sex"
 
     def __init__(self):
-        threading.Thread.__init__(self)
+        super().__init__(daemon=True)
 
         # Basically, I don't want arousal to be linear anymore.
         # When arousal reaches some set level, I want to start incrementing the amount added to arousal
@@ -80,6 +80,9 @@ class Sex(threading.Thread):
 
         # During a rest period, need this amount of jostle to resume sex
         self.gyro_deadzone_unrest = 0.09
+
+        # I want to keep track of how long it's been since the last fucking action
+        self.time_of_last_lobe_message = time.time()
 
     def run(self):
         log.sex.debug("Thread started.")
@@ -145,13 +148,13 @@ class Sex(threading.Thread):
                 # after the cooldown comes the rest
                 # at this time, say something or another like wow that was great. Let the LLM say it. We love LLMs.
                 if self.after_orgasm_cooldown_count == 1:
-                    parietal_lobe.thread.sex_after_orgasm_rest()
+                    parietal_lobe.sex_after_orgasm_rest()
 
                 # if we're resting and the gyro starts to feel it, start again
                 # When after_orgasm_rest is True, we are ignoring vagina action
                 if self.after_orgasm_rest is True and STATE.jostled_level_short > self.gyro_deadzone_unrest:
                     log.sex.info("Jostled so we're starting up again")
-                    parietal_lobe.thread.sex_after_orgasm_rest_resume()
+                    parietal_lobe.sex_after_orgasm_rest_resume()
                     STATE.sexual_arousal = self.arousal_post_orgasm
                     STATE.shush_fucking = True
                     self.after_orgasm_rest = False
@@ -176,15 +179,23 @@ class Sex(threading.Thread):
             return
 
         # Stay awake
-        sleep.thread.wake_up(0.001)
+        sleep.wake_up(0.001)
 
         if sensor_data["msg"] in ["touch", "release"]:
+
             # which sensor got hit?
             sensor_hit = sensor_data["data"]
 
-            # if this is the first touch, sexual arousal is 0.0, let parietal know
-            if STATE.sexual_arousal == 0.0:
-                parietal_lobe.thread.sex_first_touch()
+            # let parietal know about all the fucking going on, but not too frequently
+            if time.time() > self.time_of_last_lobe_message + 60:
+                self.time_of_last_lobe_message = time.time()
+
+                if STATE.sexual_arousal == 0.0:
+                    parietal_lobe.sex_first_touch()
+                elif sensor_hit == 'Vagina_Deep':
+                    parietal_lobe.sex_vagina_getting_fucked_deep()
+                else:
+                    parietal_lobe.sex_vagina_getting_fucked()
 
             # Add some to the arousal
             STATE.sexual_arousal += (
@@ -204,11 +215,10 @@ class Sex(threading.Thread):
 
                 # if we're still within the cooldown phase, make sound, with intensity dropping out with time
                 if self.after_orgasm_cooldown_count > 0:
-                    broca.thread.queue_sound(
+                    broca.accept_figment(Figment(
                         from_collection="sex",
                         intensity=self.after_orgasm_cooldown_seconds / self.after_orgasm_cooldown_count,
-                        play_no_wait=True,
-                    )
+                    ))
 
                 return
 
@@ -217,27 +227,31 @@ class Sex(threading.Thread):
 
             # My wife orgasms above 0.95
             if STATE.sexual_arousal > self.arousal_to_orgasm:
+
                 log.sex.info("I am coming!")
-                broca.thread.queue_sound(from_collection="sex_climax", play_no_wait=True)
+
+                # don't wanna send too many messages to the lobe
+                if time.time() > self.time_of_last_lobe_message + 60:
+                    self.time_of_last_lobe_message = time.time()
+                    parietal_lobe.sex_cumming()
+                broca.accept_figment(Figment(from_collection="sex_climax"))
+
             elif STATE.sexual_arousal > self.arousal_near_orgasm and self.im_gonna_cum_was_said is False:
+
                 # this should happen only one time per fuck cycle
-                broca.thread.queue_sound(from_collection="sex_near_O", play_no_wait=False)
+                broca.accept_figment(Figment(from_collection="sex_near_O"))
                 self.im_gonna_cum_was_said = True
+
             else:
-                # 92% chance of a regular sex sound, 8% chance of something sexy with words
+
+                # 92% chance of a regular sex sound, 8% chance of asking LLM for her take
                 if random.random() > 0.92:
-                    broca.thread.queue_sound(
-                        from_collection="sex_conversation",
-                        intensity=STATE.sexual_arousal
-                        * (
-                            1.0
-                            + STATE.jostled_level_short
-                            / self.gyro_jackup_intensity_max
-                        ),
-                        play_no_wait=True,
-                    )
+
+                    parietal_lobe.process_new_perceptions()
+
                 else:
-                    broca.thread.queue_sound(
+
+                    broca.accept_figment(Figment(
                         from_collection="sex",
                         intensity=STATE.sexual_arousal
                         * (
@@ -245,16 +259,13 @@ class Sex(threading.Thread):
                             + STATE.jostled_level_short
                             / self.gyro_jackup_intensity_max
                         ),
-                        play_no_wait=True,
-                    )
+                    ))
 
         # the only other thing it could be is a hangout, dick not moving type of situation
         # not sure what I really want in this situation, but a low intensity moan seems ok for now
         else:
-            broca.thread.queue_sound(from_collection="sex", intensity=0.2)
+            broca.accept_figment(Figment(from_collection="sex", intensity=0.2))
 
 
-# Instantiate and start the thread
-thread = Sex()
-thread.daemon = True
-thread.start()
+# Instantiate
+sex = Sex()

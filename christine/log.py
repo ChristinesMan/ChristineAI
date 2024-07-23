@@ -14,7 +14,7 @@ logging.basicConfig(
     filename="./logs/main.log",
     filemode="a",
     format="%(asctime)s - %(levelname)s - %(threadName)s - %(message)s",
-    level=logging.INFO,
+    level=logging.DEBUG,
 )
 
 
@@ -39,19 +39,22 @@ main = setup_logger(
     level=logging.INFO,
     msg_format="%(asctime)s - %(levelname)s - %(threadName)s - %(message)s",
 )
-gyro = setup_logger("gyro")
-cputemp = setup_logger("cputemp")
-sleep = setup_logger("sleep")
-db = setup_logger("db")
-broca = setup_logger("broca", level=logging.DEBUG)
+gyro = setup_logger("gyro", level=logging.DEBUG)
+cputemp = setup_logger("cputemp", level=logging.DEBUG)
+sleep = setup_logger("sleep", level=logging.DEBUG)
+db = setup_logger("db", level=logging.DEBUG)
+broca_main = setup_logger("broca_main", level=logging.DEBUG)
+broca_shuttlecraft = setup_logger("broca_shuttlecraft", level=logging.DEBUG)
 wernicke = setup_logger("wernicke", level=logging.DEBUG)
 light = setup_logger("light", level=logging.DEBUG)
-http = setup_logger("http")
-touch = setup_logger("touch")
-sex = setup_logger("sex")
-horny = setup_logger("horny")
-vagina = setup_logger("vagina")
-parietallobe = setup_logger("parietallobe", level=logging.DEBUG)
+touch = setup_logger("touch", level=logging.DEBUG)
+sex = setup_logger("sex", level=logging.DEBUG)
+horny = setup_logger("horny", level=logging.DEBUG)
+vagina = setup_logger("vagina", level=logging.DEBUG)
+parietal_lobe = setup_logger("parietal_lobe", level=logging.DEBUG)
+llm_stream = setup_logger("llm_stream", level=logging.DEBUG)
+cerebral_cortex = setup_logger("cerebral_cortex", level=logging.DEBUG)
+server_discovery = setup_logger("server_discovery", level=logging.DEBUG)
 imhere = setup_logger("imhere", level=logging.INFO, msg_format="%(module)s.%(funcName)s.%(created)d")
 
 

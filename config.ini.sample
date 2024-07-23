@@ -9,10 +9,10 @@ server=auto
 server=auto
 
 [parietal_lobe]
-# Carbon Based Unit (your name)
-cbu_name=Phantom
-# Sillicon Based Unit
-sbu_name=Christine
+# The name of the carbon based unit
+user_name=Phantom
+# The name of the silicon based unit
+char_name=Christine
 # Base url of an openai compatible api, and the api key
-base_url=https://mars.chub.ai/chub/asha/v1
+base_url=https://inference.chub.ai
 api_key=[YOUR_API_KEY_GOES_HERE]

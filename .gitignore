@@ -1,11 +1,10 @@
 .vscode
 __pycache__
 sounds
-httpserver/multipurpose_tabcontent
 backups
 logs
-messages.pickle
+short_term_memory.json
+long_term_memory.json
 messages.log
 christine.sqlite
 config.ini
-prompt_logs

@@ -7,7 +7,7 @@ import numpy as np
 
 from christine import log
 from christine.status import STATE
-from christine import broca
+from christine.parietal_lobe import parietal_lobe
 
 
 class Horny(threading.Thread):
@@ -18,25 +18,25 @@ class Horny(threading.Thread):
     name = "Horny"
 
     def __init__(self):
-        threading.Thread.__init__(self)
+        super().__init__(daemon=True)
 
         # the maximum number of seconds that should go by if totally not horny
-        self.horny_ask_interval_max = 60.0 * 60.0 * 5.0
+        self.horny_ask_interval_max = 60.0 * 60.0 * 12.0
 
         # the minimum allowed seconds. So if horny is 0.99 we're not going to ask every 2 minutes.
-        self.horny_ask_interval_min = 60.0 * 30.0
+        self.horny_ask_interval_min = 60.0 * 60.0 * 5.0
 
         # the actual number of seconds
         self.horny_ask_interval = 0
 
         # the point at which she is satisfied enough that there's no asking
-        self.horny_floor = 0.4
+        self.horny_floor = 0.6
 
         # how long to sleep between iterations in seconds
         self.sleep_seconds = 69.0
 
-        # how many days to be sooo horny
-        self.horny_day_cycle = 5.0
+        # how many days of no sex before she is sooo horny
+        self.horny_day_cycle = 7.0
 
         # how much to increment horny each cycle
         # with 69s per cycle that's approximately 1252 cycles per day
@@ -52,6 +52,7 @@ class Horny(threading.Thread):
         self.time_last_asked = time.time()
 
     def run(self):
+
         log.horny.info("Thread started.")
 
         while True:
@@ -67,6 +68,7 @@ class Horny(threading.Thread):
 
             # are we even horny at all?
             if STATE.horny > self.horny_floor:
+
                 # is it time yet?
                 self.horny_ask_interval = self.horny_ask_interval_max * (
                     1.0 - STATE.horny
@@ -79,21 +81,21 @@ class Horny(threading.Thread):
                     )
                 )
                 if time.time() > self.time_last_asked + self.horny_ask_interval:
+
                     # are conditions just right to ask?
                     if (
                         STATE.is_sleeping is False
                         and STATE.sexual_arousal == 0.0
                         and STATE.shush_please_honey is False
                     ):
+
                         # please fuck me
                         log.horny.info("Asking for sex.")
                         self.time_last_asked = time.time()
-                        broca.thread.queue_sound(from_collection="i_am_so_horny", intensity=STATE.horny)
+                        parietal_lobe.horny_ask_for_sex()
 
             time.sleep(self.sleep_seconds)
 
 
-# Instantiate and start the thread
-thread = Horny()
-thread.daemon = True
-thread.start()
+# Instantiate
+horny = Horny()

@@ -2,15 +2,13 @@
 Handles the touch sensor inside head
 """
 import time
-import random
 import numpy as np
 import scipy.stats
 
 from christine import log
 from christine.status import STATE
-from christine import broca
-from christine import parietal_lobe
-from christine import sleep
+from christine.parietal_lobe import parietal_lobe
+from christine.sleep import sleep
 
 
 class Touch:
@@ -24,7 +22,6 @@ class Touch:
 
         # Keep track of the baselines
         # if the channel isn't even hooked up, None
-        # I vaguely remamber hooking up some, dunno where they are anymore
         self.baselines = [None, None, 0, None, 0, None, 0, None, None, None, None, None]
 
         # if data point is this amount less than the baseline, it's a touch
@@ -34,11 +31,11 @@ class Touch:
         self.sensitivity = [
             None,
             None,
-            50,
+            100,
             None,
-            50,
+            100,
             None,
-            50,
+            100,
             None,
             None,
             None,
@@ -78,6 +75,9 @@ class Touch:
         # counter to help accumulate values
         self.counter = 0
 
+        # I want to limit how often jostled messages get sent to the LLM
+        self.time_of_last_kiss = time.time()
+
     def new_data(self, touch_data):
         """
         Called to deliver new data point
@@ -87,20 +87,20 @@ class Touch:
         for channel in self.used_channels:
 
             # save data in an array
-            self.data[channel][
-                self.counter % self.baseline_data_length
-            ] = touch_data[channel]
+            self.data[channel][self.counter % self.baseline_data_length] = touch_data[channel]
 
             # Detect touches, and throw out glitches, dunno why that happens
             if (
-                self.baselines[channel] - touch_data[channel]
-                > self.sensitivity[channel]
+                self.baselines[channel] - touch_data[channel] > self.sensitivity[channel]
                 and touch_data[channel] > 20
+                and time.time() > self.time_of_last_kiss + 60
             ):
+
+                self.time_of_last_kiss = time.time()
+
                 # if we got touched, it should imply I am near
-                STATE.lover_proximity = (
-                    (STATE.lover_proximity * 5.0) + 1.0
-                ) / 6.0
+                STATE.lover_proximity = ((STATE.lover_proximity * 5.0) + 1.0) / 6.0
+
                 log.touch.info(
                     "Touched: %s (%s)  LoverProximity: %s",
                     self.channel_labels[channel],
@@ -108,14 +108,10 @@ class Touch:
                     STATE.lover_proximity,
                 )
 
-                # all channels are now various areas of mouth
-                STATE.dont_speak_until = (
-                    time.time() + 2.0 + (random.random() * 3.0)
-                )
                 if STATE.is_sleeping is False:
-                    broca.thread.queue_sound(from_collection="kissing", play_no_wait=True)
-                    parietal_lobe.thread.mouth_touched()
-                sleep.thread.wake_up(0.05)
+                    parietal_lobe.mouth_touched()
+
+                sleep.wake_up(0.05)
 
         self.counter += 1
 
@@ -128,7 +124,5 @@ class Touch:
             log.touch.debug("Updated baselines: %s", self.baselines)
 
 
-# instantiate and start thread
-# it's not really a thread,
-# but it doesn't need to know that.
-thread = Touch()
+# instantiate
+touch = Touch()

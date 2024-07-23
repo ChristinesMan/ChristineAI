@@ -7,8 +7,8 @@ import numpy as np
 from mpu6050 import mpu6050
 
 from christine import log
-from christine import parietal_lobe
 from christine.status import STATE
+from christine.parietal_lobe import parietal_lobe
 
 
 class Gyro(threading.Thread):
@@ -19,7 +19,7 @@ class Gyro(threading.Thread):
     name = "Gyro"
 
     def __init__(self):
-        threading.Thread.__init__(self)
+        super().__init__(daemon=True)
 
         # How many single samples are averaged together to smooth the reading
         self.sample_size = 3
@@ -32,8 +32,6 @@ class Gyro(threading.Thread):
         self.gyro_z_record = [0.0] * self.sample_size
 
         # Smoothed average values
-        # self.SmoothXTilt = 0.0
-        # self.SmoothYTilt = 0.0
         self.total_jostled = 0.0
 
         # index to keep track of pulling the average every SampleSize times
@@ -42,9 +40,9 @@ class Gyro(threading.Thread):
         # I think sometimes the touch sensor or other I2C things conflict with the gyro, so I want to shut it down only after a run of i/o errors
         self.io_errors = 0
 
-        # I want to keep track of the max jostled level, and taper off slowly
+        # I want to keep track of the max jostled level, and taper off slowly, very slowly
         self.jostled_level = 0.0
-        self.jostled_avg_window = 2000.0
+        self.jostled_avg_window = 5000.0
         # I also want a super short term running average
         self.jostled_avg_window_short = 40.0
 
@@ -75,7 +73,6 @@ class Gyro(threading.Thread):
         except OSError:
             log.main.error("Gyro unavailable.")
             STATE.jostled_level = 0.0
-            STATE.is_laying_down = False
             STATE.gyro_available = False
             return
 
@@ -99,9 +96,8 @@ class Gyro(threading.Thread):
                 if self.io_errors >= 10:
                     log.main.critical("The gyro thread has been shutdown.")
                     STATE.jostled_level = 0.0
-                    STATE.is_laying_down = False
                     STATE.gyro_available = False
-                    parietal_lobe.thread.gyro_failure()
+                    parietal_lobe.gyro_failure()
                     return
 
             # Keep track of which iteration we're on. Fill the array with data.
@@ -119,8 +115,6 @@ class Gyro(threading.Thread):
             # Every SampleSize'th iteration, send the average
             if self.loop_iteration == 0:
                 # Calculate averages
-                STATE.tilt_x = sum(self.accel_x_record) / self.sample_size
-                STATE.tilt_y = sum(self.accel_y_record) / self.sample_size
                 self.total_jostled = (
                     (sum(self.gyro_x_record) / self.sample_size)
                     + (sum(self.gyro_y_record) / self.sample_size)
@@ -157,52 +151,13 @@ class Gyro(threading.Thread):
                 # the counter is used to delay sending the notification
                 if self.jostled_message_counter == 1:
                     self.jostled_message_counter -= 1
-                    parietal_lobe.thread.gyro_notify_jostled()
+                    parietal_lobe.gyro_notify_jostled()
                 else:
                     self.jostled_message_counter -= 1
-
-                # Update the boolean that tells if we're laying down. While laying down I recorded 4.37, 1.60. However, now it's 1.55, 2.7. wtf happened? The gyro has not moved. Maybe position difference.
-                # At some point I ought to self-calibrate this. When it's dark, and not jostled for like an hour, that's def laying down, save it.
-                # This is something I'll need to save in the sqlite db
-                if (
-                    abs(STATE.tilt_x - STATE.sleep_tilt_x) < 0.2
-                    and abs(STATE.tilt_y - STATE.sleep_tilt_y) < 0.2
-                ):
-                    STATE.is_laying_down = True
-                else:
-                    STATE.is_laying_down = False
-
-                # self-calibrate the gyro position that is resting in bed
-                # So if she ever sleeps standing that's going to fuck this up
-                if (
-                    STATE.light_level <= 0.1
-                    and STATE.jostled_level <= 0.02
-                    and self.jostled_level <= 0.02
-                    and STATE.is_sleeping is True
-                ):
-                    STATE.sleep_tilt_x = STATE.tilt_x
-                    STATE.sleep_tilt_y = STATE.tilt_y
-                    # SHARED_STATE.SleepXTilt = ((SHARED_STATE.SleepXTilt * 100.0) + SHARED_STATE.XTilt) / 101.0
-                    # SHARED_STATE.SleepYTilt = ((SHARED_STATE.SleepYTilt * 100.0) + SHARED_STATE.YTilt) / 101.0
-
-                # # log it
-                # log.gyro.debug(
-                #     "X: %.2f, Y: %.2f}, J: %.2f} JPctLT: %.2f} JPctST: %.2f} SlX: %.2f} SlY: %.2f} LD: {7}",
-                #     SHARED_STATE.tilt_x,
-                #     SHARED_STATE.tilt_y,
-                #     self.total_jostled,
-                #     SHARED_STATE.jostled_level,
-                #     SHARED_STATE.jostled_level_short,
-                #     SHARED_STATE.sleep_tilt_x,
-                #     SHARED_STATE.sleep_tilt_y,
-                #     SHARED_STATE.is_laying_down,
-                # )
 
             self.loop_index += 1
             time.sleep(0.025)
 
 
-# Instantiate and start the thread
-thread = Gyro()
-thread.daemon = True
-thread.start()
+# Instantiate
+gyro = Gyro()

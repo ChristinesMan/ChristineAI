@@ -4,7 +4,7 @@ Keeps track of all the things and share this with all the other modules
 import time
 import threading
 
-from christine import database
+from christine.database import database
 
 
 class Status(threading.Thread):
@@ -17,17 +17,16 @@ class Status(threading.Thread):
     name = "Status"
 
     def __init__(self):
-        threading.Thread.__init__(self)
+        super().__init__(daemon=True)
 
         # Raspberry pi CPU temp
         self.cpu_temp = 45
 
-        # There is going to be another process which will monitor the microphones for speech. wernicke_client.py.
-        # I don't want my wife talking over me.
-        # It's not a domineering thing, it's just nice.
-        # I am calling this feature Wernicke, which is the name given to the part of the human brain that processes speech.
-        # This is a time variable for when it's ok to speak again. When we want to wait before speaking we update this to current time + a number of seconds
-        self.dont_speak_until = 0
+        # this var is meant to prevent speaking until the user is done speaking
+        self.user_is_speaking = False
+
+        # keep track of whether LLM is in the middle of speaking
+        self.char_is_speaking = False
 
         # This is a number between 0.0 and 1.0 where 0.0 is absolute darkness and 1.0 is lights on window open with sun shining and flashlight in your face.
         # This is a long running average, changes slowly
@@ -52,7 +51,6 @@ class Status(threading.Thread):
         # Booleans for sleep/wake
         self.is_tired = False
         self.is_sleeping = False
-        self.is_laying_down = False
 
         # Power systems
         self.battery_voltage = 2.148  # typical voltage, will get updated immediately
@@ -71,12 +69,6 @@ class Status(threading.Thread):
         # But I need to really tone down the hmms
         self.breath_intensity = 0.5
 
-        # This is for self calibration of sleeping gyro position
-        self.tilt_x = 0.0
-        self.tilt_y = 0.0
-        self.sleep_tilt_x = 0.0
-        self.sleep_tilt_y = 0.0
-
         # Keep track of whether we have switched off the Wernicke processing during deep sleep
         self.wernicke_sleeping = False
 
@@ -87,14 +79,27 @@ class Status(threading.Thread):
         # this is to signal all threads to properly shutdown
         self.please_shut_down = False
 
-        # is wernicke/broca/parietal_lobe connected to the server
-        self.wernicke_connected = False
-        self.broca_connected = False
-        self.parietal_lobe_connected = False
-
         # is shit fucked up
         self.gyro_available = False
         self.vagina_available = False
+
+        # how much to reduce speech volume when proximity is close.
+        # a proximity_volume_adjust of 1.0 means don't reduce the volume at all
+        self.proximity_volume_adjust = 1.0
+
+        # settings for how many seconds to pause for various punctuation
+        # if the utterance ends with question or a ..., pause a lot
+        self.pause_question = 6.0
+        # if the utterance ends with period, pause
+        self.pause_period = 4.0
+        # if the utterance ends with comma, pause very little
+        self.pause_comma = 0.5
+
+        # setting controls how many seconds parietal_lobe will wait for additional perceptions
+        self.additional_perception_wait_seconds = 2.0
+
+        # this is the threshold for how long user's text should be before it is allowed to interrupt char
+        self.user_interrupt_char_threshold = 30
 
     def run(self):
         self.load_state()
@@ -108,18 +113,18 @@ class Status(threading.Thread):
         Save the current state to the sqlite db
         """
 
-        rows = database.conn.do_query("SELECT id,name,type FROM status")
+        rows = database.do_query("SELECT id,name,type FROM status")
         if rows is not None:
             for row in rows:
                 if row[2] == "f":
                     set_value = f"{getattr(self, row[1]):.2f}"
                 else:
                     set_value = getattr(self, row[1])
-                database.conn.do_query(
+                database.do_query(
                     f"UPDATE status SET value = '{set_value}' WHERE id = {row[0]}"
                 )
 
-            database.conn.do_commit()
+            database.do_commit()
 
     def load_state(self):
         """
@@ -128,7 +133,7 @@ class Status(threading.Thread):
         To start saving something new, just add a new row to the db
         """
 
-        rows = database.conn.do_query("SELECT name,value,type FROM status")
+        rows = database.do_query("SELECT name,value,type FROM status")
         if rows is not None:
 
             for row in rows:
@@ -151,7 +156,5 @@ class Status(threading.Thread):
                 else:
                     setattr(self, row[0], eval(row[1])) # pylint: disable=eval-used
 
-# Instantiate and start the thread
+# Instantiate
 STATE = Status()
-STATE.daemon = True
-STATE.start()
