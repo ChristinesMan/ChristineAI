@@ -262,6 +262,7 @@ class ParietalLobe(threading.Thread):
 
                 # if there was any history restored from a file, the last message will be a "You take a moment to think about what to say."
                 # so destroy that last message so that the power on message makes sense
+                # also I should add that when this file is loaded, it will be missing the response_to_save, wha wha wha
                 if len(self.narrative_history) > 0:
                     self.narrative_history.pop()
 
@@ -584,7 +585,7 @@ class ParietalLobe(threading.Thread):
         sleep_after_error_max = 750
         while llm_is_done_or_failed is False:
 
-            log.parietal_lobe.info('Sending to api.')
+            log.llm_stream.info('Start stream.')
 
             # send the api call
             # If using chub.ai, there's doesn't seem to be an openai mimic /completions endpoint. It's /prompt instead.
@@ -621,6 +622,9 @@ class ParietalLobe(threading.Thread):
             # if such patterns are not penalized, mental illness soon follows
             suck_it_down = False
 
+            # to perform various fixes for llm silly oopsie daisies, I want to keep track of the previous token in the stream
+            previous_token = ''
+
             # I want to save the raw text from the LLM just for logging purposes
             all_shit = ''
 
@@ -656,7 +660,6 @@ class ParietalLobe(threading.Thread):
                         # if the token matches junk, start discarding the rest of the response to prevent accumulation of nonsense
                         # hehehe, what a mess..
                         if self.re_suck_it_down.search(token):
-                            log.parietal_lobe.info('Token sucks: %s', token)
                             log.llm_stream.info('Token sucks: %s', token)
                             suck_it_down = True
                             break
@@ -672,15 +675,41 @@ class ParietalLobe(threading.Thread):
                                 is_inside_quotes = False
                                 shit_collator += token
                                 broca.accept_figment(Figment(text=shit_collator, should_speak=True, pause_wernicke=True))
-                                log.parietal_lobe.debug('Stop quotes. Shipped: %s', shit_collator)
+                                # log.parietal_lobe.debug('Stop quotes. Shipped: %s', shit_collator)
                                 shit_collator = ''
 
                             # otherwise, at the start of quoted area, ship out what was before the quotes and then start fresh at the quotes
                             else:
-                                is_inside_quotes = True
-                                broca.accept_figment(Figment(shit_collator))
-                                shit_collator = token
-                                log.parietal_lobe.debug('Start quotes')
+
+                                # sometimes, llm forgets the double quote at the start of a sentence
+                                # if that happens, it will normally look like '," ' and we'd be landing here
+                                # so break it into tokens again and do over. Similar to ther outer algorithm
+                                # I'm not sure that there's a better way since I need to stream for speed
+                                # I would like to volunteer to QA the training data next time please sir, if it would help.
+                                if previous_token == ',' and token == '" ':
+
+                                    log.parietal_lobe.warning("Missing double quote bitch fixed.")
+                                    shit_collator = '"' + shit_collator + token
+
+                                    oops_collator = ''
+                                    for oopsies in self.nlp(shit_collator):
+                                        oops = oopsies.text_with_ws
+                                        oops_collator += oops
+                                        if self.re_pause_tokens.search(oops):
+                                            broca.accept_figment(Figment(text=oops_collator, should_speak=True, pause_wernicke=True))
+                                            oops_collator = ''
+                                    if oops_collator != '':
+                                        broca.accept_figment(Figment(text=oops_collator, should_speak=True, pause_wernicke=True))
+                                    is_inside_quotes = False
+                                    shit_collator = ''
+
+                                else:
+
+                                    is_inside_quotes = True
+                                    if shit_collator != '':
+                                        broca.accept_figment(Figment(shit_collator))
+                                    shit_collator = token
+                                    # log.parietal_lobe.debug('Start quotes')
 
                             # in the case of a quote token, skip the rest of this shit
                             continue
@@ -695,9 +724,12 @@ class ParietalLobe(threading.Thread):
                         if is_inside_quotes is True and self.re_pause_tokens.search(token):
 
                             # ship the spoken sentence we have so far to broca for speakage
-                            log.parietal_lobe.debug('Shipped: %s', shit_collator)
+                            # log.parietal_lobe.debug('Shipped: %s', shit_collator)
                             broca.accept_figment(Figment(text=shit_collator, should_speak=True, pause_wernicke=True))
                             shit_collator = ''
+
+                        # save the token for the purpose of kludges and messy workarounds
+                        previous_token = token
 
                 # if we got here that means no errors, so signal we're done
                 llm_is_done_or_failed = True
@@ -736,7 +768,7 @@ class ParietalLobe(threading.Thread):
 
         # and if there's any shit left over after the stream is done, ship it
         if shit_collator != '':
-            log.parietal_lobe.debug('Shipped leftovers: %s', shit_collator)
+            # log.parietal_lobe.debug('Shipped leftovers: %s', shit_collator)
             broca.accept_figment(Figment(shit_collator))
 
         # return all the shit for logging purposes
@@ -985,7 +1017,9 @@ class ParietalLobe(threading.Thread):
             # send the completed prompt to the api
             # the response is streamed and parts immediately sent to other modules for speaking etc
             # the full response from the LLM is tacked onto the end of the prompt for logging purposes only
+            log.parietal_lobe.debug('Sending to api.')
             prompt_to_api += self.call_api(prompt_to_api)
+            log.parietal_lobe.debug('Sending to api complete.')
 
         except Exception as ex: # pylint: disable=broad-exception-caught
             prompt_to_api = None
