@@ -125,10 +125,10 @@ class Sleep(threading.Thread):
 
             # log it
             log.sleep.info(
-                "LightLevel=%.2f  JostledLevel=%.2f  Time=%.2f  Environment=%.2f  Wakefulness=%.2f",
+                "Light=%.2f  Jostled=%.2f  Time=%.2f  Env=%.2f  Wake=%.2f",
                 STATE.light_level,
                 STATE.jostled_level,
-                self.sleep_schedule,
+                self.sleep_schedule[self.current_hour],
                 self.current_environmental_conditions,
                 STATE.wakefulness,
             )
