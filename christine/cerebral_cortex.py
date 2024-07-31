@@ -17,6 +17,7 @@ from httpx import TimeoutException, RemoteProtocolError, ConnectError, HTTPStatu
 from christine import log
 from christine.status import STATE
 from christine.config import CONFIG
+from christine.narrative import Narrative
 
 class CerebralCortex(threading.Thread):
     """Class representing the Cerebral Cortex of the brain. The Cerebral Cortex is responsible for storing and summarizing memories."""
@@ -27,13 +28,14 @@ class CerebralCortex(threading.Thread):
         super().__init__(daemon=True)
 
         # the parietal_lobe better not be using the LLM api while this is also, so we need a way to signal that
+        # we will strive to process messages during times of little activity, but could still potentially conflict
         self.llm_busy = False
 
         # the prompt that will be used to summarize the messages
-        self.prompt = "Summarize the following messages:"
+        self.prompt = "### Instruction:Summarize the above text in a single paragraph of up to five detailed sentences.\n### Response:\n"
 
-        # The messages that are stored in memory, ready to be summarized
-        self.messages = []
+        # The Narrative objects discarded by parietal lobe
+        self.narrative_history: list[Narrative] = []
 
         # How to connect to the LLM api. This is from config.ini file
         self.base_url = CONFIG['parietal_lobe']['base_url']
@@ -45,13 +47,13 @@ class CerebralCortex(threading.Thread):
             base_url=self.base_url,
         )
 
-    def accept_message(self, message):
+    def accept_message(self, narrative: Narrative):
         """Called by the parietal_lobe to store a discarded message for inclusion in long-term memory."""
 
-        log.cerebral_cortex.info("Accepting message: %s", message)
+        log.cerebral_cortex.info("Accepting narrative: %s", narrative)
 
-        # Store the message in memory
-        self.messages.extend(message)
+        # Store the narrative
+        self.narrative_history.extend(narrative)
 
     def summarize_messages(self):
         """Uses the messages in memory to generate a summary."""

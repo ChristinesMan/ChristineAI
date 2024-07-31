@@ -83,21 +83,12 @@ class Broca(threading.Thread):
             if self.to_shuttlecraft.recv() is False:
 
                 # if we're here, it means there's no sound actively playing, not even a breath
-                # this dont_speak flag is set by the wernicke when it's time to shut up
+                # this user_is_speaking flag is set by the wernicke when it's time to shut up
                 if STATE.user_is_speaking is False:
 
                     # if there's something in the queue, play it
                     if self.figment_queue.qsize() > 0:
-
-                        # let everything know that LLM is speaking or in the middle of doing so
-                        STATE.char_is_speaking = True
-
                         self.play_next_figment()
-
-                    else:
-
-                        # let everything know that LLM is not speaking
-                        STATE.char_is_speaking = False
 
     def play_next_figment(self):
         """Get the next figment from the queue and process it."""
@@ -204,8 +195,13 @@ class Broca(threading.Thread):
     def accept_figment(self, figment: Figment):
         """Accept a figment from the parietal lobe and queue it up for processing."""
 
-        # if the new figment is to be spoken, add a figment for an inhalation sound
+        # if the new figment is to be spoken,
         if figment.should_speak is True:
+
+            # start the thread asap to get the api call for synthesized speech going
+            figment.start()
+
+            # add a figment for an inhalation sound that will precede this spoken figment
             self.figment_queue.put_nowait(Figment(from_collection='inhalation'))
 
         # put the figment on the queue
@@ -213,9 +209,6 @@ class Broca(threading.Thread):
 
         # if the text is spoken and ends with certain punctuation, a pause is inserted after to allow time for interruption.
         if figment.should_speak is True:
-
-            # also, if the figment is spoken, start the thread to get the synthesized speech going
-            figment.start()
 
             if self.re_question.search(figment.text):
                 self.figment_queue.put_nowait(Figment(pause_duration=STATE.pause_question))
@@ -228,34 +221,60 @@ class Broca(threading.Thread):
         elif figment.text is not None:
 
             # figure out which emote
+            from_collection = None
             if self.re_emote_laugh.search(figment.text):
-                self.figment_queue.put_nowait(Figment(from_collection='laughing'))
+                from_collection = 'laughing'
             elif self.re_emote_grrr.search(figment.text):
-                self.figment_queue.put_nowait(Figment(from_collection='disgust'))
+                from_collection = 'disgust'
             elif self.re_emote_yawn.search(figment.text):
-                self.figment_queue.put_nowait(Figment(from_collection='sleepy'))
+                from_collection = 'sleepy'
 
+            if from_collection is not None:
 
-    def please_stop(self):
-        """Immediately stop speaking."""
+                # first, inspect the queue to see if the last thing we queued was a pause
+                # if it was, we will insert the emote before that pause
+                if self.figment_queue.qsize() > 0:
+                    last_figment: Figment = self.figment_queue.queue[-1]
+                    if last_figment.pause_duration is not None:
+                        self.figment_queue.queue[-1] = Figment(from_collection=from_collection)
+                        self.figment_queue.put_nowait(last_figment)
+                    else:
+                        self.figment_queue.put_nowait(Figment(from_collection=from_collection))
+
+    def flush_figments(self):
+        """Immediately stop speaking. Flush the queue."""
 
         # import here to avoid circular import
         # pylint: disable=import-outside-toplevel
         from christine.parietal_lobe import parietal_lobe
 
-        log.broca_main.debug("Full stop.")
+        log.broca_main.debug("Flush!")
 
         # keeps track of whether speaking was actually interrupted
         interrupted = False
 
         # pull everything out of the queue, and if there were any other spoken figments, tell parietal lobe it got interrupted
+        # until interrupted gets set to true, we also want to flush any non-spoken thoughts into the parietal lobe
+        # after interrupted, everything just gets chucked
         while self.figment_queue.qsize() > 0:
+
+            # get the next figment
             figment = self.figment_queue.get_nowait()
+
+            # if the figment is spoken, set the interrupted flag, and everything after this gets thrown out
             if figment.should_speak is True:
                 interrupted = True
+
+            # if we're not already interrupted, send the figment back to the parietal lobe
+            if interrupted is False:
+                if figment.text is not None:
+                    parietal_lobe.broca_figment_was_processed(figment)
+            else:
+                log.broca_main.debug("Interrupted: %s", figment)
+
+        # if we were interrupted at some point in the queue flush, let parietal lobe know it needs to file off the end nice and smooth
         if interrupted is True:
             parietal_lobe.broca_speech_interrupted()
-
 
     def shuttlecraft(self, to_starship):
         """

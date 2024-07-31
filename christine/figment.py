@@ -4,7 +4,7 @@ import os
 import threading
 import re
 import wave
-import requests
+from requests import post, Timeout, HTTPError
 
 from christine import log
 from christine.server_discovery import servers
@@ -64,6 +64,10 @@ class Figment(threading.Thread):
     def do_tts(self):
         """This function calls an api to convert text to speech. The api accepts a json string with the text to convert and returns binary audio data."""
 
+        # import the broca module here to avoid circular imports
+        # pylint: disable=import-outside-toplevel
+        from christine.broca import broca
+
         # standardize the text to just the words, no spaces, for the file path
         text_stripped = re.sub("[^a-zA-Z0-9 ]", "", self.text).lower().strip().replace(' ', '_')[0:100]
         file_path = f"sounds/synth/{text_stripped}.wav"
@@ -82,27 +86,33 @@ class Figment(threading.Thread):
             data = {'text': self.text}
 
             try:
-                response = requests.post(url, headers=headers, json=data, timeout=60)
-            except requests.exceptions.Timeout:
-                log.broca_main.error("Text to speech request timed out.")
-                return
 
-            if response.status_code == 200:
+                response = post(url, headers=headers, json=data, timeout=60)
 
-                # write the binary audio data to a wav file
-                wav_file = wave.open(file_path, "wb")
-                wav_file.setnchannels(1)
-                wav_file.setsampwidth(2)
-                wav_file.setframerate(44100)
-                wav_file.writeframes(response.content)
-                wav_file.close()
+                if response.status_code == 200:
 
-                # log.broca.debug("Created wav file: %s", file_path)
-                self.wav_file = file_path
+                    # write the binary audio data to a wav file
+                    wav_file = wave.open(file_path, "wb")
+                    wav_file.setnchannels(1)
+                    wav_file.setsampwidth(2)
+                    wav_file.setframerate(44100)
+                    wav_file.writeframes(response.content)
+                    wav_file.close()
 
-            else:
+                    # log.broca.debug("Created wav file: %s", file_path)
+                    self.wav_file = file_path
 
-                log.broca_main.error("Failed to convert text to speech. Status code: %s", response.status_code)
+                else:
+
+                    raise HTTPError("Failed to convert text to speech")
+
+            except (ConnectionError, Timeout, HTTPError):
+
+                # if the connection failed, set the wernicke server to None
+                servers.broca_ip = None
+
+                # and complain about it
+                broca.accept_figment(Figment(from_collection="broca_failure"))
 
     def __str__(self) -> str:
         if self.from_collection is not None:

@@ -25,9 +25,6 @@ class Status(threading.Thread):
         # this var is meant to prevent speaking until the user is done speaking
         self.user_is_speaking = False
 
-        # keep track of whether LLM is in the middle of speaking
-        self.char_is_speaking = False
-
         # This is a number between 0.0 and 1.0 where 0.0 is absolute darkness and 1.0 is lights on window open with sun shining and flashlight in your face.
         # This is a long running average, changes slowly
         self.light_level = 0.5
@@ -128,9 +125,8 @@ class Status(threading.Thread):
 
     def load_state(self):
         """
-        Grabs the hand picked status variables from db on startup.
+        Grabs status variables from db on startup.
         Not all state vars are saved to the db.
-        To start saving something new, just add a new row to the db
         """
 
         rows = database.do_query("SELECT name,value,type FROM status")

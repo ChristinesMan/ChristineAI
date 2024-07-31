@@ -112,10 +112,6 @@ class Wernicke(threading.Thread):
                 # and send it over to the parietal lobe for processing
                 parietal_lobe.new_perception(new_perception)
 
-                # and with that, let everyone know that the user is no longer speaking
-                STATE.user_is_speaking = False
-                log.broca_main.debug("SpeakingStop")
-
     def audio_recording_start(self, label):
         """
         Sends a message to the subprocess to start a recording, for collecting training data mostly
@@ -308,12 +304,14 @@ class Wernicke(threading.Thread):
 
                             log.wernicke.info("Adjusting audio stream by %s bytes", fucking_pos)
                             data = self.serial_port_from_head.read(fucking_pos)
+                            log.wernicke.info("Adjust done")
 
                         else:
                             # It is theoretically possible for the sensor data to be cut off at the start or end
-                            # So if we're not seeing it, read in and throw away 1024 bytes and it ought to be in the middle
-                            log.wernicke.info("Adjusting audio stream by 1024 bytes")
-                            data = self.serial_port_from_head.read(1024)
+                            # So if we're not seeing it, read in and throw away 512 bytes and it ought to be in the middle
+                            log.wernicke.info("No sensor data found. Adjusting audio stream by 512 bytes")
+                            data = self.serial_port_from_head.read(512)
+                            log.wernicke.info("Adjust done")
 
                         # continue to the start of the loop where we should be well adjusted
                         continue

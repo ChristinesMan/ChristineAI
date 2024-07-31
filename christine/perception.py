@@ -1,11 +1,11 @@
 """A perception is an object that represents a sensory input. This is primarily speech but can also be sensory data such as sudden gyro activity, light changes, touch, etc. Other possibilities may become possible in the future, such as computer vision."""
 
 import threading
-import requests
+from requests import post, Timeout, HTTPError
 
-from christine.status import STATE
+# from christine.status import STATE
+from christine.figment import Figment
 from christine.server_discovery import servers
-from christine.broca import broca
 
 class Perception(threading.Thread):
     """Class representing a discrete section of incoming sensory input."""
@@ -33,44 +33,50 @@ class Perception(threading.Thread):
             if servers.wernicke_ip is not None:
 
                 # block here while audio is processed
-                self.process_audio()
+                self.transcribe_audio()
 
             else:
 
                 # if we don't have a wernicke server, then we can't process the audio
                 self.transcription = []
 
-    def process_audio(self):
+    def transcribe_audio(self):
         """This function processes incoming audio data. It will be used to convert audio to text."""
+
+        # import the broca module here to avoid circular imports
+        # pylint: disable=import-outside-toplevel
+        from christine.broca import broca
 
         # send the audio data to the speech-to-text api and receive a json encoded list of transcriptions
         url = f'http://{servers.wernicke_ip}:3000/transcribe'
 
         # the api expects a file named "audio_data" with the audio data
         files = {'audio_data': self.audio_data}
-        response = requests.post(url, files=files, timeout=60)
 
-        # the api returns a json encoded list of transcriptions
-        self.transcription = response.json()
+        # send the audio data to the api
+        try:
 
-        # test if there was anything transcribed at all
-        if len(self.transcription) > 0:
+            response = post(url, files=files, timeout=60)
 
-            # this is here so that user can speak in the middle of char speaking,
-            # and if the user's new transcription is long enough, char will stop speaking
-            if STATE.char_is_speaking is True:
+            if response.status_code == 200:
 
-                # first, go through the transcription and get the sum of the lengths of all the strings
-                transcription_length = sum([len(transcription['text']) for transcription in self.transcription])
+                # the api returns a json encoded list of transcriptions
+                self.transcription = response.json()
 
-                # if the total length is greater than the threshold, stop speaking
-                if transcription_length > STATE.user_interrupt_char_threshold:
-                    STATE.char_is_speaking = False
-                    broca.please_stop()
+            else:
 
-                # otherwise, what user just said is likely junk like "hmm" or "uhh", so chuck it in the dump
-                else:
-                    self.transcription = []
+                raise HTTPError("Failed to convert text to speech")
+
+        except (ConnectionError, Timeout, HTTPError):
+
+            # if the connection failed, set the transcription to an empty list
+            self.transcription = []
+
+            # if the connection failed, set the wernicke server to None
+            servers.wernicke_ip = None
+
+            # and complain about it
+            broca.accept_figment(Figment(from_collection="wernicke_failure"))
 
     def __str__(self) -> str:
         if self.audio_data is None:

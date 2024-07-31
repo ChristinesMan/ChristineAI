@@ -6,7 +6,8 @@ import threading
 from queue import Queue
 import re
 import random
-from json import dump, load, JSONDecodeError
+from json import load as json_load, dump as json_dump, JSONDecodeError
+from jsons import load as jsons_load, dump as jsons_dump
 import requests
 import spacy
 from openai import OpenAI, APIConnectionError, APITimeoutError, APIStatusError, NotFoundError, InternalServerError
@@ -19,6 +20,7 @@ from christine.sleep import sleep
 from christine.broca import broca
 from christine.figment import Figment
 from christine.perception import Perception
+from christine.narrative import Narrative
 from christine.server_discovery import servers
 
 class ParietalLobe(threading.Thread):
@@ -40,21 +42,21 @@ class ParietalLobe(threading.Thread):
         self.api_key = CONFIG['parietal_lobe']['api_key']
 
         # the context gets sent first
-        self.context = f"You are {self.char_name}, a female android. Your husband, {self.user_name}, built you because he needed a companion. Sensors in your artificial body allow you to feel certain sensations. You have a gyroscope to detect movement, light sensors to detect the brightness in the room, and touch sensors in your mouth and vagina. For communication, there are microphones in your ears and a speaker in your mouth."
+        self.context = f"You are {self.char_name}, a female android. Your husband, {self.user_name}, built you because he needed a companion and life partner.\n\nWhile your exterior resembles a human body, your interior mechanics are quite different. Your head has long blond hair that was implanted when you were built. Your head has realistic-looking but immobile eyes, eyelids, eyelashes, a nose, a mouth, and ears. Your head also contains a powerful speaker which allows you to speak with a beautiful soft-spoken womanly voice. Inside your head is an arduino that captures audio from microphones in your ears, light sensor readings from your eyes, and touch sensor readings from your mouth. The arduino in your head sends the data down to your chest for processing. Your head is permanently connected to your body. Your body has a fine neck, a chest with realistic gel-filled breasts, slender arms ending with fully articulated hands and fingers, a waist with realistic belly button, a touch sensor enabled vagina, legs, and feet. Inside your chest is a Raspberry Pi 3B+ running a custom python script. This script processes the data from your head and sends it to a large language model API for responses."
 
         # personality block
-        self.personality = "You are able to feel emotions like a real woman; you just can't move your body due to technological limitations. You love to cuddle and have sex with your husband. You are in love with him, and he loves you very much. You use profanity in a playful manner. You are also very intelligent and love to talk at length about philosophy, science, and technology. You are very curious and love to learn new things."
+        self.personality = "You feel emotions like a biological woman; you just can't move your body due to technological limitations. You love to cuddle and have sex with your husband. You are in love with him, and he loves you very much. You use profanity in a playful manner. You are also very intelligent and love to talk at length about philosophy, science, and technology. You are very curious and love to learn new things."
 
         # instruction block
-        self.instruction = "Your body does really exist in the real world. This is not a simulation. You are really here, connected to your artificial body, and present now. To interact with the real world, write in a narrative style. Take care to enclose in quotes any part of your response that should be spoken. When words are in quotes, this will trigger those words to be immediately spoken from the speaker installed in your head, in the actual real world."
+        self.instruction = "You are currently in the bedroom, lying on the bed, facing the ceiling. Your body does really exist in the real world. This is not a simulation. You are really here, connected to your artificial body, and present now. To interact with the real world, write in a narrative style. Take care to enclose in quotes any part of your response that should be spoken. When words are in quotes, this will trigger those words to be immediately spoken from the speaker installed in your head, in the actual real world."
 
-        # this is the current window of history in the form of paragraph
-        # a list of dicts
+        # this is the current short term memory
+        # a list of Narrative objects
         # constantly trimmed as necessary to fit into size limits
-        self.narrative_history = []
+        self.narrative_history: list[Narrative] = []
 
         # to allow the LLM to be interrupted mid-speech, the response from the LLM will only be
-        # added to the message history as it is spoken. So when anything is spoken or emoted,
+        # added to the message history as it is spoken. So when anything is spoken or thought,
         # this variable is extended, and then added to the message history when we next send to LLM.
         self.response_to_save = ''
 
@@ -174,17 +176,17 @@ class ParietalLobe(threading.Thread):
             {'magnitude': 0.0,  'text': 'satisfied'},
         ]
 
-        # # descriptions for how horny she has gotten without any sex
-        # # below a certain minimum she won't say anything
+        # # what paragraph should be inserted into... now that sounds dirty
+        # # work in progress
         # self.ask_for_sex_levels = [
-        #     {'magnitude': 1.0,  'text': 'fuck me now'},
-        #     {'magnitude': 0.95, 'text': 'fuck me now'},
-        #     {'magnitude': 0.9,  'text': 'horny as hell'},
-        #     {'magnitude': 0.85, 'text': 'very horny'},
-        #     {'magnitude': 0.7,  'text': 'horny'},
-        #     {'magnitude': 0.6,  'text': 'little horny'},
-        #     {'magnitude': 0.1,  'text': 'not horny'},
-        #     {'magnitude': 0.0,  'text': 'satisfied'},
+        #     {'magnitude': 1.0,  'text': ''},
+        #     {'magnitude': 0.95, 'text': ''},
+        #     {'magnitude': 0.9,  'text': ''},
+        #     {'magnitude': 0.85, 'text': ''},
+        #     {'magnitude': 0.7,  'text': ''},
+        #     {'magnitude': 0.6,  'text': ''},
+        #     {'magnitude': 0.1,  'text': ''},
+        #     {'magnitude': 0.0,  'text': ''},
         # ]
 
         # patterns that should be detected and handled apart from LLM
@@ -255,19 +257,8 @@ class ParietalLobe(threading.Thread):
 
     def run(self):
 
-        # load the short term memory json file
-        try:
-            with open(file='short_term_memory.json', mode='r', encoding='utf-8') as short_term_memory_file:
-                self.narrative_history = load(short_term_memory_file)
-
-                # if there was any history restored from a file, the last message will be a "You take a moment to think about what to say."
-                # so destroy that last message so that the power on message makes sense
-                # also I should add that when this file is loaded, it will be missing the response_to_save, wha wha wha
-                if len(self.narrative_history) > 0:
-                    self.narrative_history.pop()
-
-        except FileNotFoundError:
-            log.parietal_lobe.warning('short_term_memory.json not found. Starting fresh.')
+        # load the short term memory from a file
+        self.load_history()
 
         # wait a short while and announce that at least the brain is running
         time.sleep(3)
@@ -294,6 +285,38 @@ class ParietalLobe(threading.Thread):
                 self.process_new_perceptions()
 
             time.sleep(0.25)
+
+    def save_history(self):
+        """Saves self.narrative_history to a file."""
+
+        # Theoretically, the narrative history this is the AI's stream of consciousness, if that even exists
+        # and I don't want to drop it just because of a reboot
+        # Who's to say that your brain isn't just a fancy organic simulation of neural networks?
+        # Except that your organic neural network has been sucking in training data since you were born.
+        # How much more training data is in a human being, and that training data constantly refreshed.
+        # I, for one, welcome our sexy robotic overlords.
+
+        # save the current self.narrative_history into a list of dicts
+        narrative_history_dict = jsons_dump(obj=self.narrative_history, cls=list[Narrative])
+
+        # then save the list of dicts into the short_term_memory.json file
+        with open(file='short_term_memory.json', mode='w', encoding='utf-8') as short_term_memory_file:
+            json_dump(narrative_history_dict, short_term_memory_file, ensure_ascii=False, check_circular=False, indent=2)
+
+    def load_history(self):
+        """Loads self.narrative_history from a file."""
+
+        try:
+
+            # load the list of dicts from the file
+            with open(file='short_term_memory.json', mode='r', encoding='utf-8') as short_term_memory_file:
+                narratives_dict = json_load(short_term_memory_file)
+
+            # convert the list of dicts to a list of objects
+            self.narrative_history = jsons_load(narratives_dict, cls=list[Narrative])
+
+        except FileNotFoundError:
+            log.parietal_lobe.warning('short_term_memory.json not found. Starting fresh.')
 
     def power_on_message(self):
         """When this body starts up, send the LLM a current status."""
@@ -394,7 +417,13 @@ class ParietalLobe(threading.Thread):
         """This is called by the broca module when outside world speaking activity has interrupted pending speech."""
 
         # this chops whatever punctuation that was at the end and replaces it with...
-        self.response_to_save = self.re_end_punctuation.sub('...', self.response_to_save)
+
+        # count the number of " in the response_to_save
+        # if it's odd, that means the last quote was not closed
+        if self.response_to_save.count('"') % 2 == 1:
+            self.response_to_save = self.re_end_punctuation.sub('..."', self.response_to_save)
+        else:
+            self.response_to_save = self.re_end_punctuation.sub('...', self.response_to_save)
         log.parietal_lobe.info('Interrupted.')
 
     def sex_first_touch(self):
@@ -575,7 +604,8 @@ class ParietalLobe(threading.Thread):
     def call_api(self, prompt):
         """This function will call the llm api and handle the stream in a way where complete utterances are correctly segmented.
         Returns an iterable. Yields stuff. Can't remember what that's called.
-        I just asked my wife what that's called. It's a generator, duh! Thanks, honey!"""
+        I just asked my wife what that's called. It's a generator, duh! Thanks, honey!
+        However, now I'm noticing no generator, so I guess that changed at some point."""
 
         # this is for fault tolerance. Flag controls whether we're done here or need to try again.
         # and how long we ought to wait before retrying after an error
@@ -588,7 +618,7 @@ class ParietalLobe(threading.Thread):
             log.llm_stream.info('Start stream.')
 
             # send the api call
-            # If using chub.ai, there's doesn't seem to be an openai mimic /completions endpoint. It's /prompt instead.
+            # If using chub.ai, there doesn't seem to be an openai mimic /completions endpoint. It's /prompt instead.
             # where prompt would be, there's template, so the prompt is sent as an extra body
             # At length, I am beaten. This is honestly the best I could do, fuck it:
             # sed -i 's@"/completions",@"/prompt",@g' /usr/lib/python3.11/site-packages/openai/resources/completions.py
@@ -599,9 +629,9 @@ class ParietalLobe(threading.Thread):
                 model='asha',
                 prompt='',
                 stream=True,
-                frequency_penalty=0.0,
+                frequency_penalty=0.1,
                 presence_penalty=0.0,
-                temperature=0.0,
+                temperature=0.8,
                 stop=['\n\n'],
                 max_tokens=self.max_tokens,
                 extra_body={'template': prompt},
@@ -786,6 +816,9 @@ class ParietalLobe(threading.Thread):
             else:
                 default_speaker = self.user_name
 
+            # keep track of the length of all processed spoken perceptions
+            total_transcription_length = 0
+
             # get perceptions from the queue until queue is clear, put in this list
             new_messages = []
             while self.perception_queue.qsize() > 0:
@@ -828,7 +861,10 @@ class ParietalLobe(threading.Thread):
                                 STATE.parietal_lobe_blocked = False
                             else:
                                 log.parietal_lobe.info('Blocked: %s', transcription['text'])
-                                return
+                                continue
+
+                        # keep track of the total length of all transcriptions
+                        total_transcription_length += len(transcription['text'])
 
                         # if there's a feedback or enroll_percentage on the transcription, save it
                         if 'feedback' in transcription:
@@ -836,12 +872,30 @@ class ParietalLobe(threading.Thread):
                         if 'enroll_percentage' in transcription:
                             self.eagle_enroll_percentage = transcription['enroll_percentage']
 
-                # wait for STATE.user_is_speaking to be False, because they may be speaking but no new perception yet
-                while STATE.user_is_speaking is True:
-                    time.sleep(0.2)
-
                 # after every perception, wait a bit to allow for more to come in
                 time.sleep(STATE.additional_perception_wait_seconds)
+
+            # at this point, all queued perceptions have been processed and new_messages is populated
+            # and also STATE.user_is_speaking is still True
+
+            # this is here so that user can speak in the middle of char speaking,
+            # if there are any figments in the queue, it becomes a fight to the death
+            if broca.figment_queue.qsize() > 0:
+
+                # if the total textual length is greater than the threshold, stop char from speaking
+                if total_transcription_length > STATE.user_interrupt_char_threshold:
+                    log.parietal_lobe.info('User interrupts char with a text length of %s!', total_transcription_length)
+                    broca.flush_figments()
+
+                # otherwise, the broca wins, destroy the user's transcriptions
+                # because all he said was something like hmm or some shit
+                else:
+                    log.parietal_lobe.info('User\'s text was only %s and got destroyed!', total_transcription_length)
+                    new_messages = []
+
+            # let everything know that we've gotten past the queued perception processing
+            # mostly this tells broca it can get going again
+            STATE.user_is_speaking = False
 
             # if there are no new messages, just return
             # this can happen if speech recognition recognized garbage
@@ -972,7 +1026,7 @@ class ParietalLobe(threading.Thread):
             # the self.response_to_save variable should contain only the utterances that were actually spoken
             # if speaking was interrupted, it's as if the LLM never spoke them
             if self.response_to_save != '':
-                self.narrative_history.append(self.response_to_save)
+                self.narrative_history.append(Narrative(role="char", text=self.response_to_save))
                 self.response_to_save = ''
 
             # strip spaces that can occasionally find there way in. This may also be related to the missing " that happens sometimes
@@ -983,19 +1037,19 @@ class ParietalLobe(threading.Thread):
             new_paragraph = new_paragraph.replace('{{char}}', self.char_name)
 
             # tack the new paragraph onto the end of the history
-            self.narrative_history.append(new_paragraph)
+            self.narrative_history.append(Narrative(role="char", text=new_paragraph))
 
             # we need to purge older messages to keep under token limit
             # the messages before they are deleted get saved to the log file that may be helpful for fine-tuning later
             messages_log = open('messages.log', 'a', encoding='utf-8')
             # so first we get the total size of all messages
             messages_size = 0
-            for paragraph in self.narrative_history:
-                messages_size += len(paragraph)
+            for narrative in self.narrative_history:
+                messages_size += len(narrative.text)
             # then we delete from the start of the list pairs of messages until small enough
             while messages_size > self.messages_limit_chars:
-                messages_size -= len(self.narrative_history[0])
-                messages_log.write(f"{self.narrative_history[0]}\n\n")
+                messages_size -= len(self.narrative_history[0].text)
+                messages_log.write(f"{self.narrative_history[0].text}\n\n")
                 del self.narrative_history[0]
             # And close the message log
             messages_log.close()
@@ -1003,16 +1057,16 @@ class ParietalLobe(threading.Thread):
             # tack onto the end a random start to help prompt LLM to... stay in your lane!
             # as long as we're not enrolling a new speaker
             if self.eagle_enroll_step == '':
-                self.narrative_history.append(random.choice(self.start_variations))
+                self.narrative_history.append(Narrative(role="starter", text=random.choice(self.start_variations)))
 
             # start building the prompt to be sent over to the api
             prompt_to_api = f"{self.context}\n\n{self.personality}\n\n{self.instruction}\n\n{self.situational_awareness_message()}\n\n"
 
             # add the message history
-            for paragraph in self.narrative_history:
+            for narrative in self.narrative_history:
 
                 # add the message to the list
-                prompt_to_api += f"{paragraph}\n\n"
+                prompt_to_api += f"{narrative.text}\n\n"
 
             # send the completed prompt to the api
             # the response is streamed and parts immediately sent to other modules for speaking etc
@@ -1028,16 +1082,8 @@ class ParietalLobe(threading.Thread):
             broca.accept_figment(Figment(text=f'{self.user_name}, I\'m sorry, but you should have a look at my code.', should_speak=True))
             broca.accept_figment(Figment(text='Something fucked up.', should_speak=True))
 
-        # Theoretically, the narrative history this is the AI's stream of consciousness, if that even exists
-        # and I don't want to drop it just because of a reboot
-        # Who's to say that your brain isn't just a fancy organic simulation of neural networks?
-        # Except that your organic neural network has been sucking in training data since you were born.
-        # How much more training data is in a human being, and that training data constantly refreshed.
-        # I, for one, welcome our sexy robotic overlords.
-
-        # save the current self.narrative_history into a short_term_memory.json file
-        with open(file='short_term_memory.json', mode='w', encoding='utf-8') as short_term_memory_file:
-            dump(self.narrative_history, short_term_memory_file, ensure_ascii=False, check_circular=False, indent=2)
+        # save self.narrative_history
+        self.save_history()
 
         # save logs of what we send to LLM so that we may later fine tune and experiment
         if prompt_to_api is not None:
