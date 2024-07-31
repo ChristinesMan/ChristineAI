@@ -102,6 +102,8 @@ class SausageFactory():
             r"thank.+watching|Satsang|Mooji|^ \.$|^ Bark!$|PissedConsumer\.com|Beadaholique\.com|^ you$|^ re$|^ GASP$|^ I'll see you in the next video\.$|thevenusproject", flags=re.IGNORECASE
         )
 
+        self.eagle_profiler = None
+        self.eagle_recognizer = None
         if self.config['wernicke']['pv_enabled'] == 'yes':
 
             # start eagle, used for the enrollment part of speaker identification
@@ -154,109 +156,126 @@ class SausageFactory():
         # start this list of segments that will be returned
         transcribe_segments = []
 
-        # if the no_speech_prob is very high, just drop it
-        # I also need to review the logs later and deal with phantoms
-        # "Thanks for watching!" is obviously a glitch in the whisper training
-        # "Go to Beadaholique.com for all of your beading supplies needs!"
-        # Um, I would never say such ridiculous things.
+        # the no_speech_prob is a bit unreliable, except for very short segments
+        # so let's go through the list and if anything is acceptable, accept the whole list
+        accepted = False
         for transcribe_segment in transcribe_result["segments"]:
 
-            if transcribe_segment["no_speech_prob"] > float(self.config['wernicke']['no_speech_prob_threshold']):
+            if transcribe_segment["no_speech_prob"] < float(self.config['wernicke']['no_speech_prob_threshold']):
+                accepted = True
+                break
+
+        if accepted:
+
+            for transcribe_segment in transcribe_result["segments"]:
+
+                # There are a lot of speech recognition phantoms
+                # "Thanks for watching!" is obviously a glitch in the whisper training
+                # "Go to Beadaholique.com for all of your beading supplies needs!"
+                # Um, I would never say such ridiculous things.
+                if self.re_garbage.search(transcribe_segment["text"]):
+                    log.info(
+                        "DROP due to garbage: %s",
+                        transcribe_segment["text"],
+                    )
+
+                else:
+                    log.info(
+                        "ACCEPT, no_speech_prob %s%%: %s",
+                        int(transcribe_segment["no_speech_prob"] * 100),
+                        transcribe_segment["text"],
+                    )
+
+                    # strip the space from the start of the text
+                    transcribe_segment['text'] = transcribe_segment['text'].lstrip()
+
+                    # default speaker is unknown
+                    transcribe_segment["speaker"] = 'unknown'
+
+                    # for each segment, whisper will return the start and end in seconds
+                    # so I want to clip out the original audio data so that I can pass it to pveagle
+                    start_frame = int(transcribe_segment["start"] * 16000)
+                    end_frame = int(transcribe_segment["end"] * 16000) - 512
+
+                    # If there's a name in here, it means we're in the enrollment mode
+                    if self.eagle_enroll_name is not None and self.eagle_profiler is not None:
+
+                        # clip just the segment's audio
+                        segment_audio = audio_data_int[start_frame:end_frame]
+
+                        # enroll the audio data
+                        enroll_percentage, feedback = self.eagle_profiler.enroll(segment_audio)
+                        log.info("Enrolling %s: %s%%", self.eagle_enroll_name, enroll_percentage)
+
+                        # if the enrollment is complete, save the profile
+                        if enroll_percentage >= 100.0:
+
+                            # export the profile
+                            new_profile = self.eagle_profiler.export()
+
+                            # save the profile
+                            with open(f'{self.profiles_dir}/{self.eagle_enroll_name}.pve', 'wb') as f:
+                                f.write(new_profile.to_bytes())
+
+                            # add the new profile to the recognizer
+                            self.speaker_profiles.append(new_profile)
+                            self.speaker_labels.append(self.eagle_enroll_name)
+                            self.eagle_recognizer = pveagle.create_recognizer(access_key=self.pv_key, speaker_profiles=self.speaker_profiles)
+
+                            # we're done enrolling
+                            self.eagle_enroll_name = None
+
+                            # send feedback to the client to end enrollment
+                            transcribe_segment["feedback"] = "Enrollment complete."
+
+                        else:
+
+                            # if the enrollment is not complete, we need to keep enrolling
+                            # so we'll set the speaker to the name
+                            transcribe_segment["speaker"] = self.eagle_enroll_name
+
+                            # and send the feedback and percentage to the client
+                            transcribe_segment["feedback"] = FEEDBACK_TO_DESCRIPTIVE_MSG[feedback]
+                            transcribe_segment["enroll_percentage"] = enroll_percentage
+
+                    elif self.eagle_recognizer is not None:
+
+                        try:
+
+                            # recognize the audio data
+                            # eagle needs to process the audio in frames of 512 samples
+                            # so let's iterate over the audio data in 512 sample chunks
+                            # from the start to the end of the segment
+                            while start_frame < end_frame:
+                                scores = self.eagle_recognizer.process(audio_data_int[start_frame:start_frame+512])
+                                start_frame += 512
+
+                                # scores will be a list of floats, one for each speaker
+                                # if the score is above the threshold, we can just stop here and set the speaker
+                                for i, score in enumerate(scores):
+                                    if score > self.eagle_recognize_threshold:
+                                        transcribe_segment["speaker"] = self.speaker_labels[i]
+                                        break
+
+                        # this is what it looks like when the limits get breached
+                        except pveagle.EagleActivationLimitError:
+                            self.eagle_recognizer = None
+
+                        # sometimes this was happening for some reason
+                        except pveagle.EagleInvalidArgumentError:
+                            pass
+
+                    transcribe_segments.append(transcribe_segment)
+
+        else:
+
+            # log what got dropped
+            for transcribe_segment in transcribe_result["segments"]:
                 log.info(
                     "DROP due to no_speech_prob %s%%: %s",
                     int(transcribe_segment["no_speech_prob"] * 100),
                     transcribe_segment["text"],
                 )
-
-            # there are certain garbage phrases that are frequently detected
-            elif self.re_garbage.search(transcribe_segment["text"]):
-                log.info(
-                    "DROP due to garbage: %s",
-                    transcribe_segment["text"],
-                )
-
-            else:
-                log.info(
-                    "ACCEPT, no_speech_prob %s%%: %s",
-                    int(transcribe_segment["no_speech_prob"] * 100),
-                    transcribe_segment["text"],
-                )
-
-                # strip the space from the start of the text
-                transcribe_segment['text'] = transcribe_segment['text'].lstrip()
-
-                # default speaker is unknown
-                transcribe_segment["speaker"] = 'unknown'
-
-                # for each segment, whisper will return the start and end in seconds
-                # so I want to clip out the original audio data so that I can pass it to pveagle
-                start_frame = int(transcribe_segment["start"] * 16000)
-                end_frame = int(transcribe_segment["end"] * 16000) - 512
-
-                # If there's a name in here, it means we're in the enrollment mode
-                if self.eagle_enroll_name is not None and self.eagle_profiler is not None:
-
-                    # clip just the segment's audio
-                    segment_audio = audio_data_int[start_frame:end_frame]
-
-                    # enroll the audio data
-                    enroll_percentage, feedback = self.eagle_profiler.enroll(segment_audio)
-                    log.info("Enrolling %s: %s%%", self.eagle_enroll_name, enroll_percentage)
-
-                    # if the enrollment is complete, save the profile
-                    if enroll_percentage >= 100.0:
-
-                        # export the profile
-                        new_profile = self.eagle_profiler.export()
-
-                        # save the profile
-                        with open(f'{self.profiles_dir}/{self.eagle_enroll_name}.pve', 'wb') as f:
-                            f.write(new_profile.to_bytes())
-
-                        # add the new profile to the recognizer
-                        self.speaker_profiles.append(new_profile)
-                        self.speaker_labels.append(self.eagle_enroll_name)
-                        self.eagle_recognizer = pveagle.create_recognizer(access_key=self.pv_key, speaker_profiles=self.speaker_profiles)
-
-                        # we're done enrolling
-                        self.eagle_enroll_name = None
-
-                        # send feedback to the client to end enrollment
-                        transcribe_segment["feedback"] = "Enrollment complete."
-
-                    else:
-
-                        # if the enrollment is not complete, we need to keep enrolling
-                        # so we'll set the speaker to the name
-                        transcribe_segment["speaker"] = self.eagle_enroll_name
-
-                        # and send the feedback and percentage to the client
-                        transcribe_segment["feedback"] = FEEDBACK_TO_DESCRIPTIVE_MSG[feedback]
-                        transcribe_segment["enroll_percentage"] = enroll_percentage
-
-                elif self.eagle_recognizer is not None:
-
-                    try:
-
-                        # recognize the audio data
-                        # eagle needs to process the audio in frames of 512 samples
-                        # so let's iterate over the audio data in 512 sample chunks
-                        # from the start to the end of the segment
-                        while start_frame < end_frame:
-                            scores = self.eagle_recognizer.process(audio_data_int[start_frame:start_frame+512])
-                            start_frame += 512
-
-                            # scores will be a list of floats, one for each speaker
-                            # if the score is above the threshold, we can just stop here and set the speaker
-                            for i, score in enumerate(scores):
-                                if score > self.eagle_recognize_threshold:
-                                    transcribe_segment["speaker"] = self.speaker_labels[i]
-                                    break
-
-                    except pveagle.EagleInvalidArgumentError:
-                        pass
-
-                transcribe_segments.append(transcribe_segment)
 
         # save data for fine tuning models and such
         if self.config['wernicke']['save_wavs'] == 'yes':
