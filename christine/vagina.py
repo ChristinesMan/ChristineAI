@@ -171,12 +171,12 @@ class Vagina(threading.Thread):
             None,
             0.0,
             None,
-            0.0,
             None,
             None,
             None,
             None,
-            0.0,
+            None,
+            None,
             None,
             0.0,
         ]
@@ -188,19 +188,20 @@ class Vagina(threading.Thread):
         # if data point is this amount less than the baseline, it's a touch
         # a touch always results in a lower capacitance number, that's how sensor works
         # therefore, lower = sensitive, higher = the numbness
+        # also, some sensors are bare wire, and others are more of a proximity sensor. The proximity sensors are much less sensitive.
         sensitivity = [
             None,
             None,
-            13.0,
-            None,
-            13.0,
+            4.0,
             None,
             None,
             None,
             None,
-            13.0,
             None,
-            13.0,
+            None,
+            None,
+            None,
+            50.0,
         ]
 
         # Number of cycles where no touch before the touch is considered released
@@ -209,12 +210,12 @@ class Vagina(threading.Thread):
             None,
             2,
             None,
-            2,
             None,
             None,
             None,
             None,
-            2,
+            None,
+            None,
             None,
             2,
         ]
@@ -227,12 +228,12 @@ class Vagina(threading.Thread):
             None,
             60,
             None,
-            60,
             None,
             None,
             None,
             None,
-            60,
+            None,
+            None,
             None,
             60,
         ]
@@ -246,12 +247,12 @@ class Vagina(threading.Thread):
             None,
             "Vagina_Deep",
             None,
-            "Vagina_Middle",
             None,
             None,
             None,
             None,
-            "Vagina_Shallow",
+            None,
+            None,
             None,
             "Vagina_Clitoris",
         ]
@@ -284,7 +285,7 @@ class Vagina(threading.Thread):
         try:
             mpr121 = adafruit_mpr121.MPR121(
                 i2c,
-                touch_sensitivity=[50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 15],
+                touch_sensitivity=[50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50],
                 release_sensitivity=[6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 4],
                 debounce=2,
             )
@@ -454,18 +455,12 @@ class Vagina(threading.Thread):
                             ) / (baseline_active_adjust_window + 1.0)
 
                     log.vagina.debug(
-                        "[%s|%s|%s|%s] [%s][%s][%s][%s] [%s][%s][%s][%s]",
+                        "[%s|%s] [%s][%s] [%s][%s]",
                         touch_data_x[11],
-                        touch_data_x[9],
-                        touch_data_x[4],
                         touch_data_x[2],
                         str(round(touch_data[11], 1)).rjust(5, " "),
-                        str(round(touch_data[9], 1)).rjust(5, " "),
-                        str(round(touch_data[4], 1)).rjust(5, " "),
                         str(round(touch_data[2], 1)).rjust(5, " "),
                         str(round(baselines[11], 1)).rjust(5, " "),
-                        str(round(baselines[9], 1)).rjust(5, " "),
-                        str(round(baselines[4], 1)).rjust(5, " "),
                         str(round(baselines[2], 1)).rjust(5, " "),
                     )
                     io_errors = 0

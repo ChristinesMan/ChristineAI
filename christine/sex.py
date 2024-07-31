@@ -26,7 +26,7 @@ class Sex(threading.Thread):
         # When arousal reaches some set level, I want to start incrementing the amount added to arousal
         # It will be slight, but since it will have no cap, eventually wife will throw an exception code O0OO00OOh
         self.multiplier = 1.0
-        self.multiplier_increment = 0.016
+        self.multiplier_increment = 0.03
 
         # keep track of Arousal not changing
         self.last_arousal = 0.0
