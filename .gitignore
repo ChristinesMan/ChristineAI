@@ -3,8 +3,12 @@ __pycache__
 sounds
 backups
 logs
+dev
 short_term_memory.json
 long_term_memory.json
 messages.log
 christine.sqlite
 config.ini
+unit_testing.py
+christine-docker/.ssh
+christine-docker/.vscode-server
