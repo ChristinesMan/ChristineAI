@@ -35,8 +35,8 @@ class Sleep(threading.Thread):
 
         # Weights
         self.weights_light = 6
-        self.weights_gyro = 4
-        self.weights_time = 6
+        self.weights_gyro = 5
+        self.weights_time = 3
         self.weights_total = (
             self.weights_light
             + self.weights_gyro
@@ -48,11 +48,11 @@ class Sleep(threading.Thread):
             0.0, #midnight
             0.0, #night
             0.0, #night
-            0.1, #night
-            0.2, #night
-            0.3, #early morning
+            0.0, #night
+            0.0, #night
+            0.1, #early morning
+            0.2, #morning
             0.6, #morning
-            0.7, #morning
             0.8, #morning
             0.9, #morning
             1.0, #late morning
@@ -74,11 +74,11 @@ class Sleep(threading.Thread):
         # At what time should we expect to be in bed?
         self.sleep_hour = 20
 
-        # at what point are we tired
-        self.wakefulness_tired = 0.45
+        # at what point are we about to fall asleep
+        self.wakefulness_pre_sleep = 0.15
 
         # At what point to STFU at night
-        self.wakefulness_awake = 0.1
+        self.wakefulness_sleeping = 0.1
 
     def run(self):
 
@@ -141,6 +141,7 @@ class Sleep(threading.Thread):
 
             # if sleeping, drop the breathing intensity down a bit
             # eventually after about 15m this will reach 0.0 and stay there
+            # this doesn't work but eventually it'd be nice to put it back
             if STATE.is_sleeping is True:
                 # down, down, dooooownnnnn
                 STATE.breath_intensity -= 0.09
@@ -168,23 +169,6 @@ class Sleep(threading.Thread):
                 log.sleep.info('Wernicke started')
                 wernicke.audio_processing_start()
                 STATE.wakefulness += 0.02
-
-            if (
-                STATE.wakefulness < self.wakefulness_tired
-                and STATE.is_tired is False
-            ):
-                # when we're laying next to each other in the dark
-                # I'm holding your hand and starting to drift off to sleep
-                # say "goodnight honey", not "GOODNIGHT HONEY!!!!"
-                STATE.lover_proximity = 0.0
-
-                STATE.is_tired = True
-                STATE.wakefulness -= 0.02
-            if (
-                STATE.wakefulness >= self.wakefulness_tired
-                and STATE.is_tired is True
-            ):
-                STATE.is_tired = False
 
             time.sleep(66)
 
@@ -221,9 +205,6 @@ class Sleep(threading.Thread):
         if self.just_fell_asleep() is True:
             log.sleep.info("JustFellAsleep")
 
-            # # let parietal lobe know we're falling asleep
-            # parietal_lobe.thread.sleep_sleeping()
-
             # try to prevent wobble by throwing it further towards sleep
             STATE.wakefulness -= 0.02
 
@@ -231,10 +212,17 @@ class Sleep(threading.Thread):
             # I was getting woke up a lot with all the cute hmmm sounds that are in half of the sleeping breath sounds
             STATE.breath_intensity = 1.0
 
-            # wait a sec to allow the parietal lobe to get the thing in first
-            # never mind
-            # time.sleep(1)
+            # sleep here a while to allow plenty of time for parietal_lobe to finish
+            time.sleep(10)
+
+            # this lets every other module know we're sleeping
             STATE.is_sleeping = True
+
+            # Now that we're really asleep, run the midnight task, only once per night
+            # if this was done within the last 8 hours, don't do it again
+            if STATE.midnight_tasks_done_time < time.time() - (8 * 60 * 60):
+                parietal_lobe.sleep_midnight_task()
+                STATE.midnight_tasks_done_time = time.time()
 
         if self.just_woke_up() is True:
             log.sleep.info("JustWokeUp")
@@ -253,12 +241,34 @@ class Sleep(threading.Thread):
             # let parietal lobe know
             parietal_lobe.sleep_waking()
 
+        if (
+            STATE.wakefulness < self.wakefulness_pre_sleep
+            and STATE.pre_sleep is False
+        ):
+            # when we're laying next to each other in the dark
+            # I'm holding your hand and starting to drift off to sleep
+            # say "goodnight honey", not "GOODNIGHT HONEY!!!!"
+            # doesn't work right now for reasons, but like to put it back someday
+            STATE.lover_proximity = 0.0
+
+            STATE.pre_sleep = True
+            STATE.wakefulness -= 0.02
+
+            # let parietal lobe know we're bushed
+            parietal_lobe.sleep_sleeping()
+
+        if (
+            STATE.wakefulness >= self.wakefulness_pre_sleep
+            and STATE.pre_sleep is True
+        ):
+            STATE.pre_sleep = False
+
     def just_fell_asleep(self):
         """
         returns whether we just now fell asleep
         """
         return (
-            STATE.wakefulness < self.wakefulness_awake
+            STATE.wakefulness < self.wakefulness_sleeping
             and STATE.is_sleeping is False
         )
 
@@ -267,7 +277,7 @@ class Sleep(threading.Thread):
         returns whether we just now woke up
         """
         return (
-            STATE.wakefulness > self.wakefulness_awake
+            STATE.wakefulness > self.wakefulness_sleeping
             and STATE.is_sleeping is True
         )
 

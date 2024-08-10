@@ -6,6 +6,8 @@ import threading
 
 from christine.database import database
 
+from christine.llm_class import LLMAPI
+from christine.llm_none import Nothing
 
 class Status(threading.Thread):
     """
@@ -46,7 +48,7 @@ class Status(threading.Thread):
         self.lover_proximity = 0.5
 
         # Booleans for sleep/wake
-        self.is_tired = False
+        self.pre_sleep = False
         self.is_sleeping = False
 
         # Power systems
@@ -71,7 +73,12 @@ class Status(threading.Thread):
 
         # I want to be able to block new messages going to the LLM
         # We call this turning off your ears
-        self.parietal_lobe_blocked = False
+        self.perceptions_blocked = False
+
+        # I want to run midnight tasks, like moving memory around, only once per night
+        # so this is here to coordinate that activity
+        # records the exact time the task was done so that we can't double it up
+        self.midnight_tasks_done_time = 0.0
 
         # this is to signal all threads to properly shutdown
         self.please_shut_down = False
@@ -84,19 +91,34 @@ class Status(threading.Thread):
         # a proximity_volume_adjust of 1.0 means don't reduce the volume at all
         self.proximity_volume_adjust = 1.0
 
+        # this is the currently selected and available llm api
+        # set to None until the llm selector figures it out
+        self.current_llm: LLMAPI = Nothing()
+
         # settings for how many seconds to pause for various punctuation
         # if the utterance ends with question or a ..., pause a lot
         self.pause_question = 6.0
         # if the utterance ends with period, pause
-        self.pause_period = 4.0
+        self.pause_period = 2.0
         # if the utterance ends with comma, pause very little
-        self.pause_comma = 0.5
+        self.pause_comma = 0.2
 
         # setting controls how many seconds parietal_lobe will wait for additional perceptions
-        self.additional_perception_wait_seconds = 2.0
+        self.additional_perception_wait_seconds = 2.5
 
-        # this is the threshold for how long user's text should be before it is allowed to interrupt char
-        self.user_interrupt_char_threshold = 30
+        # this is the threshold for how long user's spoken text should be before it is allowed to interrupt char
+        self.user_interrupt_char_threshold = 20
+        # and this is a similar threshold for audio-ingesting models
+        # this is the total size in bytes of the audio data across all perceptions
+        # looking through the collection of audio samples, seems like 72044 was where a lot of the mmm sounds were
+        self.user_interrupt_char_threshold_audio = 73000
+
+        # this is the minimum number of narratives before a bunch of old narratives can be shipped off to cerebral cortex for summarize
+        self.cortex_min_narratives = 10
+        # this is how many minutes * seconds delay between the last message before shipping off narratives
+        self.cortex_delay_threshold = 5 * 60
+        # how many days of memories to keep, going to go large and see what happens
+        self.memory_days = 30
 
     def run(self):
         self.load_state()

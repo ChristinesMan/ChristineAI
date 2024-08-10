@@ -68,7 +68,7 @@ class Wernicke(threading.Thread):
         # The subprocess starts off just spinning it's wheels, chucking away any audio data it gets
         # Because it seemed like having everything happen all at once caused high cpu, then it would have to catch up
         # So wait some time, then send the signal to start
-        time.sleep(20)
+        time.sleep(60)
         self.audio_processing_start()
 
         while True:
@@ -88,7 +88,18 @@ class Wernicke(threading.Thread):
             # This is just a message to let wife know that I am now speaking and to wait until I'm finished
             if comm["class"] == "speaking_start":
 
+                # set this to True so that broca waits until I'm done speaking
                 STATE.user_is_speaking = True
+
+                # instantiate an empty perception object to hold it's place in the queue
+                new_perception = Perception(audio_data=b'Wait_for_it')
+
+                # and send it over to the parietal lobe
+                # it is important to get the perception object in the queue as soon as possible
+                # even before the audio data is received
+                # to prevent wife from speaking before I have finished
+                parietal_lobe.new_perception(new_perception)
+
                 log.broca_main.debug("SpeakingStart")
 
             # the audio data contains embedded sensor and voice proximity data
@@ -105,12 +116,11 @@ class Wernicke(threading.Thread):
                 # receive the audio data from the subprocess via the pipe
                 audio_data = self.to_away_team_audio.recv_bytes()
 
-                # start the new perception's thread to get the speech-to-text going
-                new_perception = Perception(audio_data=audio_data)
-                new_perception.start()
+                # add the new audio data to the perception object created earlier
+                new_perception.audio_data = audio_data
 
-                # and send it over to the parietal lobe for processing
-                parietal_lobe.new_perception(new_perception)
+                # start the new perception's thread to get the speech-to-text going
+                new_perception.start()
 
     def audio_recording_start(self, label):
         """
@@ -216,12 +226,8 @@ class Wernicke(threading.Thread):
             def __init__(self):
                 super().__init__()
 
-                # open the serial port coming in from the arduino that handles microphones and sensors
-                log.wernicke.info("Opening serial port")
-                self.serial_port_from_head = serial.Serial(  # pylint: disable=no-member
-                    "/dev/ttyACM0", baudrate=115200, exclusive=True
-                )
-                log.wernicke.info("Opened serial port")
+                # this is the serial port coming in from the arduino that handles microphones and sensors
+                self.serial_port_from_head = None
 
                 # this allows processing to be paused for a number of blocks
                 # if the buffer queue is full pause for a bit to let it catch up
@@ -234,6 +240,16 @@ class Wernicke(threading.Thread):
                 nonlocal shutdown
                 nonlocal proximity
 
+                # delay for a bit at startup to let the CPU catch up
+                time.sleep(40)
+
+                # open the serial port
+                log.wernicke.info("Opening serial port")
+                self.serial_port_from_head = serial.Serial(  # pylint: disable=no-member
+                    "/dev/ttyACM0", baudrate=115200, exclusive=True
+                )
+                log.wernicke.info("Opened serial port")
+
                 # keep track of the loop iteration because I want to do stuff with the sensor data only every 32nd block
                 # this is because we used to use a much larger block size. Since that was reduced there are lots of unnecessary sensor updates
                 loop_run = 0
@@ -243,8 +259,9 @@ class Wernicke(threading.Thread):
                     loop_run += 1
 
                     # A cron job will check this log to ensure this is still running
-                    # but I currently have this disabled, so let's save load
-                    # log.imhere.info("")
+                    # this is also a good way to see if the thread is still running
+                    if loop_run % 3200 == 0:
+                        log.imhere.info("")
 
                     # attempt to shutdown normally
                     if shutdown:
@@ -293,8 +310,8 @@ class Wernicke(threading.Thread):
 
                     # if we did not encounter sensor data, that means we are not aligned, so read in some shit and flush it
                     else:
-                        # read a full size of sensor + audio data. This should contain a sensor data block unless it's cut in half at the edges.
-                        data = self.serial_port_from_head.read(2086)
+                        # # read a full size of sensor + audio data. This should contain a sensor data block unless it's cut in half at the edges.
+                        # data = self.serial_port_from_head.read(2086)
 
                         # Find the start of the sensor block
                         fucking_pos = data.find(b"@!#?@!")
@@ -309,6 +326,7 @@ class Wernicke(threading.Thread):
                         else:
                             # It is theoretically possible for the sensor data to be cut off at the start or end
                             # So if we're not seeing it, read in and throw away 512 bytes and it ought to be in the middle
+                            log.wernicke.debug(data)
                             log.wernicke.info("No sensor data found. Adjusting audio stream by 512 bytes")
                             data = self.serial_port_from_head.read(512)
                             log.wernicke.info("Adjust done")

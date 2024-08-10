@@ -31,18 +31,18 @@ log.main.info("Script started")
 for thread in [
     STATE,
     broca,
-    parietal_lobe,
     cleaner,
+    cputemp,
+    sleep,
+    parietal_lobe,
     vagina,
     horny,
     wernicke,
     sex,
     gyro,
-    cputemp,
-    sleep,
     servers,
 ]:
-    time.sleep(1)
+    time.sleep(2)
     log.main.info('Starting %s', thread.name)
     thread.start()
 

@@ -9,6 +9,7 @@ import pickle
 import re
 import random
 from json.decoder import JSONDecodeError
+from json import load as json_load, dump as json_dump
 import requests
 import spacy
 from openai import OpenAI, APIConnectionError, APITimeoutError, APIStatusError, NotFoundError, InternalServerError
@@ -31,38 +32,81 @@ class CerebralCortex(threading.Thread):
         # we will strive to process messages during times of little activity, but could still potentially conflict
         self.llm_busy = False
 
-        # the prompt that will be used to summarize the messages
-        self.prompt = "### Instruction:Summarize the above text in a single paragraph of up to five detailed sentences.\n### Response:\n"
+        # What's your name, carbon based unit, you ugly bag of water, infesting earth
+        self.user_name = CONFIG['parietal_lobe']['user_name']
 
-        # The Narrative objects discarded by parietal lobe
-        self.narrative_history: list[Narrative] = []
+        # What's the name given to this sillicon based unit, the thinking machine, infesting the GPU
+        self.char_name = CONFIG['parietal_lobe']['char_name']
 
-        # How to connect to the LLM api. This is from config.ini file
-        self.base_url = CONFIG['parietal_lobe']['base_url']
-        self.api_key = CONFIG['parietal_lobe']['api_key']
+        # the prompt parts. The stuff goes in the middle, like a sandwich
+        self.prompt_top = f"You are {self.char_name}, a female android. {self.user_name} is your husband. There are many parts to your mind. Right now, you are processing a recent section of short-term memory into long-term memory.\n\n"
+        self.prompt_bottom = "### Instruction:Summarize the above text in a single paragraph of up to five detailed sentences.\n### Response:\n"
 
-        # setup the language model api
-        self.llm = OpenAI(
-            api_key=self.api_key,
-            base_url=self.base_url,
-        )
+        # paragraphs that summarize the events of up to 4 days ago and older. [0] is earlier today. [4] is 4 days ago. [5] is older
+        # these should include a trailing \n\n for ease of concatenation
+        self.long_term_memory: list[str] = ["", "", "", "", "", ""]
 
-    def accept_message(self, narrative: Narrative):
-        """Called by the parietal_lobe to store a discarded message for inclusion in long-term memory."""
+    def run(self):
 
-        log.cerebral_cortex.info("Accepting narrative: %s", narrative)
+        log.cerebral_cortex.debug('Starting up.')
 
-        # Store the narrative
-        self.narrative_history.extend(narrative)
+        # load the long-term memory from file
+        self.load_memories()
 
-    def summarize_messages(self):
-        """Uses the messages in memory to generate a summary."""
+        while True:
 
-    def recall_earlier_today(self):
-        """Returns a summary of the messages from earlier today."""
+            # for now just sleep, dunno what to do yet but there's going to be something, I can feel it
+            time.sleep(60)
 
-    def sleep_generate_yesterday_memory(self):
-        """Called by the sleep module after deep sleep to generate a summary of the messages from yesterday."""
+    def save_memories(self):
+        """Saves self.long_term_memory to a file."""
+
+        # save the list into the long_term_memory.json file
+        with open(file='long_term_memory.json', mode='w', encoding='utf-8') as long_term_memory_file:
+            json_dump(self.long_term_memory, long_term_memory_file, ensure_ascii=False, check_circular=False, indent=2)
+
+    def load_memories(self):
+        """Loads self.long_term_memory from a file."""
+
+        try:
+
+            # load the list from the file
+            with open(file='long_term_memory.json', mode='r', encoding='utf-8') as long_term_memory_file:
+                self.long_term_memory = json_load(long_term_memory_file)
+
+        except FileNotFoundError:
+            log.cerebral_cortex.warning('long_term_memory.json not found. Starting fresh.')
+
+    def make_new_memories(self, narratives: list[Narrative]):
+        """Called by the parietal_lobe to process a block of discarded messages for inclusion in short-term memory."""
+
+        # this is a circular import, but it's necessary, mass hysteria
+        # pylint: disable=import-outside-toplevel
+        from christine.api_selector import llm_selector
+
+        log.cerebral_cortex.info("Accepting narratives")
+
+        # start the prompt sandwich
+        prompt = self.prompt_top
+
+        # add the memories so far from earlier in the day
+        prompt += self.long_term_memory[0]
+
+        # for each narrative, add it to the prompt
+        for narrative in narratives:
+            prompt += narrative.text + "\n\n"
+
+        # add the bottom of the prompt sandwich
+        # by the way, this is a rediculous and unsanitary way to make a sandwich
+        prompt += self.prompt_bottom
+
+    def recall_memories(self):
+        """Returns all the memories from the long-term memory."""
+
+    def sleep(self):
+        """Called once upon entering deep sleep to generate a summary of the messages from yesterday and leave [0] empty for a new day."""
+
+
 
 # instantiate
 cerebral_cortex = CerebralCortex()

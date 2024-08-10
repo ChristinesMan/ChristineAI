@@ -1,4 +1,4 @@
-"""This thread will listen for the broca and wernicke servers to broadcast their IP addresses. When the servers are found, the IP address is stored in the thread. This thread will run in the background and will only stop when the broca server is connected."""
+"""This thread will handle the coordination and discovery of external servers and APIs that Christine will need to communicate with."""
 
 import time
 import socket
@@ -6,16 +6,17 @@ import threading
 
 from christine import log
 
-class ReceiveUDPLove(threading.Thread):
-    """Thread will listen to the UDP broadcast packets sent from server."""
+class Servers(threading.Thread):
+    """Thread will listen to the UDP broadcast packets sent from servers on the local network."""
 
-    name = "ReceiveUDPLove"
+    name = "Servers"
 
     def __init__(self):
         super().__init__(daemon=True)
 
         self.wernicke_ip = None
         self.broca_ip = None
+        self.llm_ip = None
 
     def run(self):
 
@@ -28,6 +29,10 @@ class ReceiveUDPLove(threading.Thread):
         broca_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         broca_sock.setblocking(False)
         broca_sock.bind(("0.0.0.0", 3001))
+        llm_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        llm_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        llm_sock.setblocking(False)
+        llm_sock.bind(("0.0.0.0", 3002))
 
         # repeatedly listen for UDP packets, only when server not connected
         while True:
@@ -43,7 +48,7 @@ class ReceiveUDPLove(threading.Thread):
 
                     if data == b'fuckme':
                         self.wernicke_ip = addr[0]
-                        log.server_discovery.debug('Received UDP packet from %s', self.wernicke_ip)
+                        log.server_discovery.info('Received UDP packet from %s', self.wernicke_ip)
 
                 if self.broca_ip is None:
 
@@ -52,9 +57,19 @@ class ReceiveUDPLove(threading.Thread):
 
                     if data == b'fuckme':
                         self.broca_ip = addr[0]
-                        log.server_discovery.debug('Received UDP packet from %s', self.broca_ip)
+                        log.server_discovery.info('Received UDP packet from %s', self.broca_ip)
+
+                if self.llm_ip is None:
+
+                    log.server_discovery.debug('Checking for llm')
+                    data, addr = llm_sock.recvfrom(1024)
+
+                    if data == b'fuckme':
+                        self.llm_ip = addr[0]
+                        log.server_discovery.info('Received UDP packet from %s', self.llm_ip)
 
             except BlockingIOError:
-                log.server_discovery.error('Got a BlockingIOError')
+                pass
+                # log.server_discovery.error('Got a BlockingIOError')
 
-servers = ReceiveUDPLove()
+servers = Servers()

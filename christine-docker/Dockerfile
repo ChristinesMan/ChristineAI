@@ -11,23 +11,13 @@ RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/g' /etc/ssh
 COPY /.ssh /root/.ssh
 RUN chown -R root:root /root/.ssh && chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys && service ssh start
 
-RUN pip install wheel gnureadline requests smbus numpy mpu6050-raspberrypi bottle RPi.GPIO Adafruit-Blinka adafruit-circuitpython-mpr121 pyserial google-generativeai pyaudio pydub debugpy pvcobra nltk scipy langchain
-RUN pip install weaviate-client
-RUN pip install pveagle
-RUN pip install requests-sse
-RUN pip install tiktoken
-RUN pip install spacy
+RUN pip install wheel gnureadline requests smbus numpy mpu6050-raspberrypi bottle RPi.GPIO Adafruit-Blinka adafruit-circuitpython-mpr121 pyserial google-generativeai pyaudio pydub debugpy pvcobra nltk scipy langchain weaviate-client pveagle requests-sse tiktoken spacy openai google-cloud-aiplatform jsons vertexai
 RUN python3.11 -m spacy download en_core_web_sm
-RUN pip install openai google-cloud-aiplatform
 RUN sed -i 's@"/completions",@"/prompt",@g' /usr/lib/python3.11/site-packages/openai/resources/completions.py
 
 # enable audio for testing, really should be up there ^
 RUN apt update && apt -y upgrade
 RUN apt install -y --no-install-recommends alsa-utils && apt-get clean
-
-# get this
-RUN pip install jsons
-RUN pip install vertexai
 
 # The touch sensor module needed some customization
 COPY /adafruit_mpr121.py /usr/lib/python3.11/site-packages/adafruit_mpr121.py

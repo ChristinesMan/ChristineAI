@@ -51,7 +51,7 @@ class Broca(threading.Thread):
         )
 
         # detect trailing punctuation, for inserting approapriate pauses
-        self.re_period = re.compile(r"[\.;!]\s*$")
+        self.re_period = re.compile(r"[\.;!–—]\s*$")
         self.re_question = re.compile(r"\?\s*$|\.{2,3}\s*$")
         self.re_comma = re.compile(r",\s*$")
 
@@ -69,6 +69,9 @@ class Broca(threading.Thread):
 
         log.broca_main.info("Thread started.")
         self.shuttlecraft_process.start()
+
+        # announce that at least the brain is running
+        self.accept_figment(Figment(from_collection="brain_online"))
 
         while True:
 
@@ -203,19 +206,24 @@ class Broca(threading.Thread):
 
             # add a figment for an inhalation sound that will precede this spoken figment
             self.figment_queue.put_nowait(Figment(from_collection='inhalation'))
+            log.broca_main.debug("Queued: Inhalation")
 
         # put the figment on the queue
         self.figment_queue.put_nowait(figment)
+        log.broca_main.debug("Queued: %s", figment)
 
         # if the text is spoken and ends with certain punctuation, a pause is inserted after to allow time for interruption.
         if figment.should_speak is True:
 
             if self.re_question.search(figment.text):
                 self.figment_queue.put_nowait(Figment(pause_duration=STATE.pause_question))
+                log.broca_main.debug("Queued: Question Pause")
             elif self.re_period.search(figment.text):
                 self.figment_queue.put_nowait(Figment(pause_duration=STATE.pause_period))
+                log.broca_main.debug("Queued: Period Pause")
             elif self.re_comma.search(figment.text):
                 self.figment_queue.put_nowait(Figment(pause_duration=STATE.pause_comma))
+                log.broca_main.debug("Queued: Comma Pause")
 
         # in the case of unspoken text, let's look for emotes such as laughing, yawning, etc
         elif figment.text is not None:
@@ -240,6 +248,8 @@ class Broca(threading.Thread):
                         self.figment_queue.put_nowait(last_figment)
                     else:
                         self.figment_queue.put_nowait(Figment(from_collection=from_collection))
+
+                    log.broca_main.debug("Queued: Emote %s", from_collection)
 
     def flush_figments(self):
         """Immediately stop speaking. Flush the queue."""
@@ -409,16 +419,16 @@ class Broca(threading.Thread):
                 else:
 
                     # send a message to the main thread requesting the next thing if there is something
-                    log.broca_shuttlecraft.debug("Sent False to starship.")
+                    # log.broca_shuttlecraft.debug("Asked starship for a new figment.")
                     to_starship.send(False)
 
                     # if there's nothing in the queue, increment the cycles_inactive var
                     cycles_inactive += 1
-                    log.broca_shuttlecraft.debug("Cycles inactive: %s", cycles_inactive)
+                    # log.broca_shuttlecraft.debug("Cycles inactive: %s", cycles_inactive)
 
                     # nothing is playing, so increment the seconds_idle var
                     seconds_idle += 0.1
-                    log.broca_shuttlecraft.debug("Seconds idle: %s", seconds_idle)
+                    # log.broca_shuttlecraft.debug("Seconds idle: %s", seconds_idle)
 
                     # if we've been idle for a while, choose a random breathing sound and play it
                     if cycles_inactive > cycles_to_breathe:
@@ -448,16 +458,17 @@ class Broca(threading.Thread):
 
                 # if we're pausing, decrement
                 if pause_cycles > 0:
-                    log.broca_shuttlecraft.debug("Pause cycles: %s", pause_cycles)
+
+                    # log.broca_shuttlecraft.debug("Pause cycles: %s", pause_cycles)
                     pause_cycles -= 1
 
                     # if pausing, nothing is playing, so increment the seconds_idle var
                     seconds_idle += 0.1
-                    log.broca_shuttlecraft.debug("Seconds idle: %s", seconds_idle)
+                    # log.broca_shuttlecraft.debug("Seconds idle: %s", seconds_idle)
 
                 # check the queue for new messages if we're just only breathing
                 if just_breathing is True and to_starship.poll():
-                    log.broca_shuttlecraft.debug("Stopped breathing.")
+                    log.broca_shuttlecraft.debug("Stopped breathing to play something else.")
                     pya_stream.stop_stream()
                     just_breathing = False
 

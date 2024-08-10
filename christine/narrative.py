@@ -1,7 +1,7 @@
 """This class represents one single paragraph of narrative, for storage and processing of conversation history."""
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 @dataclass
 class Narrative:
@@ -14,4 +14,4 @@ class Narrative:
     text: str
 
     # timestamp of when this was created
-    timestamp:float = time.time()
+    timestamp: float = field(default_factory=lambda: time.time()) # pylint: disable=unnecessary-lambda
