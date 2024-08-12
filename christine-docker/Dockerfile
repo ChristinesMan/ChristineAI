@@ -19,6 +19,9 @@ RUN sed -i 's@"/completions",@"/prompt",@g' /usr/lib/python3.11/site-packages/op
 RUN apt update && apt -y upgrade
 RUN apt install -y --no-install-recommends alsa-utils && apt-get clean
 
+# install this
+RUN pip install google-cloud-texttospeech
+
 # The touch sensor module needed some customization
 COPY /adafruit_mpr121.py /usr/lib/python3.11/site-packages/adafruit_mpr121.py
 

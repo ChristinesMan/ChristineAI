@@ -280,8 +280,9 @@ class ParietalLobe(threading.Thread):
         while llm_selector.find_available_llm() is False:
             time.sleep(5)
 
-        # now that there's an LLM available, send an initial power on message
-        self.power_on_message()
+        # now that there's an LLM available, send an initial power on message, but only if down more than 6m
+        if self.downtime_seconds > 360.0:
+            self.power_on_message()
 
         while True:
 

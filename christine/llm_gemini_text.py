@@ -54,6 +54,13 @@ class GeminiText(LLMAPI):
         self.prompt_limit_chars = self.token_limit * self.tokens_per_chars_estimate
         self.messages_limit_chars = self.prompt_limit_chars - len(lobe.context) - len(lobe.personality) - len(lobe.instruction)
 
+        # we will be segmenting spoken parts, inserting short and long pauses
+        # If a token matches any of these she will just pause
+        # overriding this for Gemini because we are starting to use Google's TTS and it's better not pausing at commas
+        self.re_pause_tokens = re.compile(
+            r"^\.{1,3} $|^: $|^\? $|^! $|^[–—-] ?$|^s\. $", flags=re.IGNORECASE
+        )
+
         # this application has no need for safety settings
         self.safety_settings = {
             HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
@@ -583,7 +590,7 @@ class GeminiText(LLMAPI):
                                     for oopsies in self.lobe.nlp(token_collator):
                                         oops = oopsies.text_with_ws
                                         oops_collator += oops
-                                        if self.lobe.re_pause_tokens.search(oops):
+                                        if self.re_pause_tokens.search(oops):
                                             broca.accept_figment(Figment(text=oops_collator, should_speak=True, pause_wernicke=True))
                                             oops_collator = ''
                                     if oops_collator != '':
@@ -609,7 +616,7 @@ class GeminiText(LLMAPI):
                         # If we hit punctuation in the middle of a quoted section, ship it out, a complete utterance
                         # it's important to have these pauses between speaking
                         # if it's not a speaking part, we don't care, glob it all together
-                        if is_inside_quotes is True and self.lobe.re_pause_tokens.search(token):
+                        if is_inside_quotes is True and self.re_pause_tokens.search(token):
 
                             # ship the spoken sentence we have so far to broca for speakage
                             # log.parietal_lobe.debug('Shipped: %s', shit_collator)

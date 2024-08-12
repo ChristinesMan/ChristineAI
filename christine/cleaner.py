@@ -46,17 +46,19 @@ class Cleaner(threading.Thread):
 
     def clean_wernicke_cache(self):
         """An audio-ingesting LLM such as Gemini Audio may cache audio files. Clean them up."""
-        
+
         seconds_below_to_delete = time.time() - self.cache_ttl
         cache_dir = 'sounds/wernicke'
         files_deleted = 0
-        for file_name in os.listdir(cache_dir):
-            if '.wav' in file_name:
-                file_path = os.path.join(cache_dir, file_name)
-                if os.path.getmtime(file_path) < seconds_below_to_delete:
-                    os.remove(file_path)
-                    files_deleted += 1
-
+        try:
+            for file_name in os.listdir(cache_dir):
+                if '.wav' in file_name:
+                    file_path = os.path.join(cache_dir, file_name)
+                    if os.path.getmtime(file_path) < seconds_below_to_delete:
+                        os.remove(file_path)
+                        files_deleted += 1
+        except FileNotFoundError:
+            pass
         log.main.info('Cleaned wernicke cache, deleted %s files.', files_deleted)
 
 cleaner = Cleaner()

@@ -201,6 +201,11 @@ class Broca(threading.Thread):
         # if the new figment is to be spoken,
         if figment.should_speak is True:
 
+            # if a spoken figment gets through with no letters at all, drop it. Usually this is '" '
+            if re.search(r'[a-zA-Z]', figment.text) is None:
+                log.broca_main.warning("Empty string spoken figment.")
+                return
+
             # start the thread asap to get the api call for synthesized speech going
             figment.start()
 
@@ -398,6 +403,7 @@ class Broca(threading.Thread):
                             last_volume = comms["vol"]
 
                         # stop stream, open new wav file, and start the stream back up
+                        log.broca_shuttlecraft.info("Playing %s", comms["wavfile"])
                         pya_stream.stop_stream()
                         wav_data = wave.open(comms["wavfile"])
                         pya_stream.start_stream()

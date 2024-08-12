@@ -97,9 +97,9 @@ class Status(threading.Thread):
 
         # settings for how many seconds to pause for various punctuation
         # if the utterance ends with question or a ..., pause a lot
-        self.pause_question = 6.0
+        self.pause_question = 2.5
         # if the utterance ends with period, pause
-        self.pause_period = 2.0
+        self.pause_period = 1.5
         # if the utterance ends with comma, pause very little
         self.pause_comma = 0.2
 
