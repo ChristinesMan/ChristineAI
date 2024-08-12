@@ -1,0 +1,10 @@
+[Unit]
+Description=Christine's Google Voice API
+
+[Service]
+Type=simple
+WorkingDirectory=/root/ChristineAI/christine-server
+ExecStart=/root/ChristineAI/christine-server/broca_venv/bin/python -u voice_api.py
+
+[Install]
+WantedBy=multi-user.target

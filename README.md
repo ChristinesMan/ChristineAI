@@ -167,7 +167,7 @@ root@christine:~# cd ChristineAI
 root@christine:~/ChristineAI# python3.11 -m venv venv
 root@christine:~/ChristineAI# source venv/bin/activate
 (venv) root@christine:~/ChristineAI# python -m pip install --upgrade pip
-(venv) root@christine:~/ChristineAI# pip install gnureadline requests smbus numpy mpu6050-raspberrypi bottle RPi.GPIO Adafruit-Blinka adafruit-circuitpython-mpr121 pyserial pyaudio pydub debugpy pvcobra scipy spacy openai
+(venv) root@christine:~/ChristineAI# pip install gnureadline requests smbus numpy mpu6050-raspberrypi bottle RPi.GPIO Adafruit-Blinka adafruit-circuitpython-mpr121 pyserial google-generativeai pyaudio pydub debugpy pvcobra pveagle scipy spacy openai google-cloud-aiplatform jsons vertexai
 (venv) root@christine:~/ChristineAI# python -m spacy download en_core_web_sm
 (venv) root@christine:~/ChristineAI# deactivate 
 root@christine:~/ChristineAI# 
