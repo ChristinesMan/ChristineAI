@@ -27,6 +27,9 @@ class Sleep(threading.Thread):
         self.announce_tired_time = None
         self.current_hour = time.localtime()
 
+        # variables for running the midnight memory task only once per night, and only after being asleep for a period of time
+        self.midnight_process_time = None
+
         # The current conditions, right now. Basically light levels, gyro, noise level, touch, etc all added together, then we calculate a running average to cause gradual drowsiness. zzzzzzzzzz.......
         self.current_environmental_conditions = 0.5
 
@@ -139,6 +142,10 @@ class Sleep(threading.Thread):
             if self.time_to_whine():
                 self.whine()
 
+            # If it's time to run the midnight process, do it
+            if self.is_time_for_midnight_process():
+                self.mightnight_process()
+
             # if sleeping, drop the breathing intensity down a bit
             # eventually after about 15m this will reach 0.0 and stay there
             # this doesn't work but eventually it'd be nice to put it back
@@ -218,11 +225,8 @@ class Sleep(threading.Thread):
             # this lets every other module know we're sleeping
             STATE.is_sleeping = True
 
-            # Now that we're really asleep, run the midnight task, only once per night
-            # if this was done within the last 8 hours, don't do it again
-            if STATE.midnight_tasks_done_time < time.time() - (8 * 60 * 60):
-                parietal_lobe.sleep_midnight_task()
-                STATE.midnight_tasks_done_time = time.time()
+            # set the time for the midnight process to run
+            self.set_midnight_process_time()
 
         if self.just_woke_up() is True:
             log.sleep.info("JustWokeUp")
@@ -297,10 +301,6 @@ class Sleep(threading.Thread):
         sets up some whining at a certain time in the future
         """
         self.announce_tired_time = self.random_minutes_later(15, 30)
-        log.sleep.info(
-            "set time to announce we are tired to %s minutes",
-            (self.announce_tired_time - time.time()) / 60,
-        )
 
     def time_to_whine(self):
         """
@@ -313,14 +313,48 @@ class Sleep(threading.Thread):
 
     def whine(self):
         """
-        Actually start whining
+        Actually start whining, but only actually whine if the lights are still on.
         """
 
         # pylint: disable=import-outside-toplevel
         from christine.parietal_lobe import parietal_lobe
 
-        parietal_lobe.sleep_tired()
-        self.announce_tired_time = None
+        if STATE.light_level > 0.05:
+            log.sleep.info("Whining that I'm tired")
+            parietal_lobe.sleep_tired()
+            self.announce_tired_time = None
+
+    def set_midnight_process_time(self):
+        """
+        sets up some process to run at midnight
+        """
+        self.midnight_process_time = self.random_minutes_later(45, 60)
+
+    def is_time_for_midnight_process(self):
+        """
+        returns whether or not it's now time to run the midnight process
+        """
+        return (
+            self.midnight_process_time is not None
+            and time.time() >= self.midnight_process_time
+        )
+
+    def mightnight_process(self):
+        """
+        Actually run the midnight process, but only if currently still sleeping.
+        """
+
+        # pylint: disable=import-outside-toplevel
+        from christine.parietal_lobe import parietal_lobe
+
+        # Now that we're really asleep for a while, run the midnight task, only once per night
+        # if this was done within the last 8 hours, don't do it again
+        if STATE.midnight_tasks_done_time < time.time() - (8 * 60 * 60) and STATE.is_sleeping is True:
+            log.sleep.info("Running midnight process")
+            parietal_lobe.sleep_midnight_task()
+            STATE.midnight_tasks_done_time = time.time()
+
+        self.midnight_process_time = None
 
     def random_minutes_later(self, minutes_min, minutes_max):
         """

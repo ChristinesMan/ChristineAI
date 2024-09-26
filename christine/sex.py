@@ -244,10 +244,11 @@ class Sex(threading.Thread):
 
             else:
 
-                # 92% chance of a regular sex sound, 8% chance of asking LLM for her take
-                if random.random() > 0.92:
+                # 97% chance of a regular sex sound, 3% chance of asking LLM for her take
+                if random.random() > 0.97:
 
-                    parietal_lobe.process_new_perceptions()
+                    log.sex.info('Allowing LLM to speak.')
+                    STATE.current_llm.process_new_perceptions()
 
                 else:
 

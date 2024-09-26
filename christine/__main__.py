@@ -62,4 +62,4 @@ STATE.please_shut_down = True
 database.disconnect()
 
 # wait a bit to allow graceful shutdown
-time.sleep(2)
+time.sleep(4)

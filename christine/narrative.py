@@ -1,17 +1,26 @@
-"""This class represents one single paragraph of narrative, for storage and processing of conversation history."""
+"""This class represents one single turn of narrative, for storage and processing of conversation history."""
 
 import time
-from dataclasses import dataclass, field
 
-@dataclass
 class Narrative:
-    """This class represents one single paragraph of narrative, for storage and processing of conversation history."""
+    """This class represents one single turn of narrative, for storage and processing of conversation history."""
 
-    # the role of this paragraph, such as system, user, or char
-    role: str
+    def __init__(self, role: str, text: str = ''):
 
-    # the paragraph of text
-    text: str
+        # the role such as system, user, or char
+        self.role: str = role
 
-    # timestamp of when this was created
-    timestamp: float = field(default_factory=lambda: time.time()) # pylint: disable=unnecessary-lambda
+        # the paragraph of text (for a text-only LLM)
+        self.text: str = text
+
+        # timestamp of when this was created
+        self.timestamp: float = time.time()
+
+    def to_dict(self) -> dict:
+        """Converts the Narrative object to a dictionary."""
+
+        return {
+            "role": self.role,
+            "text": self.text,
+            "timestamp": self.timestamp
+        }

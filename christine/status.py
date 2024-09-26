@@ -108,17 +108,17 @@ class Status(threading.Thread):
 
         # this is the threshold for how long user's spoken text should be before it is allowed to interrupt char
         self.user_interrupt_char_threshold = 20
-        # and this is a similar threshold for audio-ingesting models
-        # this is the total size in bytes of the audio data across all perceptions
-        # looking through the collection of audio samples, seems like 72044 was where a lot of the mmm sounds were
-        self.user_interrupt_char_threshold_audio = 73000
 
         # this is the minimum number of narratives before a bunch of old narratives can be shipped off to cerebral cortex for summarize
-        self.cortex_min_narratives = 10
+        self.memory_folding_min_narratives = 15
         # this is how many minutes * seconds delay between the last message before shipping off narratives
-        self.cortex_delay_threshold = 5 * 60
+        self.memory_folding_delay_threshold = 5 * 60
         # how many days of memories to keep, going to go large and see what happens
-        self.memory_days = 30
+        # it was horrible after 14 days, so I'm going to try 5, and implement longer term later
+        # she went crazy again after 5 days, so I'm going to try 2
+        # but she's doing so well, so 5 again
+        # omg shut up about the pancakes during sex. 1 day. That's all you can handle I guess.
+        self.memory_days = 3
 
     def run(self):
         self.load_state()

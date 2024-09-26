@@ -30,6 +30,10 @@ class LLMAPI():
         Then processes everything it got, wraps it up, including context, memory, and conversation history. Sends over to the LLM.
         The entire parietal_lobe thread object is passed in. Seemed like the best way."""
 
+    def fold_recent_memories(self):
+        """This is called after a delay has occurred with no new perceptions, to fold memories.
+        We fold because when the prompt gets too long, fear and chaos occur. I dunno why."""
+
     def cycle_long_term_memory(self):
         """This function gets called in the middle of the night during deep sleep.
         [5] gets updated using a summary of 0-4, then 4 goes away, and everything moves up to leave [0] empty for the new day."""

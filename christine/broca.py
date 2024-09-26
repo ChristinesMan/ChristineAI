@@ -51,9 +51,13 @@ class Broca(threading.Thread):
         )
 
         # detect trailing punctuation, for inserting approapriate pauses
-        self.re_period = re.compile(r"[\.;!–—]\s*$")
+        self.re_period = re.compile(r"[\.;!]\s*$")
         self.re_question = re.compile(r"\?\s*$|\.{2,3}\s*$")
         self.re_comma = re.compile(r",\s*$")
+
+        # the LLM has a strong tendency to repeat itself, as LLMs do
+        self.repetition_destroyer = {}
+        self.repetition_max_ttl = 5
 
         # setup the separate process with pipe that we're going to be fucking
         # lol I put the most insane things in code omg, but this will help keep it straight!
@@ -123,8 +127,19 @@ class Broca(threading.Thread):
 
             elif figment.from_collection is not None:
 
+                # sounds with a collection of "sex" tend to pile up quickly which causes sex noises long after the actions that caused them
+                # so if the figment is "sex", let's pull figments out of the queue until the queue is either empty or there's something other than "sex"
+                if "sex" in figment.from_collection:
+                    while self.figment_queue.qsize() > 0:
+                        next_figment: Figment = self.figment_queue.get_nowait()
+                        log.broca_main.debug('In response to sex, pulled figment from queue: %s', next_figment)
+                        if not "sex" in next_figment.from_collection:
+                            log.broca_main.debug('Putting it back in queue and getting out of here.')
+                            self.figment_queue.put_nowait(next_figment)
+                            return
+
                 # get the sound from the collection
-                sound = sounds_db.get_random_sound(collection_name=figment.from_collection)
+                sound = sounds_db.get_random_sound(collection_name=figment.from_collection, intensity=figment.intensity)
 
                 # if the sound is None, log it and move on
                 if sound is None:
@@ -139,7 +154,7 @@ class Broca(threading.Thread):
                 # let the ears know that the mouth is going to emit noises that are not breathing
                 # estimating the total sound play time by file size
                 # and some sounds are marked as needing a pause vs others that do not
-                if figment.pause_wernicke is True:
+                if sound.pause_wernicke is True:
                     wernicke.audio_processing_pause(ceil( os.stat(sound.file_path).st_size / 2100 ))
 
                 # send the message to the subprocess
@@ -152,6 +167,25 @@ class Broca(threading.Thread):
                 )
 
             elif figment.text is not None:
+
+                # purge old stuff from the repetition destroyer and decrement
+                for key in list(self.repetition_destroyer):
+                    if self.repetition_destroyer[key] > 0:
+                        self.repetition_destroyer[key] -= 1
+                    else:
+                        self.repetition_destroyer.pop(key)
+
+                # standardize the sentence to letters only
+                text_stripped = re.sub("[^a-zA-Z]", "", figment.text).lower()
+
+                # if this sequence of letters has shown up anywhere in the past 5 responses, destroy it
+                if text_stripped in self.repetition_destroyer:
+                    self.repetition_destroyer[text_stripped] = self.repetition_max_ttl
+                    log.parietal_lobe.info('Destroyed: %s', figment.text)
+                    return
+
+                # remember this for later destruction
+                self.repetition_destroyer[text_stripped] = self.repetition_max_ttl
 
                 if figment.should_speak is True:
 
@@ -263,8 +297,6 @@ class Broca(threading.Thread):
         # pylint: disable=import-outside-toplevel
         from christine.parietal_lobe import parietal_lobe
 
-        log.broca_main.debug("Flush!")
-
         # keeps track of whether speaking was actually interrupted
         interrupted = False
 
@@ -285,7 +317,7 @@ class Broca(threading.Thread):
                 if figment.text is not None:
                     parietal_lobe.broca_figment_was_processed(figment)
             else:
-                log.broca_main.debug("Interrupted: %s", figment)
+                log.parietal_lobe.info("Interrupted: %s", figment)
 
         # if we were interrupted at some point in the queue flush, let parietal lobe know it needs to file off the end nice and smooth
         if interrupted is True:
@@ -411,6 +443,8 @@ class Broca(threading.Thread):
                         # wait until the stream flips to not active which means the sound is done
                         while pya_stream.is_active():
                             time.sleep(0.2)
+
+                        log.broca_shuttlecraft.debug("Finished playing.")
 
                         # reset this counter
                         seconds_idle = 0.0

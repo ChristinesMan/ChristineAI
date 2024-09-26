@@ -68,7 +68,10 @@ class Wernicke(threading.Thread):
         # The subprocess starts off just spinning it's wheels, chucking away any audio data it gets
         # Because it seemed like having everything happen all at once caused high cpu, then it would have to catch up
         # So wait some time, then send the signal to start
+        # but if there's no llm, then we don't want to start the audio processing
         time.sleep(60)
+        while STATE.current_llm.name == "Nothing_LLM":
+            time.sleep(30)
         self.audio_processing_start()
 
         while True:
@@ -88,8 +91,10 @@ class Wernicke(threading.Thread):
             # This is just a message to let wife know that I am now speaking and to wait until I'm finished
             if comm["class"] == "speaking_start":
 
-                # set this to True so that broca waits until I'm done speaking
-                STATE.user_is_speaking = True
+                if STATE.shush_fucking is False:
+                    # set this to True so that broca waits until I'm done speaking
+                    # unless we're fucking (trying this, might not work)
+                    STATE.user_is_speaking = True
 
                 # instantiate an empty perception object to hold it's place in the queue
                 new_perception = Perception(audio_data=b'Wait_for_it')
@@ -275,7 +280,7 @@ class Wernicke(threading.Thread):
                     # for some reason if I read 38, then do stuff, then read 2048, it never lines up, so, at length, I now read all at once
                     data = self.serial_port_from_head.read(2086)
 
-                    # if we read the sensor data, that means we're lined up
+                    # if we read the sensor data at the start of data, that means we're lined up
                     if data[0:6] == b"@!#?@!":
 
                         # but we only want to do stuff with sensor data every 32nd run, the rest of the time it's discarded
@@ -310,8 +315,6 @@ class Wernicke(threading.Thread):
 
                     # if we did not encounter sensor data, that means we are not aligned, so read in some shit and flush it
                     else:
-                        # # read a full size of sensor + audio data. This should contain a sensor data block unless it's cut in half at the edges.
-                        # data = self.serial_port_from_head.read(2086)
 
                         # Find the start of the sensor block
                         fucking_pos = data.find(b"@!#?@!")
@@ -325,11 +328,20 @@ class Wernicke(threading.Thread):
 
                         else:
                             # It is theoretically possible for the sensor data to be cut off at the start or end
-                            # So if we're not seeing it, read in and throw away 512 bytes and it ought to be in the middle
-                            log.wernicke.debug(data)
-                            log.wernicke.info("No sensor data found. Adjusting audio stream by 512 bytes")
-                            data = self.serial_port_from_head.read(512)
-                            log.wernicke.info("Adjust done")
+                            # So if we're not seeing it, read in and throw away some odd amount of bytes and it ought to be in the middle
+                            # And this is exactly how it should work, but it often fucks up right here.
+                            # So I'm going to try to fix it by disconnecting and reconnecting
+                            # log.wernicke.debug(data)
+                            # log.wernicke.info("No sensor data found. Adjusting audio stream by 3000 bytes")
+                            # data = self.serial_port_from_head.read(3000)
+                            # log.wernicke.info("Adjust done")
+                            log.wernicke.info("No sensor data found. Ripping it out.")
+                            self.serial_port_from_head.close()
+                            time.sleep(5)
+                            self.serial_port_from_head = serial.Serial(  # pylint: disable=no-member
+                                "/dev/ttyACM0", baudrate=115200, exclusive=True
+                            )
+                            log.wernicke.info("Shoved it back in.")
 
                         # continue to the start of the loop where we should be well adjusted
                         continue
@@ -420,22 +432,19 @@ class Wernicke(threading.Thread):
                 nonlocal buffer_queue
 
                 # first we get 2 channels from the serial port
-                # 16000 bytes is 4000 frames or 0.25s (or it used to be prior to pvcobra)
-                # and we're also amplifying here
-                # I should really run some real tests to nail down what amplification is best for accuracy
-                # Seriously, I threw in "24" and maybe listened to a sample, that's it
-
-                # turns out the best amps after much testing was 42
-                # decided later on that's a bit excessive. 40?
-                # favoring her right ear now, because that's the ear I whisper sweet good nights in, and that's her best ear
-                # or is it? I have not tested for a long time
+                # frame size is 512, width is 16 bit, rate is 16000, channels is 2
+                # so each block is 512 * 2 * 2 = 2048 bytes
+                # then we split it into two mono channels, and take the second one, because that's her best ear
+                # then we add 15 to the volume because the mics are really quiet
+                # so this happens 31.25 times per second
+                # which also means 0.032 seconds per block
                 in_audio = (
                     AudioSegment(
                         data=buffer_queue.get(),
                         sample_width=2,
                         frame_rate=16000,
                         channels=2,
-                    ).split_to_mono()[1] + 40
+                    ).split_to_mono()[1] + 15
                 )
 
                 return in_audio.raw_data
@@ -497,7 +506,7 @@ class Wernicke(threading.Thread):
                             ring_buffer.clear()
 
                             # this is to track how many silent/ignore blocks we've had, so we can stop at some point
-                            post_silence = 70
+                            post_silence = 80
 
                     # TRIGGERED!
                     # when triggered, it means we are currently in the middle of an utterance and accumulating it into a ball of data
@@ -509,10 +518,11 @@ class Wernicke(threading.Thread):
                         yield block
 
                         # if this is a lover or lover_maybe block, reset the counter, else if it's not lover determine if we should end streaming
-                        if block_prob >= triggered_prob:
+                        # also I want to make it easier to trigger when already triggered
+                        if block_prob >= triggered_prob * 0.8:
 
-                            # reset the counter of consecutive silent blocks, because we got one that was not
-                            post_silence = 70
+                            # reset the counter of consecutive silent blocks, because we got one that was not silent
+                            post_silence = 80
 
                         else:
 

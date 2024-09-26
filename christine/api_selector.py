@@ -16,9 +16,8 @@ class LLMSelector:
         # list of all possible LLM APIs in order of preference
         # "ClassName": "name",
         self.llm_apis = {
+            "GeminiWithWhisper": "gemini_with_whisper_api",
             "Chub": "chub",
-            "GeminiText": "gemini_text",
-            "GeminiAudio": "gemini_audio",
             "OpenAI": "openai",
         }
 
@@ -35,12 +34,18 @@ class LLMSelector:
         # for each LLM API, check if it is enabled in the config
         # if it is, import it, instantiate it, and add it to the list of enabled LLM APIs
         for llm_class_name, llm_name in self.llm_apis.items():
-            if CONFIG['parietal_lobe'][f"{llm_name}_enabled"] == "yes":
-                log.parietal_lobe.info('LLM %s is enabled', llm_class_name)
-                module = importlib.import_module(f"christine.llm_{llm_name}")
-                llm_class = getattr(module, llm_class_name)
-                log.parietal_lobe.info('Instantiating %s', llm_class_name)
-                self.llm_enabled.append(llm_class(parietal_lobe))
+            log.parietal_lobe.debug('Checking if %s is enabled', llm_class_name)
+            try:
+                if CONFIG['parietal_lobe'][f"{llm_name}_enabled"] == "yes":
+                    log.parietal_lobe.debug('LLM %s is enabled', llm_class_name)
+                    module = importlib.import_module(f"christine.llm_{llm_name}")
+                    llm_class = getattr(module, llm_class_name)
+                    log.parietal_lobe.info('Instantiating %s', llm_class_name)
+                    self.llm_enabled.append(llm_class(parietal_lobe))
+                else:
+                    log.parietal_lobe.debug('LLM %s is disabled', llm_class_name)
+            except KeyError as ex:
+                log.parietal_lobe.exception(ex)
 
     def find_available_llm(self):
         """This is called once at startup and when the current LLM API is no longer available."""
@@ -48,7 +53,7 @@ class LLMSelector:
         # go through the llm_apis list and find the next available one
         for llm in self.llm_enabled:
 
-            log.parietal_lobe.info('Checking if %s is available', llm.name)
+            log.parietal_lobe.debug('Checking if %s is available', llm.name)
             # if the llm is available, switch to it
             if llm.is_available():
                 log.parietal_lobe.info('Using %s', llm.name)

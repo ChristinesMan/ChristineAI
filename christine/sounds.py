@@ -66,7 +66,7 @@ class SoundsDB():
                 self.sounds[sound_id] = sound
 
 
-    def get_random_sound(self, collection_name, intensity=None):
+    def get_random_sound(self, collection_name, intensity=None) -> Sound | None:
         """Retrieve a random sound from a collection. Optionally, specify an intensity level."""
 
         # fail with a warning if the collection does not exist

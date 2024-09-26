@@ -19,8 +19,21 @@ class Nothing(LLMAPI):
         # nothing to do here, just return an empty list
         return []
 
-    def process_new_perceptions(self, lobe):
+    def process_new_perceptions(self):
         """Bespoke af implementation of throw it all in the trash."""
 
-        # nothing to do here, just return
+        from christine.status import STATE # pylint: disable=import-outside-toplevel
+        STATE.user_is_speaking = False
+
+        # just return
+        return
+
+    def fold_recent_memories(self):
+        """Nothing is done here, just return."""
+
+        return
+
+    def cycle_long_term_memory(self):
+        """Nothing is done here, just return."""
+
         return
