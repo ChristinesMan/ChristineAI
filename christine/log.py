@@ -58,6 +58,10 @@ neocortex = setup_logger("neocortex", level=logging.DEBUG)
 server_discovery = setup_logger("server_discovery")
 imhere = setup_logger("imhere", level=logging.INFO, msg_format="%(module)s.%(funcName)s.%(created)d")
 
+def play_sound():
+    """Function to play an exception sound"""
+
+    os.system('aplay ./sounds/erro.wav')
 
 def log_exception(_, value, trace_back):
     """

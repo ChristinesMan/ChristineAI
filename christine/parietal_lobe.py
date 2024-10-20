@@ -347,25 +347,32 @@ You respond, "Yes, I am here. What do you need?" You feel a sense of urgency in 
 
         while True:
 
-            # graceful shutdown
-            if STATE.please_shut_down:
-                self.short_term_memory.save()
-                self.long_term_memory.save()
-                break
+            try:
 
-            # this starts sending perceptions as soon as there's any queued
-            if self.perception_queue.qsize() > 0 and STATE.shush_fucking is False and STATE.perceptions_blocked is False:
+                # graceful shutdown
+                if STATE.please_shut_down:
+                    self.short_term_memory.save()
+                    self.long_term_memory.save()
+                    break
 
-                # send the new perceptions to whatever is the current LLM
-                STATE.current_llm.process_new_perceptions()
+                # this starts sending perceptions as soon as there's any queued
+                if self.perception_queue.qsize() > 0 and STATE.shush_fucking is False and STATE.perceptions_blocked is False:
 
-            # if it has been 5 minutes since the last perception, fold the recent memories
-            if self.last_message_time + STATE.memory_folding_delay_threshold < time.time() and self.short_term_memory.recent_messages > STATE.memory_folding_min_narratives:
+                    # send the new perceptions to whatever is the current LLM
+                    STATE.current_llm.process_new_perceptions()
 
-                # whatever is the current LLM handles this
-                STATE.current_llm.fold_recent_memories()
+                # if it has been 5 minutes since the last perception, fold the recent memories
+                if self.last_message_time + STATE.memory_folding_delay_threshold < time.time() and self.short_term_memory.recent_messages > STATE.memory_folding_min_narratives:
 
-            time.sleep(0.25)
+                    # whatever is the current LLM handles this
+                    STATE.current_llm.fold_recent_memories()
+
+                time.sleep(0.25)
+
+            # log the exception but keep the thread running
+            except Exception as ex:
+                log.main.exception(ex)
+                log.play_sound()
 
     def power_on_message(self):
         """When this body starts up, send the LLM a current status."""

@@ -79,4 +79,10 @@ class Servers(threading.Thread):
                 pass
                 # log.server_discovery.error('Got a BlockingIOError')
 
+            # log the exception but keep the thread running
+            except Exception as ex:
+                log.main.exception(ex)
+                log.play_sound()
+
+
 servers = Servers()

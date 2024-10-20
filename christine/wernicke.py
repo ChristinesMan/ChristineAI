@@ -76,60 +76,67 @@ class Wernicke(threading.Thread):
 
         while True:
 
-            # graceful shutdown
-            # this will attempt to close the serial port and shutdown gracefully
-            # if the serial port fails to get closed properly, it often locks up
-            if STATE.please_shut_down:
-                log.wernicke.info("Thread shutting down")
-                self.to_away_team.send({"msg": "shutdown"})
-                time.sleep(1)
-                break
+            try:
 
-            # This will block right here until the away team sends a message to the enterprise
-            comm = self.to_away_team.recv()
+                # graceful shutdown
+                # this will attempt to close the serial port and shutdown gracefully
+                # if the serial port fails to get closed properly, it often locks up
+                if STATE.please_shut_down:
+                    log.wernicke.info("Thread shutting down")
+                    self.to_away_team.send({"msg": "shutdown"})
+                    time.sleep(1)
+                    break
 
-            # This is just a message to let wife know that I am now speaking and to wait until I'm finished
-            if comm["class"] == "speaking_start":
+                # This will block right here until the away team sends a message to the enterprise
+                comm = self.to_away_team.recv()
 
-                if STATE.shush_fucking is False:
-                    # set this to True so that broca waits until I'm done speaking
-                    # unless we're fucking (trying this, might not work)
-                    STATE.user_is_speaking = True
+                # This is just a message to let wife know that I am now speaking and to wait until I'm finished
+                if comm["class"] == "speaking_start":
 
-                # instantiate an empty perception object to hold it's place in the queue
-                new_perception = Perception(audio_data=b'Wait_for_it')
+                    if STATE.shush_fucking is False:
+                        # set this to True so that broca waits until I'm done speaking
+                        # unless we're fucking (trying this, might not work)
+                        STATE.user_is_speaking = True
 
-                # and send it over to the parietal lobe
-                # it is important to get the perception object in the queue as soon as possible
-                # even before the audio data is received
-                # to prevent wife from speaking before I have finished
-                parietal_lobe.new_perception(new_perception)
+                    # instantiate an empty perception object to hold it's place in the queue
+                    new_perception = Perception(audio_data=b'Wait_for_it')
 
-                log.broca_main.debug("SpeakingStart")
+                    # and send it over to the parietal lobe
+                    # it is important to get the perception object in the queue as soon as possible
+                    # even before the audio data is received
+                    # to prevent wife from speaking before I have finished
+                    parietal_lobe.new_perception(new_perception)
 
-            # the audio data contains embedded sensor and voice proximity data
-            elif comm["class"] == "sensor_data":
+                    log.broca_main.debug("SpeakingStart")
 
-                light.new_data(comm["light"])
-                touch.new_data(comm["touch"])
-                STATE.lover_proximity = comm["proximity"]
+                # the audio data contains embedded sensor and voice proximity data
+                elif comm["class"] == "sensor_data":
 
-            # Words from the speech recognition server
-            elif comm["class"] == "utterance":
-                log.wernicke.info("Received new utterance")
+                    light.new_data(comm["light"])
+                    touch.new_data(comm["touch"])
+                    STATE.lover_proximity = comm["proximity"]
 
-                # receive the audio data from the subprocess via the pipe
-                audio_data = self.to_away_team_audio.recv_bytes()
+                # Words from the speech recognition server
+                elif comm["class"] == "utterance":
+                    log.wernicke.info("Received new utterance")
 
-                # add the new audio data to the perception object created earlier
-                new_perception.audio_data = audio_data
+                    # receive the audio data from the subprocess via the pipe
+                    audio_data = self.to_away_team_audio.recv_bytes()
 
-                # start the new perception's thread to get the speech-to-text going
-                new_perception.start()
+                    # add the new audio data to the perception object created earlier
+                    new_perception.audio_data = audio_data
 
-            # The wernicke is not fucked up, yay
-            elif comm["class"] == "wernicke_ok":
-                STATE.wernicke_ok = True
+                    # start the new perception's thread to get the speech-to-text going
+                    new_perception.start()
+
+                # The wernicke is not fucked up, yay
+                elif comm["class"] == "wernicke_ok":
+                    STATE.wernicke_ok = True
+
+            # log the exception but keep the thread running
+            except Exception as ex:
+                log.main.exception(ex)
+                log.play_sound()
 
     def audio_recording_start(self, label):
         """

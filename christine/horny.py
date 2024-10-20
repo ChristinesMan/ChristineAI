@@ -57,45 +57,51 @@ class Horny(threading.Thread):
 
         while True:
 
-            # graceful shutdown
-            if STATE.please_shut_down:
-                break
+            try:
 
-            # become progressively more horny
-            STATE.horny += self.horny_increment
-            STATE.horny = float(np.clip(STATE.horny, 0.0, 1.0))
-            log.horny.debug("Horny = %.2f", STATE.horny)
+                # graceful shutdown
+                if STATE.please_shut_down:
+                    break
 
-            # are we even horny at all?
-            if STATE.horny > self.horny_floor:
+                # become progressively more horny
+                STATE.horny += self.horny_increment
+                STATE.horny = float(np.clip(STATE.horny, 0.0, 1.0))
+                log.horny.debug("Horny = %.2f", STATE.horny)
 
-                # is it time yet?
-                self.horny_ask_interval = self.horny_ask_interval_max * (
-                    1.0 - STATE.horny
-                )
-                self.horny_ask_interval = float(
-                    np.clip(
-                        self.horny_ask_interval,
-                        self.horny_ask_interval_min,
-                        self.horny_ask_interval_max,
+                # are we even horny at all?
+                if STATE.horny > self.horny_floor:
+
+                    # is it time yet?
+                    self.horny_ask_interval = self.horny_ask_interval_max * (
+                        1.0 - STATE.horny
                     )
-                )
-                if time.time() > self.time_last_asked + self.horny_ask_interval:
+                    self.horny_ask_interval = float(
+                        np.clip(
+                            self.horny_ask_interval,
+                            self.horny_ask_interval_min,
+                            self.horny_ask_interval_max,
+                        )
+                    )
+                    if time.time() > self.time_last_asked + self.horny_ask_interval:
 
-                    # are conditions just right to ask?
-                    if (
-                        STATE.is_sleeping is False
-                        and STATE.sexual_arousal == 0.0
-                        and STATE.shush_please_honey is False
-                    ):
+                        # are conditions just right to ask?
+                        if (
+                            STATE.is_sleeping is False
+                            and STATE.sexual_arousal == 0.0
+                            and STATE.shush_please_honey is False
+                        ):
 
-                        # please fuck me
-                        log.horny.info("Asking for sex.")
-                        self.time_last_asked = time.time()
-                        parietal_lobe.horny_ask_for_sex()
+                            # please fuck me
+                            log.horny.info("Asking for sex.")
+                            self.time_last_asked = time.time()
+                            parietal_lobe.horny_ask_for_sex()
 
-            time.sleep(self.sleep_seconds)
+                time.sleep(self.sleep_seconds)
 
+            # log the exception but keep the thread running
+            except Exception as ex:
+                log.main.exception(ex)
+                log.play_sound()
 
 # Instantiate
 horny = Horny()

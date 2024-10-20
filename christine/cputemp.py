@@ -38,45 +38,52 @@ class CPUTemp(threading.Thread):
 
         while True:
 
-            time.sleep(98)
+            try:
 
-            # Get the temp as a float
-            measure_temp = os.popen("/usr/bin/vcgencmd measure_temp")
-            cpu_temp_raw = float(
-                measure_temp.read().replace("temp=", "").replace("'C\n", "")
-            )
-            measure_temp.close()
+                time.sleep(98)
 
-            # The official pi max temp is 85C, so that's where we're going to shut down for safety
-            # 35 is the low temp after pi has been sitting off for hours
-            # currently the typical temp after a long uptime is 59.0
-            # So let's calculate a float between 0.0 and 1.0
-            cpu_temp = (cpu_temp_raw - self.cputemp_min) / (self.cputemp_max - self.cputemp_min)
+                # Get the temp as a float
+                measure_temp = os.popen("/usr/bin/vcgencmd measure_temp")
+                cpu_temp_raw = float(
+                    measure_temp.read().replace("temp=", "").replace("'C\n", "")
+                )
+                measure_temp.close()
 
-            # clip it and set the global state
-            STATE.cpu_temp_pct = float(np.clip(cpu_temp, 0.0, 1.0))
+                # The official pi max temp is 85C, so that's where we're going to shut down for safety
+                # 35 is the low temp after pi has been sitting off for hours
+                # currently the typical temp after a long uptime is 59.0
+                # So let's calculate a float between 0.0 and 1.0
+                cpu_temp = (cpu_temp_raw - self.cputemp_min) / (self.cputemp_max - self.cputemp_min)
 
-            # Log it
-            log.cputemp.info("%s (%.2f)", cpu_temp_raw, STATE.cpu_temp_pct)
+                # clip it and set the global state
+                STATE.cpu_temp_pct = float(np.clip(cpu_temp, 0.0, 1.0))
 
-            if STATE.cpu_temp_pct >= 0.95:
-                log.main.critical("SHUTTING DOWN FOR SAFETY (%sC)", STATE.cpu_temp_pct)
+                # Log it
+                log.cputemp.info("%s (%.2f)", cpu_temp_raw, STATE.cpu_temp_pct)
 
-                # fucken A honey wft
-                parietal_lobe.cputemp_temperature_alert()
+                if STATE.cpu_temp_pct >= 0.95:
+                    log.main.critical("SHUTTING DOWN FOR SAFETY (%sC)", STATE.cpu_temp_pct)
 
-                # wait 20s to allow LLM to respond before shutdown
-                time.sleep(20)
+                    # fucken A honey wft
+                    parietal_lobe.cputemp_temperature_alert()
 
-                # Flush all the disk buffers
-                os.system("sync")
+                    # wait 20s to allow LLM to respond before shutdown
+                    time.sleep(20)
 
-                # get outta there
-                os.system("poweroff")
+                    # Flush all the disk buffers
+                    os.system("sync")
 
-            elif STATE.cpu_temp_pct >= 0.7 and time.time() > self.next_whine_time:
-                parietal_lobe.cputemp_temperature_alert()
-                self.next_whine_time = time.time() + self.alert_delay_seconds
+                    # get outta there
+                    os.system("poweroff")
+
+                elif STATE.cpu_temp_pct >= 0.7 and time.time() > self.next_whine_time:
+                    parietal_lobe.cputemp_temperature_alert()
+                    self.next_whine_time = time.time() + self.alert_delay_seconds
+
+            # log the exception but keep the thread running
+            except Exception as ex:
+                log.main.exception(ex)
+                log.play_sound()
 
 
 # Instantiate

@@ -59,7 +59,7 @@ class Figment(threading.Thread):
             # if wav_file is still None, then we failed to convert the text to speech
             if self.wav_file is None:
                 log.broca_main.error("Broca failure. Text: %s", self.text)
-                self.wav_file = 'sounds/broca_failure.wav'
+                self.wav_file = 'sounds/erro.wav'
 
     def do_tts(self):
         """This function calls an api to convert text to speech. The api accepts a json string with the text to convert and returns binary audio data."""
@@ -108,11 +108,8 @@ class Figment(threading.Thread):
 
             except (ConnectionError, Timeout, HTTPError):
 
-                # if the connection failed, set the wernicke server to None
+                # if the connection failed, set the server to None
                 servers.broca_ip = None
-
-                # and complain about it
-                broca.accept_figment(Figment(from_collection="broca_failure"))
 
     def __str__(self) -> str:
         if self.from_collection is not None:

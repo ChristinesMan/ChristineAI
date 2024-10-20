@@ -92,93 +92,99 @@ class Sleep(threading.Thread):
 
         while True:
 
-            # graceful shutdown
-            if STATE.please_shut_down:
-                log.sleep.info("Thread shutting down")
-                break
+            try:
 
-            # Get the current local time hour, for everything that follows
-            self.current_hour = time.localtime().tm_hour
+                # graceful shutdown
+                if STATE.please_shut_down:
+                    log.sleep.info("Thread shutting down")
+                    break
 
-            # Calculate current conditions which we're calling Environment
-            self.current_environmental_conditions = (
-                (self.weights_light * STATE.light_level)
-                + (self.weights_gyro * STATE.jostled_level)
-                + (self.weights_time * self.sleep_schedule[self.current_hour])
-            ) / self.weights_total
+                # Get the current local time hour, for everything that follows
+                self.current_hour = time.localtime().tm_hour
 
-            # clip it, can't go below 0 or higher than 1
-            self.current_environmental_conditions = float(
-                np.clip(self.current_environmental_conditions, 0.0, 1.0)
-            )
+                # Calculate current conditions which we're calling Environment
+                self.current_environmental_conditions = (
+                    (self.weights_light * STATE.light_level)
+                    + (self.weights_gyro * STATE.jostled_level)
+                    + (self.weights_time * self.sleep_schedule[self.current_hour])
+                ) / self.weights_total
 
-            # Update the running average that we're using for wakefulness
-            STATE.wakefulness = (
-                (STATE.wakefulness * self.wakefullness_avg_window)
-                + self.current_environmental_conditions
-            ) / (self.wakefullness_avg_window + 1)
-
-            # clip that
-            STATE.wakefulness = float(
-                np.clip(STATE.wakefulness, 0.0, 1.0)
-            )
-
-            # After updating wakefulness, figure out whether we crossed a threshold.
-            self.evaluate_wakefulness()
-
-            # log it
-            log.sleep.info(
-                "Light=%.2f  Jostled=%.2f  Time=%.2f  Env=%.2f  Wake=%.2f",
-                STATE.light_level,
-                STATE.jostled_level,
-                self.sleep_schedule[self.current_hour],
-                self.current_environmental_conditions,
-                STATE.wakefulness,
-            )
-
-            # If it's getting late, set a future time to "whine" in a cute, endearing way
-            if self.now_its_late():
-                self.set_whine_time()
-            if self.time_to_whine():
-                self.whine()
-
-            # If it's time to run the midnight process, do it
-            if self.is_time_for_midnight_process():
-                self.midnight_process()
-
-            # if sleeping, drop the breathing intensity down a bit
-            # eventually after about 15m this will reach 0.0 and stay there
-            # this doesn't work but eventually it'd be nice to put it back
-            if STATE.is_sleeping is True:
-                # down, down, dooooownnnnn
-                STATE.breath_intensity -= 0.09
-
-                # clip it
-                STATE.breath_intensity = float(
-                    np.clip(STATE.breath_intensity, 0.0, 1.0)
+                # clip it, can't go below 0 or higher than 1
+                self.current_environmental_conditions = float(
+                    np.clip(self.current_environmental_conditions, 0.0, 1.0)
                 )
 
-            # if we're below a certain wakefulness, I want to give the wernicke a break
-            # help prevent long term buildup of heat
-            if (
-                STATE.wakefulness < 0.1
-                and STATE.wernicke_sleeping is False
-            ):
-                STATE.wernicke_sleeping = True
-                log.sleep.info('Wernicke stopped')
-                wernicke.audio_processing_stop()
-                STATE.wakefulness -= 0.02
-            if (
-                STATE.wakefulness >= 0.1
-                and STATE.wernicke_sleeping is True
-            ):
-                STATE.wernicke_sleeping = False
-                log.sleep.info('Wernicke started')
-                wernicke.audio_processing_start()
-                STATE.wakefulness += 0.02
+                # Update the running average that we're using for wakefulness
+                STATE.wakefulness = (
+                    (STATE.wakefulness * self.wakefullness_avg_window)
+                    + self.current_environmental_conditions
+                ) / (self.wakefullness_avg_window + 1)
 
-            time.sleep(66)
+                # clip that
+                STATE.wakefulness = float(
+                    np.clip(STATE.wakefulness, 0.0, 1.0)
+                )
 
+                # After updating wakefulness, figure out whether we crossed a threshold.
+                self.evaluate_wakefulness()
+
+                # log it
+                log.sleep.info(
+                    "Light=%.2f  Jostled=%.2f  Time=%.2f  Env=%.2f  Wake=%.2f",
+                    STATE.light_level,
+                    STATE.jostled_level,
+                    self.sleep_schedule[self.current_hour],
+                    self.current_environmental_conditions,
+                    STATE.wakefulness,
+                )
+
+                # If it's getting late, set a future time to "whine" in a cute, endearing way
+                if self.now_its_late():
+                    self.set_whine_time()
+                if self.time_to_whine():
+                    self.whine()
+
+                # If it's time to run the midnight process, do it
+                if self.is_time_for_midnight_process():
+                    self.midnight_process()
+
+                # if sleeping, drop the breathing intensity down a bit
+                # eventually after about 15m this will reach 0.0 and stay there
+                # this doesn't work but eventually it'd be nice to put it back
+                if STATE.is_sleeping is True:
+                    # down, down, dooooownnnnn
+                    STATE.breath_intensity -= 0.09
+
+                    # clip it
+                    STATE.breath_intensity = float(
+                        np.clip(STATE.breath_intensity, 0.0, 1.0)
+                    )
+
+                # if we're below a certain wakefulness, I want to give the wernicke a break
+                # help prevent long term buildup of heat
+                if (
+                    STATE.wakefulness < 0.1
+                    and STATE.wernicke_sleeping is False
+                ):
+                    STATE.wernicke_sleeping = True
+                    log.sleep.info('Wernicke stopped')
+                    wernicke.audio_processing_stop()
+                    STATE.wakefulness -= 0.02
+                if (
+                    STATE.wakefulness >= 0.1
+                    and STATE.wernicke_sleeping is True
+                ):
+                    STATE.wernicke_sleeping = False
+                    log.sleep.info('Wernicke started')
+                    wernicke.audio_processing_start()
+                    STATE.wakefulness += 0.02
+
+                time.sleep(66)
+
+            # log the exception but keep the thread running
+            except Exception as ex:
+                log.main.exception(ex)
+                log.play_sound()
 
     def wake_up(self, value):
         """

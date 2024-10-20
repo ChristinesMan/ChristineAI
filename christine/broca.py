@@ -79,23 +79,30 @@ class Broca(threading.Thread):
 
         while True:
 
-            # graceful shutdown
-            if STATE.please_shut_down:
-                log.broca_main.info("Thread shutting down")
-                self.to_shuttlecraft.send({"action": "selfdestruct"})
-                break
+            try:
 
-            # the shuttlecraft takes one item at a time
-            # This recv will block here until the shuttlecraft sends False to signal it's ready
-            if self.to_shuttlecraft.recv() is False:
+                # graceful shutdown
+                if STATE.please_shut_down:
+                    log.broca_main.info("Thread shutting down")
+                    self.to_shuttlecraft.send({"action": "selfdestruct"})
+                    break
 
-                # if we're here, it means there's no sound actively playing, not even a breath
-                # this user_is_speaking flag is set by the wernicke when it's time to shut up
-                if STATE.user_is_speaking is False:
+                # the shuttlecraft takes one item at a time
+                # This recv will block here until the shuttlecraft sends False to signal it's ready
+                if self.to_shuttlecraft.recv() is False:
 
-                    # if there's something in the queue, play it
-                    if self.figment_queue.qsize() > 0:
-                        self.play_next_figment()
+                    # if we're here, it means there's no sound actively playing, not even a breath
+                    # this user_is_speaking flag is set by the wernicke when it's time to shut up
+                    if STATE.user_is_speaking is False:
+
+                        # if there's something in the queue, play it
+                        if self.figment_queue.qsize() > 0:
+                            self.play_next_figment()
+
+            # log the exception but keep the thread running
+            except Exception as ex:
+                log.main.exception(ex)
+                log.play_sound()
 
     def play_next_figment(self):
         """Get the next figment from the queue and process it."""

@@ -24,10 +24,17 @@ class Cleaner(threading.Thread):
 
         while True:
 
-            time.sleep(self.sleep_interval)
+            try:
 
-            self.clean_broca_cache()
-            self.clean_wernicke_cache()
+                time.sleep(self.sleep_interval)
+
+                self.clean_broca_cache()
+                self.clean_wernicke_cache()
+
+            # log the exception but keep the thread running
+            except Exception as ex:
+                log.main.exception(ex)
+                log.play_sound()
 
     def clean_broca_cache(self):
         """As voice is synthesized, wav files are cached for future use. But after a while that cache sounds stale. So clean it."""

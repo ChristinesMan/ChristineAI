@@ -75,38 +75,45 @@ class Vagina(threading.Thread):
         self.probe_process.start()
 
         while True:
-            # graceful shutdown
-            if STATE.please_shut_down:
-                log.vagina.info("Thread shutting down")
-                break
 
-            # This will block here until the probe sends a message to the enterprise
-            # I think for touch probe, communication will be one way, probe to enterprise
+            try:
 
-            # The sensors on the probe will send back the result as a string.
-            # Such a primitive signaling technology has not been in active use since the dark ages of the early 21st century!
-            # An embarrassing era in earth's history characterized by the fucking of inanimate objects and mass hysteria.
-            sensor_data = self.to_probe.recv()
+                # graceful shutdown
+                if STATE.please_shut_down:
+                    log.vagina.info("Thread shutting down")
+                    break
 
-            # if there was a failure even starting the sensor, just die
-            if sensor_data["msg"] == "INIT_FAIL":
-                STATE.vagina_available = False
-                return
+                # This will block here until the probe sends a message to the enterprise
+                # I think for touch probe, communication will be one way, probe to enterprise
 
-            # if there was a series of consecutive failures, just let the LLM know and die
-            elif sensor_data["msg"] == "FAIL":
-                STATE.vagina_available = False
-                parietal_lobe.vagina_failure()
-                return
+                # The sensors on the probe will send back the result as a string.
+                # Such a primitive signaling technology has not been in active use since the dark ages of the early 21st century!
+                # An embarrassing era in earth's history characterized by the fucking of inanimate objects and mass hysteria.
+                sensor_data = self.to_probe.recv()
 
-            # get a signal when the sensor init was successful
-            elif sensor_data["msg"] == "INIT_SUCCESS":
-                STATE.vagina_available = True
+                # if there was a failure even starting the sensor, just die
+                if sensor_data["msg"] == "INIT_FAIL":
+                    STATE.vagina_available = False
+                    return
 
-            # otherwise, pass the message over to the sex thread
-            else:
-                sex.vagina_got_hit(sensor_data)
+                # if there was a series of consecutive failures, just let the LLM know and die
+                elif sensor_data["msg"] == "FAIL":
+                    STATE.vagina_available = False
+                    parietal_lobe.vagina_failure()
+                    return
 
+                # get a signal when the sensor init was successful
+                elif sensor_data["msg"] == "INIT_SUCCESS":
+                    STATE.vagina_available = True
+
+                # otherwise, pass the message over to the sex thread
+                else:
+                    sex.vagina_got_hit(sensor_data)
+
+            # log the exception but keep the thread running
+            except Exception as ex:
+                log.main.exception(ex)
+                log.play_sound()
 
     def class_one_probe(self, to_enterprise):
         """
