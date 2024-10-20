@@ -21,6 +21,7 @@ from christine.vagina import vagina
 from christine.touch import touch
 from christine.horny import horny
 from christine.sex import sex
+from christine.httpserver import httpserver
 from christine.cleaner import cleaner
 from christine.server_discovery import servers
 from christine.killsignal import GracefulKiller
@@ -36,6 +37,7 @@ for thread in [
     sleep,
     parietal_lobe,
     vagina,
+    httpserver,
     horny,
     wernicke,
     sex,
