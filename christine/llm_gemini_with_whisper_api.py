@@ -2,7 +2,7 @@
 import os
 import time
 import re
-import random
+# import random
 import wave
 from ssl import SSLError
 import google.generativeai as genai
@@ -64,7 +64,7 @@ class GeminiWithWhisper(LLMAPI):
         # and for some reason it's also very knowledgeable about anime
         # It also likes to bark, is very pissed, and likes to bead
         self.re_garbage = re.compile(
-            r"thank.+(watching|god bless)|Satsang|Mooji|^ \.$|PissedConsumer\.com|Beadaholique\.com|^ you$|^ re$|^ GASP$|^ I'll see you in the next video\.$|thevenusproject|BOO oil in|Amen\. Amen\.|^\. \. \.", flags=re.IGNORECASE
+            r"thank.+(watching|god bless)|god bless|www\.mytrend|Satsang|Mooji|^ \.$|PissedConsumer\.com|Beadaholique\.com|^ you$|^ re$|^ GASP$|^ I'll see you in the next video\.$|thevenusproject|BOO oil in|Amen\. Amen\.|^\. \. \.", flags=re.IGNORECASE
         )
 
         # this application has no need for safety settings
@@ -146,6 +146,7 @@ class GeminiWithWhisper(LLMAPI):
                 response_format="verbose_json",
                 timestamp_granularities=["segment"],
             )
+            audio_file.close()
 
             # iterate over the segments and get the text, filtering trash out
             text = ''
@@ -154,14 +155,6 @@ class GeminiWithWhisper(LLMAPI):
                     text += segment['text']
                 else:
                     log.parietal_lobe.info("Filtered out: %s", segment['text'])
-
-            # # if the transcription contains the keywords that would cause the LLM to be reactivated, do that
-            # # going to reactivate by shaking my wife or kissing her instead
-            # if (STATE.perceptions_blocked is True and
-            #     self.lobe.char_name.lower() in transcription.text.lower() and
-            #     self.lobe.re_startlistening.search(transcription.text) is not None
-            # ):
-            #     STATE.perceptions_blocked = False
 
             return text.strip()
 
@@ -204,7 +197,7 @@ class GeminiWithWhisper(LLMAPI):
                     # otherwise this is going to be a string, the transcription
                     # I wish I could use something to identify the speaker, but I can't afford pveagle
                     if perception.audio_result != "":
-                        new_messages.append({'speaker': self.lobe.user_name, 'text': perception.audio_result})
+                        new_messages.append({'speaker': STATE.who_is_speaking, 'text': perception.audio_result})
 
                         # keep track of the total length of the transcription so that we can decide to interrupt char
                         total_transcription_length += len(perception.audio_result)
@@ -272,13 +265,6 @@ class GeminiWithWhisper(LLMAPI):
                 else:
                     new_paragraph += f'{new_message["speaker"]} says, "{new_message["text"]}" '
 
-            # saying something like "disable your hearing" should cause the LLM to be temporarily disabled
-            # for work meetings and phone calls
-            if self.lobe.re_stoplistening.search(new_paragraph):
-
-                # put the block on
-                STATE.perceptions_blocked = True
-
             # add the new paragraph to short term memory
             self.lobe.short_term_memory.append(Narrative(role="user", text=new_paragraph))
 
@@ -302,7 +288,7 @@ class GeminiWithWhisper(LLMAPI):
                       self.lobe.long_term_memory.memory_text +
                       self.lobe.situational_awareness_message() +
                       self.lobe.short_term_memory.get() +
-                      random.choice(self.lobe.start_variations)
+                      self.lobe.starter.get()
             )
 
             # save a quick log
@@ -330,7 +316,7 @@ class GeminiWithWhisper(LLMAPI):
             broca.accept_figment(Figment(text=f'{self.lobe.user_name}, I\'m sorry, but you should have a look at my code. ', should_speak=True))
             broca.accept_figment(Figment(text='Something fucked up.', should_speak=True))
 
-    def process_llm_response(self, response):
+    def process_llm_response(self, response: str):
         """Handles the llm response in a way where complete utterances are correctly segmented."""
 
         # I want to collate sentence parts, so this var is used to accumulate
@@ -370,7 +356,7 @@ class GeminiWithWhisper(LLMAPI):
             # get just the token with whitespace
             token = token.text_with_ws
 
-            log.parietal_lobe.debug("Token: --=%s=--", token)
+            # log.parietal_lobe.debug("Token: --=%s=--", token)
 
             # A double quote means we are starting or ending a part of text that must be spoken.
             if '"' in token:
@@ -428,21 +414,22 @@ class GeminiWithWhisper(LLMAPI):
 
         # process using LLM
         log.parietal_lobe.debug('Sending to api for memory folding.')
-        memory = self.call_api(contents=prompt, max_output_tokens=5000, temperature=1.2)
+        folded_memory = self.call_api(contents=prompt, max_output_tokens=5000, temperature=1.2)
         log.parietal_lobe.debug('Sending to api complete.')
 
         # fix chars
-        memory = memory.translate(self.lobe.unicode_fix).replace('\n', ' ').strip()
+        folded_memory = folded_memory.translate(self.lobe.unicode_fix).replace('\n', ' ').strip()
 
-        # if earlier_today memory is empty, start it out with a message at the top to identify it
-        if self.lobe.short_term_memory.earlier_today == '':
-            self.lobe.short_term_memory.earlier_today = 'These events happened earlier today:\n\n'
+        # send the memory for folding
+        self.lobe.short_term_memory.fold(folded_memory)
 
-        # add to earlier_today memory
-        self.lobe.short_term_memory.earlier_today += memory + '\n\n'
-        self.lobe.short_term_memory.recent = ''
-        self.lobe.short_term_memory.recent_messages = 0
-        self.lobe.short_term_memory.save()
+
+        # this is also a good time to see if the folded memory triggers anything from the neocortex
+        recalled_memory = self.lobe.neocortex.recall(folded_memory)
+
+        # if the neocortex has a response, send it to the llm
+        if recalled_memory is not None:
+            self.lobe.new_perception(Perception(text=recalled_memory))
 
     def cycle_long_term_memory(self):
         """This function gets called in the middle of the night during deep sleep."""
@@ -469,20 +456,55 @@ class GeminiWithWhisper(LLMAPI):
         self.lobe.long_term_memory.append(memory)
 
 
-        # now on to the keyword memories
-        prompt_keywords = prompt + self.lobe.memory_prompt_keywords
+        # now on to the memories to be stored way long term, in the neocortex
+        prompt_neocortex = prompt + self.lobe.memory_prompt_neocortex
 
-        # this is for the purpose of generating keywords tied to memories
-        log.parietal_lobe.debug('Sending to api for keyword memory.')
-        keywords_json = self.call_api(contents=prompt_keywords, max_output_tokens=5000, temperature=1.0, response_mime_type='application/json')
+        # send to api to get json formatted stuff
+        log.parietal_lobe.debug('Sending to api for neocortex memory.')
+        neocortex_json = self.call_api(contents=prompt_neocortex, max_output_tokens=10000, temperature=1.0, response_mime_type='application/json')
         log.parietal_lobe.debug('Sending to api complete.')
 
-        # the keywords are in a json format. For now, we're just going to save them to a file
-        # but in the future, we'll want to parse them and use them for really long term months or years ago memory recall
-        keywords_file = open(f'./logs/keywords_{int(time.time())}.json', 'w', encoding='utf-8')
-        keywords_file.write(keywords_json)
-        keywords_file.close()
+        # the neocortex are in a json format. Save to a file just in case.
+        neocortex_file = open(f'./logs/neocortex_memories_{int(time.time())}.json', 'w', encoding='utf-8')
+        neocortex_file.write(neocortex_json)
+        neocortex_file.close()
 
+        # just pass the json to the neocortex module
+        self.lobe.neocortex.process_memories_json(neocortex_json)
+
+
+        # also process the memories into question and answer pairs
+        prompt_questions = prompt + self.lobe.memory_prompt_questions
+
+        # send to api to get json formatted stuff
+        log.parietal_lobe.debug('Sending to api for questions.')
+        questions_json = self.call_api(contents=prompt_questions, max_output_tokens=10000, temperature=1.0, response_mime_type='application/json')
+        log.parietal_lobe.debug('Sending to api complete.')
+
+        # the questions are in a json format. Save to a file just in case.
+        questions_file = open(f'./logs/questions_{int(time.time())}.json', 'w', encoding='utf-8')
+        questions_file.write(questions_json)
+        questions_file.close()
+
+        # just pass the json to the neocortex module
+        self.lobe.neocortex.process_questions_json(questions_json)
+
+
+        # also process the memories into proper names
+        prompt_proper_names = prompt + self.lobe.memory_prompt_proper_names
+        
+        # send to api to get json formatted stuff
+        log.parietal_lobe.debug('Sending to api for proper names.')
+        proper_names_json = self.call_api(contents=prompt_proper_names, max_output_tokens=10000, temperature=1.0, response_mime_type='application/json')
+        log.parietal_lobe.debug('Sending to api complete.')
+        
+        # the proper names are in a json format. Save to a file just in case.
+        proper_names_file = open(f'./logs/proper_names_{int(time.time())}.json', 'w', encoding='utf-8')
+        proper_names_file.write(proper_names_json)
+        proper_names_file.close()
+        
+        # just pass the json to the neocortex module
+        self.lobe.neocortex.process_proper_names_json(proper_names_json)
 
         # clear short term memory since we're done with it
         # she will wake up in the morning feeling refreshed

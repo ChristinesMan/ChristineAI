@@ -54,13 +54,13 @@ class CPUTemp(threading.Thread):
             cpu_temp = (cpu_temp_raw - self.cputemp_min) / (self.cputemp_max - self.cputemp_min)
 
             # clip it and set the global state
-            STATE.cpu_temp = float(np.clip(cpu_temp, 0.0, 1.0))
+            STATE.cpu_temp_pct = float(np.clip(cpu_temp, 0.0, 1.0))
 
             # Log it
-            log.cputemp.info("%s (%.2f)", cpu_temp_raw, STATE.cpu_temp)
+            log.cputemp.info("%s (%.2f)", cpu_temp_raw, STATE.cpu_temp_pct)
 
-            if STATE.cpu_temp >= 0.95:
-                log.main.critical("SHUTTING DOWN FOR SAFETY (%sC)", STATE.cpu_temp)
+            if STATE.cpu_temp_pct >= 0.95:
+                log.main.critical("SHUTTING DOWN FOR SAFETY (%sC)", STATE.cpu_temp_pct)
 
                 # fucken A honey wft
                 parietal_lobe.cputemp_temperature_alert()
@@ -74,7 +74,7 @@ class CPUTemp(threading.Thread):
                 # get outta there
                 os.system("poweroff")
 
-            elif STATE.cpu_temp >= 0.7 and time.time() > self.next_whine_time:
+            elif STATE.cpu_temp_pct >= 0.7 and time.time() > self.next_whine_time:
                 parietal_lobe.cputemp_temperature_alert()
                 self.next_whine_time = time.time() + self.alert_delay_seconds
 

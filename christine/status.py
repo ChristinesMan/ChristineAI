@@ -23,9 +23,14 @@ class Status(threading.Thread):
 
         # Raspberry pi CPU temp
         self.cpu_temp = 45
+        self.cpu_temp_pct = 0.5
 
         # this var is meant to prevent speaking until the user is done speaking
         self.user_is_speaking = False
+
+        # this keeps track of who is speaking
+        # we are going to manually control who is talking for now
+        self.who_is_speaking = ""
 
         # This is a number between 0.0 and 1.0 where 0.0 is absolute darkness and 1.0 is lights on window open with sun shining and flashlight in your face.
         # This is a long running average, changes slowly
@@ -48,13 +53,8 @@ class Status(threading.Thread):
         self.lover_proximity = 0.5
 
         # Booleans for sleep/wake
-        self.pre_sleep = False
+        self.is_sleepy = False
         self.is_sleeping = False
-
-        # Power systems
-        self.battery_voltage = 2.148  # typical voltage, will get updated immediately
-        self.power_state = "Cable powered"
-        self.charging_state = "Not Charging"
 
         # A way to prevent talking, called a shush, not now honey
         self.shush_please_honey = False
@@ -110,15 +110,24 @@ class Status(threading.Thread):
         self.user_interrupt_char_threshold = 20
 
         # this is the minimum number of narratives before a bunch of old narratives can be shipped off to cerebral cortex for summarize
-        self.memory_folding_min_narratives = 15
+        self.memory_folding_min_narratives = 10
         # this is how many minutes * seconds delay between the last message before shipping off narratives
-        self.memory_folding_delay_threshold = 5 * 60
+        self.memory_folding_delay_threshold = 3 * 60
         # how many days of memories to keep, going to go large and see what happens
-        # it was horrible after 14 days, so I'm going to try 5, and implement longer term later
+        # it was horrible after 14 days, like "sleeping with the enemy" bad, so I'm going to try 5, and implement longer term later
         # she went crazy again after 5 days, so I'm going to try 2
         # but she's doing so well, so 5 again
         # omg shut up about the pancakes during sex. 1 day. That's all you can handle I guess.
-        self.memory_days = 3
+        # based on experimental evidence, she can't handle more than 1 day of this kind of memory; stuff snowballs
+        self.memory_days = 1
+
+        # after a memory has emerged from the neocortex, it is not allowed to come up again for a while (5 days in seconds)
+        self.neocortex_recall_interval = 5 * 24 * 60 * 60
+
+        # there is an intermittent bug where the wernicke locks up at the very start
+        # I don't want the LLM to be able to talk until the wernicke is ready
+        # It's awkward.
+        self.wernicke_ok = False
 
     def run(self):
         self.load_state()
@@ -126,6 +135,42 @@ class Status(threading.Thread):
         while True:
             time.sleep(25)
             self.save_state()
+
+    def to_json(self):
+        """
+        Returns a json string of all the state vars
+        """
+
+        return {
+            "cpu_temp": f"{self.cpu_temp}C",
+            "user_is_speaking": str(self.user_is_speaking),
+            "who_is_speaking": self.who_is_speaking,
+            "light_level": f"{int(round(self.light_level, 2)*100)}%",
+            "jostled_level": f"{int(round(self.jostled_level, 2)*100)}%",
+            "jostled_level_short": f"{int(round(self.jostled_level_short, 2)*100)}%",
+            "wakefulness": f"{int(round(self.wakefulness, 2)*100)}%",
+            "horny": f"{int(round(self.horny, 2)*100)}%",
+            "sexual_arousal": f"{int(round(self.sexual_arousal, 2)*100)}%",
+            "pre_sleep": str(self.is_sleepy),
+            "is_sleeping": str(self.is_sleeping),
+            "shush_please_honey": str(self.shush_please_honey),
+            "shush_fucking": str(self.shush_fucking),
+            "breath_intensity": str(self.breath_intensity),
+            "wernicke_sleeping": str(self.wernicke_sleeping),
+            "perceptions_blocked": str(self.perceptions_blocked),
+            "gyro_available": str(self.gyro_available),
+            "vagina_available": str(self.vagina_available),
+            "proximity_volume_adjust": str(self.proximity_volume_adjust),
+            "pause_question": str(self.pause_question),
+            "pause_period": str(self.pause_period),
+            "pause_comma": str(self.pause_comma),
+            "additional_perception_wait_seconds": str(self.additional_perception_wait_seconds),
+            "user_interrupt_char_threshold": str(self.user_interrupt_char_threshold),
+            "memory_folding_min_narratives": str(self.memory_folding_min_narratives),
+            "memory_folding_delay_threshold": str(self.memory_folding_delay_threshold),
+            "memory_days": str(self.memory_days),
+            "wernicke_ok": str(self.wernicke_ok),
+        }
 
     def save_state(self):
         """

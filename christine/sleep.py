@@ -144,7 +144,7 @@ class Sleep(threading.Thread):
 
             # If it's time to run the midnight process, do it
             if self.is_time_for_midnight_process():
-                self.mightnight_process()
+                self.midnight_process()
 
             # if sleeping, drop the breathing intensity down a bit
             # eventually after about 15m this will reach 0.0 and stay there
@@ -247,25 +247,30 @@ class Sleep(threading.Thread):
 
         if (
             STATE.wakefulness < self.wakefulness_pre_sleep
-            and STATE.pre_sleep is False
+            and STATE.is_sleepy is False
         ):
+            log.sleep.info("PreSleep")
+
+            # try to prevent wobble by throwing it further towards sleep
+            STATE.wakefulness -= 0.01
+
             # when we're laying next to each other in the dark
             # I'm holding your hand and starting to drift off to sleep
             # say "goodnight honey", not "GOODNIGHT HONEY!!!!"
             # doesn't work right now for reasons, but like to put it back someday
             STATE.lover_proximity = 0.0
 
-            STATE.pre_sleep = True
-            STATE.wakefulness -= 0.02
+            # this lets every other module know we're pre-sleep
+            STATE.is_sleepy = True
 
             # let parietal lobe know we're bushed
-            parietal_lobe.sleep_sleeping()
+            parietal_lobe.sleep_sleepy()
 
-        if (
+        elif (
             STATE.wakefulness >= self.wakefulness_pre_sleep
-            and STATE.pre_sleep is True
+            and STATE.is_sleepy is True
         ):
-            STATE.pre_sleep = False
+            STATE.is_sleepy = False
 
     def just_fell_asleep(self):
         """
@@ -339,7 +344,7 @@ class Sleep(threading.Thread):
             and time.time() >= self.midnight_process_time
         )
 
-    def mightnight_process(self):
+    def midnight_process(self):
         """
         Actually run the midnight process, but only if currently still sleeping.
         """

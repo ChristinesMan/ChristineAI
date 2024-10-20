@@ -4,6 +4,7 @@ Handles logging for this whole sexy app
 import os
 import logging
 import sys
+# import threading
 from traceback import format_tb
 
 # Make sure the logs dir exists
@@ -53,6 +54,7 @@ horny = setup_logger("horny")
 vagina = setup_logger("vagina", level=logging.DEBUG)
 parietal_lobe = setup_logger("parietal_lobe", level=logging.DEBUG)
 llm_stream = setup_logger("llm_stream", level=logging.DEBUG)
+neocortex = setup_logger("neocortex", level=logging.DEBUG)
 server_discovery = setup_logger("server_discovery")
 imhere = setup_logger("imhere", level=logging.INFO, msg_format="%(module)s.%(funcName)s.%(created)d")
 
@@ -61,8 +63,9 @@ def log_exception(_, value, trace_back):
     """
     Log exceptions to the main log
     """
-    logging.exception("Uncaught exception: %s", value)
-    logging.exception("Detail: %s", format_tb(trace_back))
-
-
+    main.exception("Uncaught exception: %s", value)
+    main.exception("Detail: %s", format_tb(trace_back))
 sys.excepthook = log_exception
+
+# # log exceptions that occur in threads
+# threading.excepthook = log_exception

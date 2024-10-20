@@ -127,6 +127,10 @@ class Wernicke(threading.Thread):
                 # start the new perception's thread to get the speech-to-text going
                 new_perception.start()
 
+            # The wernicke is not fucked up, yay
+            elif comm["class"] == "wernicke_ok":
+                STATE.wernicke_ok = True
+
     def audio_recording_start(self, label):
         """
         Sends a message to the subprocess to start a recording, for collecting training data mostly
@@ -184,6 +188,9 @@ class Wernicke(threading.Thread):
         # capture any errors
         sys.stdout = open(f"./logs/subprocess_wernicke_{os.getpid()}.out", "w", buffering=1, encoding="utf-8", errors="ignore")
         sys.stderr = open(f"./logs/subprocess_wernicke_{os.getpid()}.err", "w", buffering=1, encoding="utf-8", errors="ignore")
+
+        # log the pid to the main log
+        log.main.info("Wernicke subprocess PID: %s", os.getpid())
 
         # If we're recording, this holds the message from the enterprise containing file data. If not recording, contains None
         recording_state = None
@@ -331,13 +338,16 @@ class Wernicke(threading.Thread):
                             # So if we're not seeing it, read in and throw away some odd amount of bytes and it ought to be in the middle
                             # And this is exactly how it should work, but it often fucks up right here.
                             # So I'm going to try to fix it by disconnecting and reconnecting
+                            # And.. it shappened again.
+                            # I don't even know where it's getting stuck at. It always gets here 4 times, and then nothing.
+                            # It did, however, just auto-recover using this method, so let's just jack up the delay
                             # log.wernicke.debug(data)
                             # log.wernicke.info("No sensor data found. Adjusting audio stream by 3000 bytes")
                             # data = self.serial_port_from_head.read(3000)
                             # log.wernicke.info("Adjust done")
                             log.wernicke.info("No sensor data found. Ripping it out.")
                             self.serial_port_from_head.close()
-                            time.sleep(5)
+                            time.sleep(15)
                             self.serial_port_from_head = serial.Serial(  # pylint: disable=no-member
                                 "/dev/ttyACM0", baudrate=115200, exclusive=True
                             )
@@ -345,6 +355,11 @@ class Wernicke(threading.Thread):
 
                         # continue to the start of the loop where we should be well adjusted
                         continue
+
+                    # the wernicke is okay, everybody
+                    if STATE.wernicke_ok is False:
+                        STATE.wernicke_ok = True
+                        hey_honey({"class": "wernicke_ok"})
 
                     # if we're currently processing, put audio data onto the queue, otherwise it gets thrown away
                     if processing_state is True and self.pause_processing <= 0:

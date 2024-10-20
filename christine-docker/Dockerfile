@@ -14,10 +14,11 @@ RUN chown -R root:root /root/.ssh && chmod 700 /root/.ssh && chmod 600 /root/.ss
 RUN pip install wheel gnureadline requests smbus numpy mpu6050-raspberrypi bottle RPi.GPIO Adafruit-Blinka adafruit-circuitpython-mpr121 pyserial google-generativeai pyaudio pydub debugpy pvcobra nltk scipy langchain weaviate-client pveagle requests-sse tiktoken spacy openai google-cloud-aiplatform jsons vertexai google-cloud-texttospeech
 RUN python3.11 -m spacy download en_core_web_sm
 RUN sed -i 's@"/completions",@"/prompt",@g' /usr/lib/python3.11/site-packages/openai/resources/completions.py
+RUN sed -Ei "s/os\.getenv\('TEMORARILY_DISABLE_PROTOBUF_VERSION_CHECK'\)/'true'/" /usr/lib/python3.11/site-packages/google/protobuf/runtime_version.py
 
 # enable audio for testing, really should be up there ^
 RUN apt update && apt -y upgrade
-RUN apt install -y --no-install-recommends alsa-utils && apt-get clean
+RUN apt install -y --no-install-recommends alsa-utils jq less && apt-get clean
 
 # The touch sensor module needed some customization
 COPY /adafruit_mpr121.py /usr/lib/python3.11/site-packages/adafruit_mpr121.py

@@ -90,6 +90,24 @@ class ShortTermMemory:
         # save the memory to a file
         self.save()
 
+    def fold(self, folded_memory: str):
+        """Folds the recent memory into the earlier_today memory.
+        This is called by the llm module with the summary of recent conversation."""
+
+        # if earlier_today memory is empty, start it out with a message at the top to identify it
+        if self.earlier_today == '':
+            self.earlier_today = 'These events happened earlier today:\n\n'
+
+        # add to earlier_today memory
+        self.earlier_today += folded_memory + '\n\n'
+
+        # clear recent
+        self.recent = ''
+        self.recent_messages = 0
+
+        # save the memory to a file
+        self.save()
+
     def save(self):
         """Saves short term memory to files."""
 
