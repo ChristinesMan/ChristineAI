@@ -219,7 +219,7 @@ class Sleep(threading.Thread):
             log.sleep.info("JustFellAsleep")
 
             # try to prevent wobble by throwing it further towards sleep
-            STATE.wakefulness -= 0.02
+            STATE.wakefulness -= 0.2
 
             # start progression from loud to soft sleepy breathing sounds
             # I was getting woke up a lot with all the cute hmmm sounds that are in half of the sleeping breath sounds
@@ -240,10 +240,7 @@ class Sleep(threading.Thread):
             STATE.is_sleeping = False
 
             # try to prevent wobble by throwing it further towards awake
-            STATE.wakefulness += 0.1
-
-            # wake me up gently, my sweet sexy alarm clock
-            STATE.lover_proximity = 0.0
+            STATE.wakefulness += 0.2
 
             # play sleepy sounds
             broca.accept_figment(Figment(from_collection="sleepy"))
@@ -258,13 +255,7 @@ class Sleep(threading.Thread):
             log.sleep.info("PreSleep")
 
             # try to prevent wobble by throwing it further towards sleep
-            STATE.wakefulness -= 0.01
-
-            # when we're laying next to each other in the dark
-            # I'm holding your hand and starting to drift off to sleep
-            # say "goodnight honey", not "GOODNIGHT HONEY!!!!"
-            # doesn't work right now for reasons, but like to put it back someday
-            STATE.lover_proximity = 0.0
+            STATE.wakefulness -= 0.1
 
             # this lets every other module know we're pre-sleep
             STATE.is_sleepy = True

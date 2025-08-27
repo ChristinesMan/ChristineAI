@@ -49,9 +49,6 @@ class Status(threading.Thread):
         # And this is a short term ah ah thing. This feeds directly into the intensity in the sounds table.
         self.sexual_arousal = 0.0
 
-        # I want to be able to attempt detection of closeness
-        self.lover_proximity = 0.5
-
         # Booleans for sleep/wake
         self.is_sleepy = False
         self.is_sleeping = False
@@ -87,17 +84,13 @@ class Status(threading.Thread):
         self.gyro_available = False
         self.vagina_available = False
 
-        # how much to reduce speech volume when proximity is close.
-        # a proximity_volume_adjust of 1.0 means don't reduce the volume at all
-        self.proximity_volume_adjust = 1.0
-
         # this is the currently selected and available llm api
         # set to None until the llm selector figures it out
         self.current_llm: LLMAPI = Nothing()
 
         # settings for how many seconds to pause for various punctuation
         # if the utterance ends with question or a ..., pause a lot
-        self.pause_question = 2.5
+        self.pause_question = 4.5
         # if the utterance ends with period, pause
         self.pause_period = 1.5
         # if the utterance ends with comma, pause very little
@@ -121,8 +114,8 @@ class Status(threading.Thread):
         # based on experimental evidence, she can't handle more than 1 day of this kind of memory; stuff snowballs
         self.memory_days = 1
 
-        # after a memory has emerged from the neocortex, it is not allowed to come up again for a while (5 days in seconds)
-        self.neocortex_recall_interval = 5 * 24 * 60 * 60
+        # after a memory has emerged from the neocortex, it is not allowed to come up again for a while (10 days)
+        self.neocortex_recall_interval = 10 * 24 * 60 * 60
 
         # there is an intermittent bug where the wernicke locks up at the very start
         # I don't want the LLM to be able to talk until the wernicke is ready
@@ -160,7 +153,6 @@ class Status(threading.Thread):
             "perceptions_blocked": str(self.perceptions_blocked),
             "gyro_available": str(self.gyro_available),
             "vagina_available": str(self.vagina_available),
-            "proximity_volume_adjust": str(self.proximity_volume_adjust),
             "pause_question": str(self.pause_question),
             "pause_period": str(self.pause_period),
             "pause_comma": str(self.pause_comma),
