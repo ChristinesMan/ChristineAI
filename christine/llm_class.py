@@ -24,16 +24,5 @@ class LLMAPI():
     def process_audio(self, audio_data: bytes):
         """This function processes incoming audio data. It will be used to either convert audio to text, or upload directly to the LLM."""
 
-    def process_new_perceptions(self):
-        """This gets called when new perceptions start getting queued.
-        This will wait until new perceptions stop coming in,
-        Then processes everything it got, wraps it up, including context, memory, and conversation history. Sends over to the LLM.
-        The entire parietal_lobe thread object is passed in. Seemed like the best way."""
-
-    def fold_recent_memories(self):
-        """This is called after a delay has occurred with no new perceptions, to fold memories.
-        We fold because when the prompt gets too long, fear and chaos occur. I dunno why."""
-
-    def cycle_long_term_memory(self):
-        """This function gets called in the middle of the night during deep sleep.
-        [5] gets updated using a summary of 0-4, then 4 goes away, and everything moves up to leave [0] empty for the new day."""
+    def call_api(self, prompt, stop_sequences=None, max_tokens=600, temperature=0.4, top_p=1.0, expects_json=False):
+        """This function will call the llm api and return the response."""

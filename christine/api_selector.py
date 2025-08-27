@@ -26,10 +26,6 @@ class LLMSelector:
     def find_enabled_llms(self):
         """This is called once at startup to populate the list of enabled LLM APIs."""
 
-        # this is done here to avoid circular imports
-        # pylint: disable=import-outside-toplevel
-        from christine.parietal_lobe import parietal_lobe
-
         # for each LLM API, check if it is enabled in the config
         # if it is, import it, instantiate it, and add it to the list of enabled LLM APIs
         for llm_class_name, llm_name in self.llm_apis.items():
@@ -40,7 +36,8 @@ class LLMSelector:
                     module = importlib.import_module(f"christine.llm_{llm_name}")
                     llm_class = getattr(module, llm_class_name)
                     log.parietal_lobe.info('Instantiating %s', llm_class_name)
-                    self.llm_enabled.append(llm_class(parietal_lobe))
+                    # LLMs no longer need a reference to the parietal lobe
+                    self.llm_enabled.append(llm_class())
                 else:
                     log.parietal_lobe.debug('LLM %s is disabled', llm_class_name)
             except KeyError as ex:
