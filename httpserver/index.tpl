@@ -145,10 +145,9 @@
 
 <div id="WhoIsSpeaking" class="tabcontent">
     <h3>Who Is Speaking</h3>
-    <button onclick="submitSpeaker('{{USER_NAME}}')">{{USER_NAME}}</button>
-    <button onclick="submitSpeaker('Somebody')">Somebody</button>
-    <button onclick="submitSpeaker('Somebody in the work meeting')">Work meeting</button>
-    <br/>
+    <button onclick="submitSpeaker('{{USER_NAME}}')">{{USER_NAME}}</button><br/><br/>
+    <button onclick="submitSpeaker('Somebody')">Somebody</button><br/><br/>
+    <button onclick="submitSpeaker('Somebody in the work meeting')">Work meeting</button><br/><br/>
     <input type="text" id="customSpeaker" placeholder="Enter custom name">
     <button onclick="submitCustomSpeaker()">Submit</button>
 
