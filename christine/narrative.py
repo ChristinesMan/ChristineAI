@@ -7,7 +7,7 @@ class Narrative:
 
     def __init__(self, role: str, text: str = ''):
 
-        # the role such as system, user, or char
+        # the role such as system, user, or char. Or memory too I think. 
         self.role: str = role
 
         # the paragraph of text (for a text-only LLM)

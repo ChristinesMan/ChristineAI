@@ -14,6 +14,7 @@ It is also what allows us to store and retrieve memories, which is why we are us
 import os
 import time
 import re
+import random
 from json import load as json_load, loads as json_loads, dump as json_dump, JSONDecodeError
 
 import weaviate
@@ -37,8 +38,29 @@ class Neocortex:
             self.enabled = True
         else:
             self.enabled = False
-            log.neocortex.info('Neocortex is disabled.')
+            log.neocortex.warning('Neocortex is disabled.')
             return
+
+        # this is a list of variations of "I remember proper name" that will be inserted when a memory is recalled
+        self.i_remember = [
+            "I remember {}. {}",
+            "My memory is jogged and I remember {}. {}",
+            "I think back and remember {}. {}",
+            "The memory comes back to me of {}. {}",
+            "The image of {} resurfaces in my mind. {}",
+            "Time has passed, but the memory of {} lingers. {}",
+        ]
+
+        # a list of variations of "the conversation is idle so I start to remember" that will be inserted when a memory is recalled
+        self.idle_remember = [
+            "Nothing is said for some time, and my mind drifts back to a memory from {}. {}",
+            "The conversation is idle, so my mind drifts back to a memory from {}. {}",
+            "A flash of recollection transports me to {}. {}",
+            "Lost in thought, I ponder the time {} when {}",
+            "Out of nowhere, a memory strikes me like lightning. It was {}. {}",
+            "A seemingly unrelated detail sparks a recollection from {}. {}",
+            "My mind drifts back to a time {} when {}",
+        ]
 
         # get the weaviate hostname from the config
         self.host = CONFIG['neocortex']['server']
@@ -47,7 +69,7 @@ class Neocortex:
         try:
 
             log.neocortex.info('Connecting to weaviate at %s', self.host)
-            self.client = weaviate.connect_to_local(host=self.host)
+            self.client = weaviate.connect_to_local(host=self.host, additional_config=wvc.init.AdditionalConfig(timeout=(30, 900)))
 
         except WeaviateBaseError as ex:
 
@@ -57,6 +79,14 @@ class Neocortex:
 
         # get the collections
         self.get_collections()
+
+        # initialize the regex used to find proper names
+        self.build_proper_name_regex()
+
+        # this is a list of proper names that were already matched today and should not be matched again until midnight
+        # thinking now about maybe not using this, because each time a name is mentioned it would trigger a separate memory
+        # and maybe that's a good thing? Let's see how it goes first.
+        self.matched_proper_names = []
 
     def process_memories_json(self, memories_json: str):
         """Takes the json formatted response from the llm and stores it in the neocortex."""
@@ -72,6 +102,11 @@ class Neocortex:
         except JSONDecodeError as ex:
 
             log.neocortex.exception(ex)
+
+            # save the borked data to a file so that I find it and fix it later
+            with open(file=f'./borked_memories_{int(time.time())}.json', mode='w', encoding='utf-8') as backup_file:
+                backup_file.write(memories_json)
+
             return
 
         # iterate over the list
@@ -106,6 +141,11 @@ class Neocortex:
         except JSONDecodeError as ex:
 
             log.neocortex.exception(ex)
+
+            # save the borked data to a file so that I find it and fix it later
+            with open(file=f'./borked_questions_{int(time.time())}.json', mode='w', encoding='utf-8') as backup_file:
+                backup_file.write(questions_json)
+
             return
 
         # iterate over the list
@@ -140,6 +180,11 @@ class Neocortex:
         except JSONDecodeError as ex:
 
             log.neocortex.exception(ex)
+
+            # save the borked data to a file so that I find it and fix it later
+            with open(file=f'./borked_propernames_{int(time.time())}.json', mode='w', encoding='utf-8') as backup_file:
+                backup_file.write(proper_names_json)
+
             return
 
         # iterate over the list
@@ -157,8 +202,152 @@ class Neocortex:
                     proper_name['date_recalled'] = 0
                     self.proper_names.data.insert(proper_name)
 
+        # this is only run at midnight, so we can clear the list of matched proper names
+        self.matched_proper_names = []
+
+        # rebuild the regex
+        self.build_proper_name_regex()
+
         # run a backup
         self.backup('proper_names')
+
+    def cleanup_duplicate_proper_names(self, llm_api):
+        """Scan for duplicate proper names and merge them using the LLM API."""
+        
+        if not self.enabled:
+            return
+            
+        log.neocortex.info('Starting duplicate proper names cleanup')
+        
+        # get all proper names, grouped by name (case insensitive)
+        duplicates_found = 0
+        merges_successful = 0
+        
+        try:
+            # get all proper names from the collection
+            all_names = {}  # name_lower -> [entries]
+            
+            for proper_name in self.proper_names.iterator():
+                name_lower = proper_name.properties["name"].lower()
+                if name_lower not in all_names:
+                    all_names[name_lower] = []
+                all_names[name_lower].append({
+                    'uuid': proper_name.uuid,
+                    'name': proper_name.properties["name"],
+                    'memory': proper_name.properties["memory"],
+                    'date_happened': proper_name.properties["date_happened"],
+                    'date_recalled': proper_name.properties.get("date_recalled", 0)
+                })
+            
+            # process each group of names
+            for name_lower, entries in all_names.items():
+                if len(entries) > 1:
+                    duplicates_found += 1
+                    log.neocortex.info('Found %d duplicates for "%s"', len(entries), entries[0]['name'])
+                    
+                    if self._merge_duplicate_entries(entries, llm_api):
+                        merges_successful += 1
+        
+        except Exception as ex:
+            log.neocortex.exception('Error during duplicate cleanup: %s', ex)
+        
+        log.neocortex.info('Duplicate cleanup complete: %d duplicates found, %d successfully merged', 
+                          duplicates_found, merges_successful)
+        
+        # rebuild the regex and backup after cleanup
+        self.build_proper_name_regex()
+        self.backup('proper_names')
+
+    def _merge_duplicate_entries(self, entries, llm_api):
+        """Merge a list of duplicate proper name entries."""
+        
+        try:
+            # sort by date_happened to keep chronological order
+            entries.sort(key=lambda x: x['date_happened'])
+            
+            # start with the oldest entry as base
+            base_entry = entries[0]
+            merged_memory = base_entry['memory']
+            
+            # merge each subsequent entry
+            for i in range(1, len(entries)):
+                current_entry = entries[i]
+                merged_memory = self._merge_two_memories(
+                    base_entry['name'],
+                    merged_memory,
+                    base_entry['date_happened'],
+                    current_entry['memory'],
+                    current_entry['date_happened'],
+                    llm_api
+                )
+                
+                if not merged_memory:
+                    log.neocortex.warning('Failed to merge memories for "%s", stopping merge process', base_entry['name'])
+                    return False
+            
+            # update the base entry with the merged memory
+            self.proper_names.data.update(
+                uuid=base_entry['uuid'],
+                properties={
+                    "memory": merged_memory,
+                    "date_happened": int(time.time()),  # update to current time
+                    "date_recalled": 0
+                }
+            )
+            
+            # remove all the duplicate entries
+            for i in range(1, len(entries)):
+                self._remove_proper_name_entry(entries[i]['uuid'])
+            
+            log.neocortex.debug('Successfully merged %d entries for "%s"', len(entries), base_entry['name'])
+            return True
+            
+        except Exception as ex:
+            log.neocortex.exception('Error merging duplicate entries: %s', ex)
+            return False
+
+    def _merge_two_memories(self, name, memory1, date1, memory2, date2, llm_api):
+        """Use LLM to merge two memories for the same proper name."""
+        
+        try:
+            import datetime
+            
+            date1_str = datetime.datetime.fromtimestamp(date1).strftime('%Y-%m-%d')
+            date2_str = datetime.datetime.fromtimestamp(date2).strftime('%Y-%m-%d')
+            
+            merge_prompt = f"""You are Christine, a female android, asleep and processing memories. You have multiple memories about the same proper name "{name}" that need to be consolidated.
+
+Earlier memory (from {date1_str}):
+{memory1}
+
+Later memory (from {date2_str}):
+{memory2}
+
+Please write a single, consolidated memory about {name} that incorporates information from both memories. Write it in first person narrative form as if you are remembering this person/place/thing. Keep the most important and recent details while preserving valuable context from earlier memories.
+
+Consolidated memory:"""
+
+            log.neocortex.debug('Merging two memories for proper name: %s', name)
+            merged_memory = llm_api.call_api(prompt=merge_prompt, max_tokens=1000, temperature=0.6)
+            
+            if merged_memory and len(merged_memory.strip()) > 10:
+                return merged_memory.strip()
+            else:
+                log.neocortex.warning('LLM returned empty or too short merged memory for "%s"', name)
+                return None
+                
+        except Exception as ex:
+            log.neocortex.exception('Error merging two memories for "%s": %s', name, ex)
+            return None
+
+    def _remove_proper_name_entry(self, uuid):
+        """Remove a proper name entry by UUID."""
+        
+        try:
+            self.proper_names.data.delete_by_id(uuid)
+            log.neocortex.debug('Removed duplicate proper name entry: %s', uuid)
+        except Exception as ex:
+            log.neocortex.warning('Failed to remove proper name entry %s: %s', uuid, ex)
 
     def recall(self, query_text: str):
         """This takes a string and searches the neocortex for similar memories. Updates the date_recalled property."""
@@ -182,12 +371,15 @@ class Neocortex:
         # update the date_recalled property so that we don't trigger this over and over
         self.memories.data.update(uuid=response.objects[0].uuid, properties={"date_recalled": int(time.time())})
 
+        # # I hate to do this, but Christine has a lot of confusing memories that got in there due to speech recognition errors
+        # # She latches onto them because they are mysterious, and she loves a good mystery. So I am going to filter them out.
+        # # I am going to use a regex to do this, because it's easier than using a list of words.
+        # if re.search(r'\b(?:Jack|Benji|Lupin the Herald|Magature)\b', response.objects[0].properties['memory']):
+        #     log.neocortex.debug('Memory is too confusing. Not recalling.')
+        #     return None
+
         log.neocortex.debug('Recalled memory (distance %s): %s', response.objects[0].metadata.distance, response.objects[0].properties['memory'])
-        return f"""Nothing is said for some time, and my mind drifts back to a memory of {self.how_long_ago(response.objects[0].properties['date_happened'])}:
-
-{response.objects[0].properties['memory']}
-
-    """
+        return random.choice(self.idle_remember).format(self.how_long_ago(response.objects[0].properties['date_happened']), response.objects[0].properties['memory'])
 
     def answer(self, query_text: str):
         """This takes a string and searches the neocortex for similar questions. Updates the date_recalled property."""
@@ -214,36 +406,62 @@ class Neocortex:
         log.neocortex.debug('Asked: "%s". Answer: "%s". Distance %s', query_text, response.objects[0].properties['answer'], response.objects[0].metadata.distance)
         return f"I know because this came up {self.how_long_ago(response.objects[0].properties['date_happened'])}. {response.objects[0].properties['answer']}"
 
-    def recall_proper_name(self, text: str):
+    def recall_proper_names(self, text: str):
         """This takes a string, basically one or more sentences, searches for Proper Names, and searches the neocortex.
-        Updates the date_recalled property."""
+        Updates the date_recalled property.
+        Returns a list of memories that are triggered by the proper names found in the text."""
 
         if not self.enabled:
             return None
 
-        # find the proper names in the text
-        # Strip. Chop off first char. Regex strip all except for letters and spaces. Iterate over sentence delimited by space.
-        # if two or more consecutive words are capitalized, capture them together
-        # let's code this step by step rather than one line, thanks
+        # pick all the matches and extract the names
+        matches = self.proper_names_regex.findall(text)
 
-        response = self.proper_names.query.near_text(
-            query=text,
-            limit=1,
-            distance=0.2,
-            return_metadata=['distance'],
-            filters=Filter.by_property("date_recalled").less_than(time.time() - (12 * 60 * 60)),
-        )
+        # eliminate any matches that have already been matched today
+        matches = [match for match in matches if match not in self.matched_proper_names]
 
-        # the response will be empty if there's no clear match
-        if len(response.objects) == 0:
-            log.neocortex.debug('No proper names found.')
+        if len(matches) == 0:
             return None
+        log.neocortex.debug('Proper names found: %s', matches)
 
-        # update the date_recalled property so that we don't trigger this over and over
-        self.proper_names.data.update(uuid=response.objects[0].uuid, properties={"date_recalled": int(time.time())})
+        memories = []
+        for name in matches:
 
-        log.neocortex.debug('Recalled proper name (distance %s): %s', response.objects[0].metadata.distance, response.objects[0].properties['memory'])
-        return f"I remember {response.objects[0].properties['name']}. {response.objects[0].properties['memory']}"
+            # add the name to the list of matched proper names
+            self.matched_proper_names.append(name)
+
+            response = self.proper_names.query.near_text(
+                query=name,
+                limit=1,
+                distance=0.1,
+                return_metadata=['distance'],
+                # filters=Filter.by_property("date_recalled").less_than(time.time() - (12 * 60 * 60)),
+            )
+
+            # the response will be empty if there's no clear match
+            if len(response.objects) == 0:
+                log.neocortex.debug('No proper names found.')
+                return None
+
+            # update the date_recalled property so that we don't trigger this over and over
+            # even though I have decided to not filter by date_recalled, I still want to update it just in case
+            self.proper_names.data.update(uuid=response.objects[0].uuid, properties={"date_recalled": int(time.time())})
+
+            log.neocortex.debug('Recalled proper name (distance %s): %s', response.objects[0].metadata.distance, response.objects[0].properties['memory'])
+            memories.append(random.choice(self.i_remember).format(response.objects[0].properties['name'], response.objects[0].properties['memory']))
+
+        return memories
+
+    def build_proper_name_regex(self):
+        """This rebuilds a compiled regex that will match proper names in text."""
+
+        names = []
+        for proper_name in self.proper_names.iterator():
+            if len(proper_name.properties["name"]) > 2:
+                names.append(proper_name.properties["name"])
+        names = list(set(names))
+        names = [rf'\b{re.escape(name)}\b' for name in names]
+        self.proper_names_regex = re.compile(rf"({'|'.join(names)})", re.IGNORECASE)
 
     def how_long_ago(self, date_happened: float):
         """This takes a date_happened and returns a fuzzy, nonexact description of how long ago it was,
@@ -280,8 +498,32 @@ class Neocortex:
         return 'a long time ago'
         # damn right. Thanks. You rock.
 
+    def delete_collections(self):
+        """This deletes the collections. This is used for setting up a transfer to this body."""
+
+        if not self.enabled:
+            return
+
+        # delete the collections
+        if self.client.collections.exists(name="Memories"):
+            log.neocortex.info('Deleting Memories collection.')
+            self.client.collections.delete(name="Memories")
+
+        if self.client.collections.exists(name="Questions"):
+            log.neocortex.info('Deleting Questions collection.')
+            self.client.collections.delete(name="Questions")
+
+        if self.client.collections.exists(name="ProperNames"):
+            log.neocortex.info('Deleting ProperNames collection.')
+            self.client.collections.delete(name="ProperNames")
+
     def get_collections(self):
         """Gets the collections. Creates the weaviate collections if missing."""
+
+        # this config is reused on all collections below
+        # I was unable to figure out how to set the vectorizer_config at the server level, so I am setting it for each collection
+        # vectorizer_config=wvc.config.Configure.Vectorizer.text2vec_openai(vectorize_collection_name=False)
+        vectorizer_config=wvc.config.Configure.Vectorizer.text2vec_transformers(vectorize_collection_name=False)
 
         # check if the Memories collection exists
         if self.client.collections.exists(name="Memories"):
@@ -312,11 +554,11 @@ class Neocortex:
                         description="The memory of the event",
                         vectorize_property_name=False),
                 ],
-                vectorizer_config=wvc.config.Configure.Vectorizer.text2vec_transformers(vectorize_collection_name=False)
+                vectorizer_config=vectorizer_config
             )
 
             # restore the memories from the backup since we just had to create it new
-            self.restore_memories()
+            self.restore('memories', self.memories)
 
 
         # check if the Questions collection exists
@@ -327,6 +569,7 @@ class Neocortex:
 
         else:
 
+            log.neocortex.info('Questions collection does not exist. Creating.')
             self.questions = self.client.collections.create(
                 name="Questions",
                 properties=[
@@ -352,11 +595,11 @@ class Neocortex:
                         description="The answer to the question that will be inserted into the prompt",
                         skip_vectorization=True),
                 ],
-                vectorizer_config=wvc.config.Configure.Vectorizer.text2vec_transformers(vectorize_collection_name=False)
+                vectorizer_config=vectorizer_config
             )
 
             # restore the questions from the backup since we just had to create it new
-            self.restore_questions()
+            self.restore('questions', self.questions)
 
 
         # check if the ProperNames collection exists
@@ -367,6 +610,7 @@ class Neocortex:
 
         else:
 
+            log.neocortex.info('ProperNames collection does not exist. Creating.')
             self.proper_names = self.client.collections.create(
                 name="ProperNames",
                 properties=[
@@ -392,11 +636,11 @@ class Neocortex:
                         description="The memory that will be inserted into the prompt when the name is mentioned",
                         skip_vectorization=True),
                 ],
-                vectorizer_config=wvc.config.Configure.Vectorizer.text2vec_transformers(vectorize_collection_name=False)
+                vectorizer_config=vectorizer_config
             )
 
-            # restore the questions from the backup since we just had to create it new
-            self.restore_proper_names()
+            # restore the proper names from the backup since we just had to create it new
+            self.restore('propernames', self.proper_names)
 
     def backup(self, collection: str = 'all'):
         """This saves the current state of the neocortex to a file. One collection or all."""
@@ -437,83 +681,52 @@ class Neocortex:
 
         if collection == 'proper_names' or collection == 'all':
 
-            # and the same for proper_names
+            # and the same for proper_names. The file name is propernames for reasons of laziness.
             proper_names = []
             for proper_name in self.proper_names.iterator(): # pylint: disable=not-an-iterable
                 proper_names.append(proper_name.properties)
             log.neocortex.info('Backing up %d proper names.', len(proper_names))
-            backup_filename = f'./backups/neocortex_proper_names_{int(time.time())}.json'
+            backup_filename = f'./backups/neocortex_propernames_{int(time.time())}.json'
             with open(file=backup_filename, mode='w', encoding='utf-8') as backup_file:
                 json_dump(proper_names, backup_file, ensure_ascii=False, check_circular=False, indent=2)
 
             # clean up
             proper_names = None
 
-    def restore_memories(self):
+    def restore(self, memtype: str, collection_object):
         """This reads the json backup file and reinserts it into weaviate."""
 
         if not self.enabled:
             return
 
-        # load the list of dicts from the file
-        try:
+        # first, find the latest backup file
+        latest_backup = None
+        for file in os.listdir('./backups/'):
+            if file.startswith(f'neocortex_{memtype}_') and file.endswith('.json'):
+                this_backup = int(file.split('_')[2].split('.')[0])
+                if latest_backup is None or this_backup > latest_backup:
+                    latest_backup = this_backup
 
-            with open(file='neocortex_backup_memories.json', mode='r', encoding='utf-8') as backup_file:
-                memories = json_load(backup_file)
-
-        except FileNotFoundError:
-            log.neocortex.warning('neocortex_backup_memories.json not found. Starting fresh.')
+        if latest_backup is None:
+            log.neocortex.warning('No backup files found for %s.', memtype)
             return
-
-        except JSONDecodeError:
-            log.neocortex.warning('neocortex_backup_memories.json is not a valid JSON file. Starting fresh.')
-            return
-
-        log.neocortex.info('Restoring %d memories from backup.', len(memories))
-        self.memories.data.insert_many(memories)
-
-    def restore_questions(self):
-        """This reads the json backup file and reinserts it into weaviate."""
-
-        if not self.enabled:
-            return
+        else:
+            latest_backup = f'./backups/neocortex_{memtype}_{latest_backup}.json'
+            log.neocortex.info('Restoring from %s.', latest_backup)
 
         # load the list of dicts from the file
         try:
 
-            with open(file='neocortex_backup_questions.json', mode='r', encoding='utf-8') as backup_file:
-                questions = json_load(backup_file)
+            with open(file=latest_backup, mode='r', encoding='utf-8') as backup_file:
+                stuff = json_load(backup_file)
 
         except FileNotFoundError:
-            log.neocortex.warning('neocortex_backup_questions.json not found. Starting fresh.')
+            log.neocortex.warning('%s not found. Starting fresh.', latest_backup)
             return
 
         except JSONDecodeError:
-            log.neocortex.warning('neocortex_backup_questions.json is not a valid JSON file. Starting fresh.')
+            log.neocortex.warning('%s is not a valid JSON file. Starting fresh.', latest_backup)
             return
 
-        log.neocortex.info('Restoring %d questions from backup.', len(questions))
-        self.questions.data.insert_many(questions)
-
-    def restore_proper_names(self):
-        """This reads the json backup file and reinserts it into weaviate."""
-
-        if not self.enabled:
-            return
-
-        # load the list of dicts from the file
-        try:
-
-            with open(file='neocortex_backup_proper_names.json', mode='r', encoding='utf-8') as backup_file:
-                proper_names = json_load(backup_file)
-
-        except FileNotFoundError:
-            log.neocortex.warning('neocortex_backup_proper_names.json not found. Starting fresh.')
-            return
-
-        except JSONDecodeError:
-            log.neocortex.warning('neocortex_backup_proper_names.json is not a valid JSON file. Starting fresh.')
-            return
-
-        log.neocortex.info('Restoring %d proper names from backup.', len(proper_names))
-        self.proper_names.data.insert_many(proper_names)
+        log.neocortex.info('Restoring %d %s from backup.', len(stuff), memtype)
+        collection_object.data.insert_many(stuff)
