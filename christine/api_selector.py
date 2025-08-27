@@ -16,9 +16,8 @@ class LLMSelector:
         # list of all possible LLM APIs in order of preference
         # "ClassName": "name",
         self.llm_apis = {
-            "GeminiWithWhisper": "gemini_with_whisper_api",
+            "RepeatWhatISayWithWhisper": "repeat_what_i_say",
             "Chub": "chub",
-            "OpenAI": "openai",
         }
 
         # start with an empty list to be filled with enabled LLM APIs

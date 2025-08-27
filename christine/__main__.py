@@ -10,14 +10,14 @@ from christine.database import database
 from christine.sounds import sounds_db
 from christine.status import STATE
 from christine.config import CONFIG
+from christine.vagina import vagina
 from christine.broca import broca
-from christine.parietal_lobe import parietal_lobe
 from christine.wernicke import wernicke
+from christine.parietal_lobe import parietal_lobe
 from christine.light import light
 from christine.cputemp import cputemp
 from christine.gyro import gyro
 from christine.sleep import sleep
-from christine.vagina import vagina
 from christine.touch import touch
 from christine.horny import horny
 from christine.sex import sex
