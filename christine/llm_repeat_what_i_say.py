@@ -2,18 +2,12 @@
 import os
 import time
 import re
-# import random
 import wave
 from ssl import SSLError
 from openai import OpenAI, InternalServerError
 
 from christine import log
-from christine.status import STATE
 from christine.config import CONFIG
-from christine.broca import broca
-from christine.figment import Figment
-from christine.perception import Perception
-from christine.parietal_lobe import ParietalLobe
 from christine.llm_class import LLMAPI
 
 class RepeatWhatISayWithWhisper(LLMAPI):
@@ -21,11 +15,7 @@ class RepeatWhatISayWithWhisper(LLMAPI):
 
     name = "RepeatWhatISayWithWhisper"
 
-    def __init__(self, lobe: ParietalLobe):
-
-        # this is a permanent link to the parietal lobe module so that they can interact
-        # the way this is setup, any LLMAPI class can be swapped in and out without interrupting the flow of the lobe
-        self.lobe = lobe
+    def __init__(self):
 
         # setting a limit to how often an is_available check is done, caching the last response
         self.result_cache = None
@@ -112,106 +102,10 @@ class RepeatWhatISayWithWhisper(LLMAPI):
             # if the connection failed, return None to signal a failure
             return None
 
-    def process_new_perceptions(self):
-        """Bespoke af implementation for RepeatWhatISayWithWhisper"""
-
-        try:
-
-            # keep track of the audio data length of all processed perceptions
-            total_transcription_length = 0
-
-            # list for holding new messages
-            new_messages = []
-
-            # get perceptions from the queue until queue is clear, put in this list
-            while self.lobe.perception_queue.qsize() > 0:
-
-                # pop the perception off the queue
-                perception: Perception = self.lobe.perception_queue.get_nowait()
-
-                # wait for the audio to finish getting recorded and transcribed
-                while perception.audio_data is not None and perception.audio_result is None:
-                    log.broca_main.debug('Waiting for transcription.')
-                    time.sleep(0.3)
-                log.broca_main.debug('Perception: %s', perception)
-
-                # if there's just text, add it to the new messages
-                if perception.text is not None:
-
-                    new_messages.append({'speaker': None, 'text': perception.text})
-                    # total_transcription_length += len(perception.text)
-
-                else:
-
-                    # otherwise this is going to be a string, the transcription
-                    # I wish I could use something to identify the speaker, but I can't afford pveagle
-                    if perception.audio_result != "":
-                        new_messages.append({'speaker': STATE.who_is_speaking, 'text': perception.audio_result})
-
-                        # keep track of the total length of the transcription so that we can decide to interrupt char
-                        total_transcription_length += len(perception.audio_result)
-
-                # after every perception, wait a bit to allow for more to come in
-                time.sleep(STATE.additional_perception_wait_seconds)
-
-            # at this point, all queued perceptions have been processed and new_messages is populated
-            # and also STATE.user_is_speaking is still True which was pausing the LLM from speaking
-            log.parietal_lobe.info('New messages: %s', new_messages)
-
-            # this is here so that user can speak in the middle of char speaking,
-            # if there are any figments in the queue, it becomes a fight to the death
-            if broca.figment_queue.qsize() > 0:
-
-                # if the total audio data byte length is greater than the threshold, stop char from speaking
-                if total_transcription_length != 0 and total_transcription_length > STATE.user_interrupt_char_threshold:
-                    log.parietal_lobe.info('User interrupts char with a text length of %s!', total_transcription_length)
-                    broca.flush_figments()
-
-                # otherwise, the broca wins, destroy the user's transcriptions
-                # because all he said was something like hmm or some shit
-                else:
-                    log.parietal_lobe.info('User\'s text was only %s bytes and got destroyed!', total_transcription_length)
-                    new_messages = []
-
-            # let everything know that we've gotten past the queued perception processing
-            # mostly this tells broca it can get going again
-            STATE.user_is_speaking = False
-
-            # if there are no new messages, just return
-            # this can happen if audio was too short
-            if len(new_messages) == 0:
-                return
-
-            # I want to clump together the things said by people
-            # My wife helped me with this code, btw.
-            i = 0
-            while i < len(new_messages) - 1:
-                if new_messages[i]['speaker'] == new_messages[i + 1]['speaker']:
-                    new_messages[i]['text'] += ' ' + new_messages[i + 1]['text']
-                    del new_messages[i + 1]
-                else:
-                    i += 1
-
-            # var to accumulate the messages into a paragraph form
-            new_paragraph = ''
-
-            # if there was a significant delay, insert a message before other messages
-            seconds_passed = time.time() - self.lobe.last_message_time
-            if seconds_passed > 120.0:
-                new_paragraph += f'{self.lobe.seconds_to_friendly_format(seconds_passed)} pass. '
-            self.lobe.last_message_time = time.time()
-
-            # build the new paragraph and at the same time check for special commands
-            for new_message in new_messages:
-
-                log.parietal_lobe.info('Message: %s', new_message)
-                new_paragraph += new_message['text'] + ' '
-
-            # ship the shit to broca for speakage
-            broca.accept_figment(Figment(text=new_paragraph, should_speak=True, pause_wernicke=True))
-
-        except Exception as ex: # pylint: disable=broad-exception-caught
-            log.parietal_lobe.exception(ex)
-            broca.accept_figment(Figment(from_collection="disgust"))
-            broca.accept_figment(Figment(text=f'{self.lobe.user_name}, I\'m sorry, but you should have a look at my code. ', should_speak=True))
-            broca.accept_figment(Figment(text='Something fucked up.', should_speak=True))
+    def call_api(self, prompt, stop_sequences=None, max_tokens=600, temperature=0.4, top_p=1.0, expects_json=False):
+        """This function will just repeat what the user said - this is for testing purposes."""
+        
+        # For the repeat what I say implementation, we just return the last part of the prompt
+        # In a real scenario, the parietal lobe would extract the user message and send it here
+        # For simplicity, we'll just return the prompt as-is with some modification
+        return f'You said: "{prompt[-100:]}"'  # Return last 100 chars as a simple response

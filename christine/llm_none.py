@@ -8,7 +8,7 @@ class Nothing(LLMAPI):
     name = "Nothing_LLM"
 
     def is_available(self):
-        """Returns True if the LLM API is available, False otherwise"""
+        """Returns... False"""
 
         # the initial state is that nothing is available
         return False
@@ -19,21 +19,8 @@ class Nothing(LLMAPI):
         # nothing to do here, just return an empty list
         return []
 
-    def process_new_perceptions(self):
-        """Bespoke af implementation of throw it all in the trash."""
-
-        from christine.status import STATE # pylint: disable=import-outside-toplevel
-        STATE.user_is_speaking = False
-
-        # just return
-        return
-
-    def fold_recent_memories(self):
-        """Nothing is done here, just return."""
-
-        return
-
-    def cycle_long_term_memory(self):
-        """Nothing is done here, just return."""
-
-        return
+    def call_api(self, prompt, stop_sequences=None, max_tokens=600, temperature=0.4, top_p=1.0, expects_json=False):
+        """This function throws the prompt in the trash and returns nothing useful."""
+        
+        # This is a placeholder LLM that does nothing
+        return "I can't respond right now because no real LLM is available."
