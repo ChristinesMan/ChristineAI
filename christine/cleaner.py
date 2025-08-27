@@ -52,7 +52,7 @@ class Cleaner(threading.Thread):
         log.main.info('Cleaned voice synth cache, deleted %s files.', files_deleted)
 
     def clean_wernicke_cache(self):
-        """An audio-ingesting LLM such as Gemini Audio may cache audio files. Clean them up."""
+        """Audio-processing systems may cache audio files. Clean them up."""
 
         seconds_below_to_delete = time.time() - self.cache_ttl
         cache_dir = 'sounds/wernicke'
