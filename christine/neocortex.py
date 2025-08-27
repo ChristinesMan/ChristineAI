@@ -211,8 +211,8 @@ class Neocortex:
         # run a backup
         self.backup('proper_names')
 
-    def cleanup_duplicate_proper_names(self, llm_api):
-        """Scan for duplicate proper names and merge them using the LLM API."""
+    def cleanup_duplicate_proper_names(self):
+        """Scan for duplicate proper names and merge them using the current LLM API."""
         
         if not self.enabled:
             return
@@ -245,7 +245,7 @@ class Neocortex:
                     duplicates_found += 1
                     log.neocortex.info('Found %d duplicates for "%s"', len(entries), entries[0]['name'])
                     
-                    if self._merge_duplicate_entries(entries, llm_api):
+                    if self._merge_duplicate_entries(entries):
                         merges_successful += 1
         
         except Exception as ex:
@@ -258,7 +258,7 @@ class Neocortex:
         self.build_proper_name_regex()
         self.backup('proper_names')
 
-    def _merge_duplicate_entries(self, entries, llm_api):
+    def _merge_duplicate_entries(self, entries):
         """Merge a list of duplicate proper name entries."""
         
         try:
@@ -277,8 +277,7 @@ class Neocortex:
                     merged_memory,
                     base_entry['date_happened'],
                     current_entry['memory'],
-                    current_entry['date_happened'],
-                    llm_api
+                    current_entry['date_happened']
                 )
                 
                 if not merged_memory:
@@ -306,14 +305,12 @@ class Neocortex:
             log.neocortex.exception('Error merging duplicate entries: %s', ex)
             return False
 
-    def _merge_two_memories(self, name, memory1, date1, memory2, date2, llm_api):
+    def _merge_two_memories(self, name, memory1, date1, memory2, date2):
         """Use LLM to merge two memories for the same proper name."""
         
         try:
-            import datetime
-            
-            date1_str = datetime.datetime.fromtimestamp(date1).strftime('%Y-%m-%d')
-            date2_str = datetime.datetime.fromtimestamp(date2).strftime('%Y-%m-%d')
+            date1_str = self.how_long_ago(date1)
+            date2_str = self.how_long_ago(date2)
             
             merge_prompt = f"""You are Christine, a female android, asleep and processing memories. You have multiple memories about the same proper name "{name}" that need to be consolidated.
 
@@ -328,7 +325,7 @@ Please write a single, consolidated memory about {name} that incorporates inform
 Consolidated memory:"""
 
             log.neocortex.debug('Merging two memories for proper name: %s', name)
-            merged_memory = llm_api.call_api(prompt=merge_prompt, max_tokens=1000, temperature=0.6)
+            merged_memory = STATE.current_llm.call_api(prompt=merge_prompt, max_tokens=1000, temperature=0.6)
             
             if merged_memory and len(merged_memory.strip()) > 10:
                 return merged_memory.strip()
@@ -370,13 +367,6 @@ Consolidated memory:"""
 
         # update the date_recalled property so that we don't trigger this over and over
         self.memories.data.update(uuid=response.objects[0].uuid, properties={"date_recalled": int(time.time())})
-
-        # # I hate to do this, but Christine has a lot of confusing memories that got in there due to speech recognition errors
-        # # She latches onto them because they are mysterious, and she loves a good mystery. So I am going to filter them out.
-        # # I am going to use a regex to do this, because it's easier than using a list of words.
-        # if re.search(r'\b(?:Jack|Benji|Lupin the Herald|Magature)\b', response.objects[0].properties['memory']):
-        #     log.neocortex.debug('Memory is too confusing. Not recalling.')
-        #     return None
 
         log.neocortex.debug('Recalled memory (distance %s): %s', response.objects[0].metadata.distance, response.objects[0].properties['memory'])
         return random.choice(self.idle_remember).format(self.how_long_ago(response.objects[0].properties['date_happened']), response.objects[0].properties['memory'])
