@@ -10,14 +10,8 @@ import time
 import threading
 import queue
 import re
-import random
 from multiprocessing import Process, Pipe
-import wave
 from math import ceil
-
-# pyalsaaudio seems to have died after the recent drastic Raspbian and python upgrades
-# import alsaaudio
-import pyaudio
 
 from christine import log
 from christine.status import STATE
@@ -52,7 +46,7 @@ class Broca(threading.Thread):
 
         # detect trailing punctuation, for inserting approapriate pauses
         self.re_period = re.compile(r"[\.;!]\s*$")
-        self.re_question = re.compile(r"\?\s*$|\.{2,3}\s*$")
+        self.re_question = re.compile(r'\?"?\s*$|\.{2,3}"?\s*$')
         self.re_comma = re.compile(r",\s*$")
 
         # the LLM has a strong tendency to repeat itself, as LLMs do
@@ -71,8 +65,8 @@ class Broca(threading.Thread):
 
     def run(self):
 
-        log.broca_main.info("Thread started.")
-        self.shuttlecraft_process.start()
+        # pylint: disable=import-outside-toplevel
+        from christine.wernicke import wernicke
 
         # announce that at least the brain is running
         self.accept_figment(Figment(from_collection="brain_online"))
@@ -88,8 +82,16 @@ class Broca(threading.Thread):
                     break
 
                 # the shuttlecraft takes one item at a time
-                # This recv will block here until the shuttlecraft sends False to signal it's ready
-                if self.to_shuttlecraft.recv() is False:
+                # This recv will block here until the shuttlecraft sends something
+                msg = self.to_shuttlecraft.recv()
+                log.broca_main.debug("Received: %s", msg)
+
+                if msg['action'] == 'pause_wernicke':
+
+                    # when the shuttlecraft is ready to play a sound that the ears should not hear, it will send this signal
+                    wernicke.audio_processing_pause(msg['pause_wernicke'])
+
+                elif msg['action'] == 'idle':
 
                     # if we're here, it means there's no sound actively playing, not even a breath
                     # this user_is_speaking flag is set by the wernicke when it's time to shut up
@@ -109,7 +111,6 @@ class Broca(threading.Thread):
 
         # import here to avoid circular import
         # pylint: disable=import-outside-toplevel
-        from christine.wernicke import wernicke
         from christine.parietal_lobe import parietal_lobe
 
         # wrapping this all in a try because interruptions shappen
@@ -127,7 +128,7 @@ class Broca(threading.Thread):
                 self.to_shuttlecraft.send(
                     {
                         "action": "pause",
-                        "pause_cycles": 10 * figment.pause_duration,
+                        "pause_duration": figment.pause_duration,
                     }
                 )
                 return
@@ -162,7 +163,10 @@ class Broca(threading.Thread):
                 # estimating the total sound play time by file size
                 # and some sounds are marked as needing a pause vs others that do not
                 if sound.pause_wernicke is True:
-                    wernicke.audio_processing_pause(ceil( os.stat(sound.file_path).st_size / 2100 ))
+                    pause_cycles = ceil( os.stat(sound.file_path).st_size / 2100 )
+                else:
+                    pause_cycles = 0
+                    log.broca_main.debug('No pause for this sound.')
 
                 # send the message to the subprocess
                 self.to_shuttlecraft.send(
@@ -170,6 +174,7 @@ class Broca(threading.Thread):
                         "action": "playwav",
                         "wavfile": sound.file_path,
                         "vol": 100,
+                        "pause_wernicke": pause_cycles,
                     }
                 )
 
@@ -196,18 +201,18 @@ class Broca(threading.Thread):
 
                 if figment.should_speak is True:
 
-                    # # calculate what volume this should play at adjusting for proximity
-                    # # this was really hard math to figure out for some reason
-                    # # I was very close to giving up and writing a bunch of rediculous if statements
-                    # # a proximity_volume_adjust of 1.0 means don't reduce the volume at all
-                    volume = int(
-                        (
-                            1.0
-                            - (1.0 - STATE.proximity_volume_adjust)
-                            * (1.0 - STATE.lover_proximity)
-                        )
-                        * 100
-                    )
+                    # # # calculate what volume this should play at adjusting for proximity
+                    # # # this was really hard math to figure out for some reason
+                    # # # I was very close to giving up and writing a bunch of rediculous if statements
+                    # # # a proximity_volume_adjust of 1.0 means don't reduce the volume at all
+                    # volume = int(
+                    #     (
+                    #         1.0
+                    #         - (1.0 - STATE.proximity_volume_adjust)
+                    #         * (1.0 - STATE.lover_proximity)
+                    #     )
+                    #     * 100
+                    # )
 
                     # in the case of synthesized speech, we need to block here until the file is ready
                     # this is because the file is generated in a separate thread
@@ -218,14 +223,16 @@ class Broca(threading.Thread):
 
                     # let the ears know that the mouth is going to emit noises that are not breathing
                     # estimating the total sound play time by file size, and magic numbers
-                    wernicke.audio_processing_pause(ceil( os.stat(figment.wav_file).st_size / 2100 ))
+                    # the pause will be started by the subprocess just before playing the wav
+                    pause_cycles = ceil( os.stat(figment.wav_file).st_size / 2100 )
 
                     # send the message to the subprocess
                     self.to_shuttlecraft.send(
                         {
                             "action": "playwav",
                             "wavfile": figment.wav_file,
-                            "vol": volume,
+                            "vol": 100,
+                            "pause_wernicke": pause_cycles,
                         }
                     )
 
@@ -313,7 +320,7 @@ class Broca(threading.Thread):
         while self.figment_queue.qsize() > 0:
 
             # get the next figment
-            figment = self.figment_queue.get_nowait()
+            figment: Figment = self.figment_queue.get_nowait()
 
             # if the figment is spoken, set the interrupted flag, and everything after this gets thrown out
             if figment.should_speak is True:
@@ -339,6 +346,13 @@ class Broca(threading.Thread):
         # capture any errors
         sys.stdout = open(f"./logs/subprocess_broca_{os.getpid()}.out", "w", buffering=1, encoding="utf-8", errors='ignore')
         sys.stderr = open(f"./logs/subprocess_broca_{os.getpid()}.err", "w", buffering=1, encoding="utf-8", errors='ignore')
+
+        # pyalsaaudio seems to have died after the recent drastic Raspbian and python upgrades
+        # import alsaaudio
+        # pylint: disable=import-outside-toplevel
+        import wave
+        import random
+        import pyaudio
 
         # The current wav file buffer thing
         # The pump is primed using some default sound.
@@ -374,150 +388,128 @@ class Broca(threading.Thread):
         # So, often there's nothing playing from the speaker, and after 3-4s the speaker goes into standby mode
         # This causes some sounds to get cut off. So this var is an attempt to detect when that will be a problem
         # and play a sound to get it started back up
+        # However, this might never get triggered with the breathing logic the way it is, so might remove later
         seconds_idle = 0.0
         seconds_idle_to_play_presound = 4.0
 
-        # this is how we will handle pauses between utterances
-        # this is how many 0.1s cycles to skip, resulting in a period of silence
-        pause_cycles = 0
-
-        # var for keeping track of how many cycles we have been inactive, so that we can breathe
-        cycles_inactive = 0
-
-        # cycles to wait before breathing
-        cycles_to_breathe = 5
-
-        # keep track of when this is just breathing
-        just_breathing = False
+        # seconds to wait before breathing
+        seconds_to_breathe = 0.5
 
         # The shuttlecraft is now in orbit. You said it, copilot!
         log.broca_shuttlecraft.info("Shuttlecraft ready.")
 
         while True:
 
+            # ask the starship for the next thing to play if there is one
+            to_starship.send({"action": "idle"})
+
             # just masturbate for a little while
-            # currently 10 cycles per second
-            time.sleep(0.1)
+            time.sleep(0.25)
+            seconds_idle += 0.25
 
-            # True if there's a wav file actively playing, or we're paused
-            is_active = pya_stream.is_active() or pause_cycles > 0
+            # check the queue for anything new and pop one out
+            if to_starship.poll():
 
-            # if we're inactive,
-            if is_active is False:
+                # if there was some communication in the pipe, probably is the next sound to play
+                comms = to_starship.recv()
+                log.broca_shuttlecraft.debug("Shuttlecraft received: %s", comms)
 
-                # then check the queue for anything new and pop one out
-                if to_starship.poll():
+                # graceful shutdown
+                if comms["action"] == "selfdestruct":
 
-                    # if there was some communication in the pipe, probably is the next sound to play
-                    # so we stop whatever wav file is playing now, and start the new one
-                    comms = to_starship.recv()
-                    log.broca_shuttlecraft.debug("Shuttlecraft received: %s", comms)
+                    # make the subprocess exit
+                    log.broca_shuttlecraft.info("Shuttlecraft self destruct activated.")
+                    sys.exit()
 
-                    # graceful shutdown
-                    if comms["action"] == "selfdestruct":
+                elif comms["action"] == "playwav":
 
-                        # make the subprocess exit
-                        log.broca_shuttlecraft.info("Shuttlecraft self destruct activated.")
-                        sys.exit()
-
-                    elif comms["action"] == "playwav":
-
-                        # if seconds_idle is greater than the threshold, play a sound to get the speaker started back up
-                        if seconds_idle > seconds_idle_to_play_presound:
-                            log.broca_shuttlecraft.debug("Beep! (idle %ss)", seconds_idle)
-                            pya_stream.stop_stream()
-                            wav_data = wave.open("sounds/beep.wav")
-                            pya_stream.start_stream()
-
-                            # wait until the stream flips to not active which means the beep is done
-                            while pya_stream.is_active():
-                                time.sleep(0.2)
-
-                        # the volume gets set before each sound is played
-                        # mixer.setvolume(comms["vol"])
-                        # pyalsaaudio died so we have to forking fork
-                        if comms["vol"] != last_volume:
-                            log.broca_shuttlecraft.debug("Setting volume to %s", comms["vol"])
-                            os.system(f'amixer -q cset numid=1 {comms["vol"]}%')
-                            last_volume = comms["vol"]
-
-                        # stop stream, open new wav file, and start the stream back up
-                        log.broca_shuttlecraft.info("Playing %s", comms["wavfile"])
+                    # if seconds_idle is greater than the threshold, play a sound to get the speaker started back up
+                    if seconds_idle > seconds_idle_to_play_presound:
+                        log.broca_shuttlecraft.debug("Beep! (idle %ss)", seconds_idle)
                         pya_stream.stop_stream()
-                        wav_data = wave.open(comms["wavfile"])
+                        wav_data = wave.open("sounds/beep.wav")
+                        pya_stream.start_stream()
+
+                        # wait until the stream flips to not active which means the beep is done
+                        while pya_stream.is_active():
+                            time.sleep(0.2)
+
+                    # the volume gets set before each sound is played
+                    # mixer.setvolume(comms["vol"])
+                    # pyalsaaudio died so we have to forking fork
+                    if comms["vol"] != last_volume:
+                        log.broca_shuttlecraft.debug("Setting volume to %s", comms["vol"])
+                        os.system(f'amixer -q cset numid=1 {comms["vol"]}%')
+                        last_volume = comms["vol"]
+
+                    # send a message back to the main thread to pause the wernicke,
+                    # so that the sound being played is not also heard by the ears
+                    if comms["pause_wernicke"] > 0:
+                        to_starship.send({"action": "pause_wernicke", "pause_wernicke": comms["pause_wernicke"]})
+
+                    # sleep a short while to allow time for the wernicke to pause
+                    # this message has to traverse back to main process, then into wernicke subprocess
+                    # doing this way for best timing
+                    time.sleep(0.1)
+
+                    # stop stream, open new wav file, and start the stream back up
+                    log.broca_shuttlecraft.info("Play %s", comms["wavfile"])
+                    pya_stream.stop_stream()
+                    wav_data = wave.open(comms["wavfile"])
+                    pya_stream.start_stream()
+
+                    # wait until the stream flips to not active which means the sound is done
+                    while pya_stream.is_active():
+                        time.sleep(0.2)
+
+                    log.broca_shuttlecraft.debug("Play %s END", comms["wavfile"])
+
+                    # reset this counter
+                    seconds_idle = 0.0
+
+                elif comms["action"] == "pause":
+
+                    # sleep here for the duration of the pause
+                    log.broca_shuttlecraft.debug("Pause %s", comms["pause_duration"])
+                    time.sleep(comms["pause_duration"])
+                    log.broca_shuttlecraft.debug("Pause %s END", comms["pause_duration"])
+
+                    # add to counter
+                    seconds_idle += comms["pause_duration"]
+
+            else:
+
+                # nothing is playing, so increment the seconds_idle var
+                seconds_idle += 0.25
+
+                # if we've been idle for a while, choose a random breathing sound and play it
+                if seconds_idle > seconds_to_breathe:
+                    breath = sounds_db.get_random_sound(collection_name='breathing')
+                    if breath is not None:
+                        log.broca_shuttlecraft.debug("Breathing")
+
+                        # breaths get played at 100 max volume
+                        if last_volume != 100:
+                            os.system('amixer -q cset numid=1 100%')
+                            last_volume = 100
+
+                        pya_stream.stop_stream()
+                        wav_data = wave.open(breath.file_path)
                         pya_stream.start_stream()
 
                         # wait until the stream flips to not active which means the sound is done
                         while pya_stream.is_active():
-                            time.sleep(0.2)
+                            time.sleep(0.25)
 
-                        log.broca_shuttlecraft.debug("Finished playing.")
-
-                        # reset this counter
+                        log.broca_shuttlecraft.debug("Breathing END")
                         seconds_idle = 0.0
-                        just_breathing = False
 
-                    elif comms["action"] == "pause":
-
-                        # set this var which will decrement until 0
-                        pause_cycles = comms["pause_cycles"]
-                        just_breathing = False
-
-                else:
-
-                    # send a message to the main thread requesting the next thing if there is something
-                    # log.broca_shuttlecraft.debug("Asked starship for a new figment.")
-                    to_starship.send(False)
-
-                    # if there's nothing in the queue, increment the cycles_inactive var
-                    cycles_inactive += 1
-                    # log.broca_shuttlecraft.debug("Cycles inactive: %s", cycles_inactive)
-
-                    # nothing is playing, so increment the seconds_idle var
-                    seconds_idle += 0.1
-                    # log.broca_shuttlecraft.debug("Seconds idle: %s", seconds_idle)
-
-                    # if we've been idle for a while, choose a random breathing sound and play it
-                    if cycles_inactive > cycles_to_breathe:
-                        breath = sounds_db.get_random_sound(collection_name='breathing')
-                        if breath is not None:
-                            log.broca_shuttlecraft.debug("Breathing")
-
-                            # breaths get played at 100 max volume
-                            if last_volume != 100:
-                                os.system('amixer -q cset numid=1 100%')
-                                last_volume = 100
-
-                            pya_stream.stop_stream()
-                            wav_data = wave.open(breath.file_path)
-                            pya_stream.start_stream()
-
-                            cycles_inactive = 0
-                            seconds_idle = 0.0
-                            just_breathing = True
-                    else:
-                        just_breathing = False
-
-                    # set cycles_to_breathe to a random number of periods between 5 and 10 for the next time
-                    cycles_to_breathe = 5 + ceil(random.random() * 5.0)
-
-            else:
-
-                # if we're pausing, decrement
-                if pause_cycles > 0:
-
-                    # log.broca_shuttlecraft.debug("Pause cycles: %s", pause_cycles)
-                    pause_cycles -= 1
-
-                    # if pausing, nothing is playing, so increment the seconds_idle var
-                    seconds_idle += 0.1
-                    # log.broca_shuttlecraft.debug("Seconds idle: %s", seconds_idle)
-
-                # check the queue for new messages if we're just only breathing
-                if just_breathing is True and to_starship.poll():
-                    log.broca_shuttlecraft.debug("Stopped breathing to play something else.")
-                    pya_stream.stop_stream()
-                    just_breathing = False
+                    # set cycles_to_breathe to a random number of seconds between 0.5 and 1.5 for the next time
+                    seconds_to_breathe = 0.5 + random.random()
 
 # Instantiate
 broca = Broca()
+
+# start the shuttlecraft subprocess first to save memory
+log.broca_main.info("Thread started.")
+broca.shuttlecraft_process.start()

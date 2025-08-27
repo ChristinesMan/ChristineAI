@@ -64,17 +64,13 @@ class Figment(threading.Thread):
     def do_tts(self):
         """This function calls an api to convert text to speech. The api accepts a json string with the text to convert and returns binary audio data."""
 
-        # import the broca module here to avoid circular imports
-        # pylint: disable=import-outside-toplevel
-        from christine.broca import broca
-
         # standardize the text to just the words, no spaces, for the file path
         text_stripped = re.sub("[^a-zA-Z0-9 ]", "", self.text).lower().strip().replace(' ', '_')[0:100]
         file_path = f"sounds/synth/{text_stripped}.wav"
 
         # if there's already a cached synthesized sound, use the same cached stuff and return it
         if os.path.isfile(file_path):
-            # log.broca.debug("Using cached wav file: %s", file_path)
+            log.broca_main.debug("Using cached wav file: %s", file_path)
             self.wav_file = file_path
             return
 
@@ -99,16 +95,20 @@ class Figment(threading.Thread):
                     wav_file.writeframes(response.content)
                     wav_file.close()
 
-                    # log.broca.debug("Created wav file: %s", file_path)
+                    log.broca_main.debug("Created wav file: %s", file_path)
                     self.wav_file = file_path
 
                 else:
 
+                    log.broca_main.error("Broca server returned bad code. Text: %s  Status: %s  Response: %s", self.text, response.status_code, response.text)
                     raise HTTPError("Failed to convert text to speech")
 
-            except (ConnectionError, Timeout, HTTPError):
+            except (ConnectionError, Timeout, HTTPError) as ex:
 
-                # if the connection failed, set the server to None
+                # if the connection failed, log the error
+                log.broca_main.error("Broca server not reachable. Text: %s  Error: %s", self.text, ex)
+
+                # and set the server to None
                 servers.broca_ip = None
 
     def __str__(self) -> str:
