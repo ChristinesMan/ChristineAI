@@ -1,6 +1,6 @@
 /*
 
-  Christine's Head
+  Christine's Head, fourth generation
 
   There once was a female robot named Christine. 
   Her designer loved her very much. 
@@ -9,13 +9,10 @@
 */
 
 #include <Wire.h>
-#include "Adafruit_MPR121.h"
 
 #ifndef _BV
 #define _BV(bit) (1 << (bit)) 
 #endif
-
-Adafruit_MPR121 touch_sensor = Adafruit_MPR121();
 
 #include <I2S.h>
 
@@ -25,30 +22,21 @@ Adafruit_MPR121 touch_sensor = Adafruit_MPR121();
 // because that's what pvcobra wants. Sweep the leg. 
 uint8_t AudioData[512];
 
+// This head will have capacitive touch sensors, of the momentary digital on/off variety.
+// I have installed 5 sensors.
+uint8_t TouchPins[5] = {
+  0,  // Forehead
+  1,  // Right Cheek
+  18, // Mouth
+  19, // Left Cheek
+  20  // Nose
+};
+
 // struct for the sensor block buffer
 // So let's figure length of the sensor block right here right now
-// @!#?@!LLT1T2T3T4T5T6T7T8T9T0T1T2@!#?@!
-// 6 + 2 + (12 * 2) + 6 = 38 bytes
-uint8_t SensorBlock[38] = { '@', '!', '#', '?', '@', '!', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '!', '@', '?', '#', '!', '@' };
-uint16_t SensorData[13] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-
-// light sensor pin
-const int LightSensorPin = A2;
-
-// I don't want the light sensor's voltage divider to have current flowing at all times
-// If it was, the sensor might slightly heat up and skew the reading
-// Dunno if this was really significant, but I put a transistor on this pin
-// so that the current flows only when taking a measurement. 
-const int ActivatePin = 0;
-
-// Light sensor raw value
-int LightSensorValue = 0;
-
-// Using this float to calculate a running average
-float LightSensorAvg = 0.0;
-
-// This is here so that we can gracefully handle a fucked up touch sensor
-bool TouchSensorAvailable = true;
+// @!#?@!TTTTT@!#?@!
+// 6 + 5 = 11 bytes
+uint8_t SensorBlock[11] = { '@', '!', '#', '?', '@', '!', 0, 0, 0, 0, 0 };
 
 // On the python end, I'll snap the sensor data out of there. If the sensor block is not found,
 // we'll read and throw away just enough chars so that it starts to align
@@ -65,11 +53,18 @@ void AudioDataAvailable() {
   if ( bytesread > 0 ) {
 
     // every 4th block, send some magic swear words, the sensor data, then more swearing
-    // 512 * 2 left side, 512 * 2 right side. Right? 
+    // Why every 4 blocks? 512 * 2 left side, 512 * 2 right side. 
+    // At the python end we read a sensor block, then 512 frames. 
+    // which is 512 bytes * 2 bytes per sample * 2 channels (ears, two cute!)
     if ( LoopCount % 4 == 0 ) {
 
-      // write the whole sensor block
-      Serial.write(SensorBlock, 38);
+      // grab the touch data and insert into the middle of SensorBlock
+      for (uint8_t i=0; i<sizeof(TouchPins); i++) {
+        SensorBlock[i+6] = digitalRead(TouchPins[i]);
+      }
+
+      // write the sensor block
+      Serial.write(SensorBlock, sizeof(SensorBlock));
     }
     
     // Increment this bitch
@@ -87,27 +82,16 @@ void setup() {
   digitalWrite(LED_BUILTIN, HIGH);
   delay(5000);
   digitalWrite(LED_BUILTIN, LOW);
-
-  // light sensor init, first reading, prime the pump
-  pinMode(ActivatePin, OUTPUT);
-  digitalWrite(ActivatePin, HIGH);
-
   delay(100);
-  LightSensorAvg = float(analogRead(LightSensorPin));
-
-  // touch sensor init
-  // This used to stop everything in case of fail. 
-  // Well I'm not going to be able to access inside head to fix it. 
-  // And I'm sure as fuck not drilling holes. 
-  // I'm done with brain surgery. Fuck it if it breaks. 
-  // At least we'll still have hearing. 
-  if (!touch_sensor.begin(0x5A)) {
-    TouchSensorAvailable = false;
-  }
 
   // start up serial
   Serial.begin(115200);
   while (!Serial) {
+  }
+
+  // init the touch sensor pins
+  for (uint8_t i=0; i<sizeof(TouchPins); i++) {
+    pinMode(TouchPins[i], INPUT);
   }
 
   // Start up I2S
@@ -125,42 +109,4 @@ void setup() {
 }
 
 void loop() {
-  // get the light and touch sensor readings over and over
-  // pop them into the struct that gets sent every 512 short ints worth with audio data
-
-  // For light sensor, activate the transistor that controls the flow of current through the voltage divider
-  digitalWrite(ActivatePin, HIGH);
-
-  // Wait a little bit for the transistor to go.
-  // I dunno if this is needed.
-  // What do I look like, an engineer? 
-  delay(20);
-
-  // Get the voltage reading
-  LightSensorValue = analogRead(LightSensorPin);
-
-  // Deactivate the transistor
-  digitalWrite(ActivatePin, LOW);
-
-  // Update this running average with the raw value converted to float
-  LightSensorAvg = ( ( LightSensorAvg * 10.0 ) + (float)LightSensorValue ) / 11.0;
-
-  // Pop the new light sensor avg into the sensor block struct
-  SensorData[12] = int(LightSensorAvg);
-
-  // Touch sensor, all 12 channels
-  // If touch sensor fucked up, you get the zeros the struct got initialized with, same length either way
-  if ( TouchSensorAvailable ) {
-    for (uint8_t i=0; i<12; i++) {
-        SensorData[i] = touch_sensor.filteredData(i);
-    }
-  }
-
-  // copy the fucking memory dammit, you're supposed to be unsafe
-  // I swear this shit was no problem when I was in college
-  // you could do whatever you fucking wanted
-  memcpy(SensorBlock + 6, SensorData, 26);
-
-  // delay a bit before doing it again
-  delay(250);
 }

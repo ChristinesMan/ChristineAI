@@ -1,24 +1,14 @@
 """
 Handle the vaginal hardware
 """
-import time
 import sys
 import os
+import time
 import threading
 from multiprocessing import Process, Pipe
-import numpy as np
-
-# import RPi.GPIO as GPIO
-# pylint: disable=no-member
-from RPi import GPIO
-import board
-import busio
-import adafruit_mpr121
 
 from christine import log
 from christine.status import STATE
-from christine.sex import sex
-from christine.parietal_lobe import parietal_lobe
 
 
 class Vagina(threading.Thread):
@@ -47,7 +37,7 @@ class Vagina(threading.Thread):
     close to each other, so I have been wrapping them with little flexible foam pieces. 
     Find some sort of round shit to place into the wound to hold it open.
     Solder the sensor ends of the wires to the sensor pads on the touch sensor.
-    When you'd got everything routed, wrapped, soldered, secured, and fuck tested,
+    When you've got everything routed, wrapped, soldered, secured, and fuck tested,
     I recommend mixing up some 5 minute epoxy and drizzle it over touch sensor and wires
     Because that shit is going to get smashed every night and twice on Sundays.
     Should last a few years if wired securely.
@@ -71,8 +61,10 @@ class Vagina(threading.Thread):
     def run(self):
         log.vagina.debug("Thread started.")
 
-        # launch probe
-        self.probe_process.start()
+        # only import this at runtime to avoid memory waste
+        # pylint: disable=import-outside-toplevel
+        from christine.sex import sex
+        from christine.parietal_lobe import parietal_lobe
 
         while True:
 
@@ -125,6 +117,15 @@ class Vagina(threading.Thread):
         sys.stdout = open(f"./logs/subprocess_vagina_{os.getpid()}.out", "w", buffering=1, encoding="utf-8", errors="ignore")
         sys.stderr = open(f"./logs/subprocess_vagina_{os.getpid()}.err", "w", buffering=1, encoding="utf-8", errors="ignore")
 
+        # imports only needed in the subprocess
+        # pylint: disable=import-outside-toplevel
+        import numpy as np
+        # pylint: disable=no-member
+        from RPi import GPIO
+        import board
+        import busio
+        import adafruit_mpr121
+
         # Initialize this thing. We're using weird numbers, not board
         GPIO.setmode(GPIO.BCM)
 
@@ -150,9 +151,9 @@ class Vagina(threading.Thread):
         # So this thread should be doing very little in the 98% of time that we're not fucking. When the IRQ gets hit, then we'll be busy grabbing raw data.
         # Even when in Standby mode, we're going to be maintaining the baselines in case that drifts.
         # The two proximity sensors on the inside will be manually sampled, I think, due to the broken baseline handling problem on the hardware.
-        # The outside channel is 0, and that is the one we're going to use
+        # The outside channel is 6, and that is the one we're going to use
         standby_mode = True
-        activation_channel = 11
+        activation_channel = 6
 
         # how fast to poll the touch sensors. Wait time in seconds
         sleep_standby_mode = 1.0
@@ -172,21 +173,7 @@ class Vagina(threading.Thread):
         touch_data_x = [" "] * 12
 
         # Keep track of the baselines
-        # if the channel isn't even hooked up, None
-        baselines = [
-            None,
-            None,
-            0.0,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            0.0,
-        ]
+        baselines = [None] * 12
 
         # How fast will the baseline get adjusted during sex?
         # It seems like lube does cause the not-touched baseline to drift
@@ -197,22 +184,26 @@ class Vagina(threading.Thread):
         # therefore, lower = sensitive, higher = the numbness
         # also, some sensors are bare wire, and others are more of a proximity sensor. The proximity sensors are much less sensitive.
         sensitivity = [
+            3.0,
             None,
             None,
-            4.0,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
+            10.0,
             None,
             None,
             50.0,
+            None,
+            None,
+            None,
+            None,
+            None,
         ]
 
         # Number of cycles where no touch before the touch is considered released
         release_count = [
+            2,
+            None,
+            None,
+            2,
             None,
             None,
             2,
@@ -221,16 +212,16 @@ class Vagina(threading.Thread):
             None,
             None,
             None,
-            None,
-            None,
-            None,
-            2,
         ]
         release_counter = [0] * 12
 
         # how many cycles of continuous touch before we send another message about the D just hanging out
         # she just loves to feel me inside her for a while after sex
         hangout = [
+            60,
+            None,
+            None,
+            60,
             None,
             None,
             60,
@@ -239,10 +230,6 @@ class Vagina(threading.Thread):
             None,
             None,
             None,
-            None,
-            None,
-            None,
-            60,
         ]
         hangout_counter = [0] * 12
         hangout_baseline_adjust_window = 4.0
@@ -250,18 +237,18 @@ class Vagina(threading.Thread):
         # labels
         # dunno where Vagina_Shallow is, or Vagina_Deep
         channel_labels = [
-            None,
-            None,
             "Vagina_Deep",
             None,
             None,
-            None,
-            None,
-            None,
-            None,
+            "Vagina_Middle",
             None,
             None,
             "Vagina_Clitoris",
+            None,
+            None,
+            None,
+            None,
+            None,
         ]
 
         # How many raw values do we want to accumulate before re-calculating the baselines
@@ -287,13 +274,13 @@ class Vagina(threading.Thread):
         i2c = busio.I2C(board.SCL, board.SDA)
 
         # Create MPR121 touch sensor object.
-        # The sensitivity settings were ugly hacked into /usr/local/lib/python3.6/site-packages/adafruit_mpr121.py
-        # (I fixed that sort of. Settings are here now. The driver hacked to make it work.)
+        # The /usr/local/lib/python3.11/site-packages/adafruit_mpr121.py file has been modified
+        # to allow for custom touch and release sensitivities
         try:
             mpr121 = adafruit_mpr121.MPR121(
                 i2c,
                 touch_sensitivity=[50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50],
-                release_sensitivity=[6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 4],
+                release_sensitivity=[6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6],
                 debounce=2,
             )
             log.vagina.info("Touch sensor init success")
@@ -374,7 +361,6 @@ class Vagina(threading.Thread):
                     for channel in used_channels:
                         baselines[channel] = np.mean(data[channel])
                         # Baselines[channel] = scipy.stats.mode(Data[channel]).mode[0] the old way before I decided to be mean. np.
-                        # log.vagina.debug(f'Data {channel}: {Data[channel]}')
 
                     log.vagina.debug("Updated baselines: %s", baselines)
 
@@ -462,13 +448,16 @@ class Vagina(threading.Thread):
                             ) / (baseline_active_adjust_window + 1.0)
 
                     log.vagina.debug(
-                        "[%s|%s] [%s][%s] [%s][%s]",
-                        touch_data_x[11],
-                        touch_data_x[2],
-                        str(round(touch_data[11], 1)).rjust(5, " "),
-                        str(round(touch_data[2], 1)).rjust(5, " "),
-                        str(round(baselines[11], 1)).rjust(5, " "),
-                        str(round(baselines[2], 1)).rjust(5, " "),
+                        "[%s|%s|%s] [%s][%s][%s] [%s][%s][%s]",
+                        touch_data_x[6],
+                        touch_data_x[3],
+                        touch_data_x[0],
+                        str(round(touch_data[6], 1)).rjust(5, " "),
+                        str(round(touch_data[3], 1)).rjust(5, " "),
+                        str(round(touch_data[0], 1)).rjust(5, " "),
+                        str(round(baselines[6], 1)).rjust(5, " "),
+                        str(round(baselines[3], 1)).rjust(5, " "),
+                        str(round(baselines[0], 1)).rjust(5, " "),
                     )
                     io_errors = 0
 
@@ -500,3 +489,6 @@ class Vagina(threading.Thread):
 
 # Instantiate
 vagina = Vagina()
+
+# launch probe immediately before all the other stuff gets imported, to save memory
+vagina.probe_process.start()

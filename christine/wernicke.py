@@ -6,16 +6,6 @@ import os
 import time
 import threading
 from multiprocessing import Process, Pipe
-from collections import deque
-
-# import wave
-import queue
-import signal
-import struct
-from pydub import AudioSegment
-import serial
-import numpy as np
-import pvcobra
 
 from christine import log
 from christine.status import STATE
@@ -55,15 +45,11 @@ class Wernicke(threading.Thread):
 
         # pylint: disable=import-outside-toplevel
         # importing here to avoid circular imports
-        from christine.light import light
         from christine.touch import touch
         from christine.parietal_lobe import parietal_lobe
 
         log.wernicke.debug("Thread started.")
         log.imhere.info("")
-
-        # start the process
-        self.away_team_process.start()
 
         # The subprocess starts off just spinning it's wheels, chucking away any audio data it gets
         # Because it seemed like having everything happen all at once caused high cpu, then it would have to catch up
@@ -109,12 +95,10 @@ class Wernicke(threading.Thread):
 
                     log.broca_main.debug("SpeakingStart")
 
-                # the audio data contains embedded sensor and voice proximity data
+                # the audio data contains embedded sensor data
                 elif comm["class"] == "sensor_data":
 
-                    light.new_data(comm["light"])
                     touch.new_data(comm["touch"])
-                    STATE.lover_proximity = comm["proximity"]
 
                 # Words from the speech recognition server
                 elif comm["class"] == "utterance":
@@ -196,8 +180,17 @@ class Wernicke(threading.Thread):
         sys.stdout = open(f"./logs/subprocess_wernicke_{os.getpid()}.out", "w", buffering=1, encoding="utf-8", errors="ignore")
         sys.stderr = open(f"./logs/subprocess_wernicke_{os.getpid()}.err", "w", buffering=1, encoding="utf-8", errors="ignore")
 
-        # log the pid to the main log
-        log.main.info("Wernicke subprocess PID: %s", os.getpid())
+        # imports that only the subprocess needs
+        # pylint: disable=import-outside-toplevel
+        from collections import deque
+        import queue
+        import signal
+        import struct
+        from pydub import AudioSegment
+        import serial
+        # import numpy as np
+        import pvcobra
+        import webrtcvad
 
         # If we're recording, this holds the message from the enterprise containing file data. If not recording, contains None
         recording_state = None
@@ -212,11 +205,6 @@ class Wernicke(threading.Thread):
 
         # This is a queue where the audio data in 512 frame chunks inbound from the serial port gets put
         buffer_queue = queue.Queue(maxsize=60)
-
-        # we're going to keep track of the proximity detected.
-        # This works great. When wife is far away, she pipes up. When we're pillow talking, she avoids shouting in your ear which she used to do.
-        # For now this is disabled, but I plan to bring it back later
-        proximity = 1.0
 
         # Send message to the main process
         def hey_honey(love):
@@ -257,7 +245,6 @@ class Wernicke(threading.Thread):
                 nonlocal buffer_queue
                 nonlocal processing_state
                 nonlocal shutdown
-                nonlocal proximity
 
                 # delay for a bit at startup to let the CPU catch up
                 time.sleep(40)
@@ -289,43 +276,28 @@ class Wernicke(threading.Thread):
                         log.wernicke.info("Closed serial port")
                         return
 
-                    # the arduino sketch is designed to embed into the 2048 bytes of audio data 38 bytes of sensor data at the start
-                    # we read 38 + 2048 = 2086 bytes at a time.
-                    # for some reason if I read 38, then do stuff, then read 2048, it never lines up, so, at length, I now read all at once
-                    data = self.serial_port_from_head.read(2086)
+                    # the arduino sketch is designed to embed into the 2048 bytes of audio data 11 bytes of sensor data at the start
+                    # we read 11 + 2048 = 2059 bytes at a time.
+                    # for some reason if I read 11, then do stuff, then read 2048, it never lines up, so, at length, I now read all at once
+                    data = self.serial_port_from_head.read(2059)
 
                     # if we read the sensor data at the start of data, that means we're lined up
                     if data[0:6] == b"@!#?@!":
 
-                        # but we only want to do stuff with sensor data every 32nd run, the rest of the time it's discarded
-                        if loop_run % 32 == 0:
+                        # extract sensor data from bytes
+                        # new format: 6 byte header + 5 boolean touch sensors (1 byte each)
+                        touch_sensor_data = [False] * 5
+                        for i in range(0, 5):
+                            pos = 6 + i
+                            touch_sensor_data[i] = bool(data[pos])
 
-                            # extract sensor data from bytes
-                            touch_sensor_data = [0] * 12
-                            for i in range(0, 12):
-                                pos = 6 + (i * 2)
-                                touch_sensor_data[i] = int.from_bytes(
-                                    data[pos : pos + 2], byteorder="little"
-                                )
-                            light_sensor_data = int.from_bytes(
-                                data[30:32], byteorder="little"
-                            )
-
-                            # trend proximity towards far away, slowly, using this running average
-                            # I am going to test disabling this. So if we're close together on the bed, and I don't speak for a while, it'll stay what it was.
-                            # After a long time I wondered why she was always so quiet, so trying it back on
-                            proximity = ((proximity * 900.0) + 1.0) / 901.0
-
-                            # send sensor data to main process. Feel like I'm passing a football.
-                            # Proximity local var can be less than 0.0 or higher than 1.0, but we clip it before passing up to the main process
-                            hey_honey(
-                                {
-                                    "class": "sensor_data",
-                                    "light": light_sensor_data,
-                                    "touch": touch_sensor_data,
-                                    "proximity": float(np.clip(proximity, 0.0, 1.0)),
-                                }
-                            )
+                        # send sensor data to main process. Feel like I'm passing a football.
+                        hey_honey(
+                            {
+                                "class": "sensor_data",
+                                "touch": touch_sensor_data,
+                            }
+                        )
 
                     # if we did not encounter sensor data, that means we are not aligned, so read in some shit and flush it
                     else:
@@ -353,6 +325,7 @@ class Wernicke(threading.Thread):
                             # data = self.serial_port_from_head.read(3000)
                             # log.wernicke.info("Adjust done")
                             log.wernicke.info("No sensor data found. Ripping it out.")
+                            log.play_sound()
                             self.serial_port_from_head.close()
                             time.sleep(15)
                             self.serial_port_from_head = serial.Serial(  # pylint: disable=no-member
@@ -373,7 +346,7 @@ class Wernicke(threading.Thread):
                         try:
 
                             # the audio data will be after the sensor data
-                            buffer_queue.put(data[38:], block=False)
+                            buffer_queue.put(data[11:], block=False)
 
                         # if the queue is full, it's a sign I need to evaluate CPU usage, so full stop
                         # happens every day. I definitely need to pare it down, but also this should just pause for a while not just
@@ -386,6 +359,9 @@ class Wernicke(threading.Thread):
 
                         # log.wernicke.debug('pp %s qs %s', self.pause_processing, buffer_queue.qsize())
                         self.pause_processing -= 1
+
+                        if self.pause_processing == 0:
+                            log.wernicke.debug("Resuming processing")
 
         # instantiate and start the thread
         head_mic = ReadHeadMicrophone()
@@ -430,8 +406,8 @@ class Wernicke(threading.Thread):
         messages_thread.daemon = True
         messages_thread.start()
 
-        class Audio(object):
-            """Streams raw audio from microphone. Data is received in a separate thread, and stored in a buffer, to be read from."""
+        class AudioWithCobraVAD(object):
+            """Handles audio input from the microphone and processes it using Cobra VAD."""
 
             def __init__(self):
 
@@ -486,15 +462,12 @@ class Wernicke(threading.Thread):
                 triggered_blocks = 0
                 triggered_block_limit = 2560
 
-                # this is a global var for tracking voice proximity, but has not been used for a long time, should be chopped out
-                nonlocal proximity
-
                 # there's a spot below where I'll be using struct.unpack that uses this 513 byte long str
                 # worried python's going to try to build the string over and over, so set it here and reuse
                 unpack_string = '<'+'h'*512
 
                 # at what probability should we start being triggered
-                triggered_prob = 0.4
+                triggered_prob = 0.45
 
                 while True:
                     # forever read new blocks of audio data
@@ -558,8 +531,150 @@ class Wernicke(threading.Thread):
                             else:
                                 post_silence -= 1
 
+        class AudioWithWebRTC(object):
+            """Handles audio input from the microphone and processes it using WebRTC."""
+
+            def __init__(self):
+
+                # start the webrtc vad
+                log.wernicke.debug("Initializing webrtcvad...")
+                self.vad = webrtcvad.Vad()
+                self.vad.set_mode(3)
+
+            def read(self):
+                """Return a block of audio data, blocking if necessary."""
+
+                # There's a thread up there constantly popping stuff into this buffer queue
+                nonlocal buffer_queue
+
+                # first we get 2 channels from the serial port
+                # frame size is 512, width is 16 bit, rate is 16000, channels is 2
+                # so each block is 512 * 2 * 2 = 2048 bytes
+                # then we split it into two mono channels, and take the second one, because that's her best ear
+                # then we add 15 to the volume because the mics are really quiet
+                # so this happens 31.25 times per second
+                # which also means 0.032 seconds per block
+                in_audio = (
+                    AudioSegment(
+                        data=buffer_queue.get(),
+                        sample_width=2,
+                        frame_rate=16000,
+                        channels=2,
+                    ).split_to_mono()[1] + 15
+                )
+
+                return in_audio.raw_data
+
+            def collector(self):
+                """Generator that yields series of consecutive audio blocks comprising each utterence, separated by yielding a single None.
+                Example: (block, ..., block, None, block, ..., block, None, ...)
+                            |---utterence---|        |---utterence---|
+                """
+                num_padding_blocks = 40
+                ring_buffer = deque(maxlen=num_padding_blocks)
+
+                # triggered means we're currently seeing blocks that are not silent
+                triggered = False
+
+                # Limit the number of blocks accumulated to some sane amount, after I discovered minute-long recordings
+                triggered_blocks = 0
+                triggered_block_limit = 2560
+
+                # at what probability should we start being triggered
+                triggered_prob = 0.45
+
+                # this tracks the probability of speech over the last second
+                block_prob = 0.0
+                block_prob_window = 32.0
+
+                while True:
+                    # forever read new blocks of audio data
+                    block = self.read()
+
+                    try:
+
+                        # webrtcvad requires 30ms chunks, so need to figure out how many bytes at 16000Hz
+                        # 16000Hz * 0.03s = 480 samples
+                        # 480 samples * 2 bytes per sample = 960 bytes
+                        # so we take the first 960 bytes of the block
+                        # and then we check if this is speech or not
+                        is_speech = self.vad.is_speech(
+                            block[:960], sample_rate=16000
+                        )
+                        # log.wernicke.debug("is_speech %s", is_speech)
+
+                    except Exception as ex:
+                        log.wernicke.error("WebRTC VAD error: %s", ex)
+                        is_speech = False
+
+                    # I want to calculate a running average of the probability of speech over the last second
+                    if is_speech:
+                        # if this is speech, then the probability is 1.0
+                        block_prob = (block_prob * (block_prob_window - 1) + 1.0) / block_prob_window
+                    else:
+                        # if this is not speech, then the probability is 0.0
+                        block_prob = (block_prob * (block_prob_window - 1)) / block_prob_window
+                    # log.wernicke.debug("block_prob %.2f", block_prob)
+
+                    # NOT triggered
+                    # when not triggered, it means we're not currently collecting audio for processing
+                    if not triggered:
+                        ring_buffer.append(block)
+                        if block_prob >= triggered_prob:
+                            # whether we're triggered or not, immediately notify that lover is speaking
+                            # timing is important
+                            # if lover wasn't already speaking, notify they are now
+                            hey_honey({"class": "speaking_start"})
+
+                            log.wernicke.debug("triggered")
+                            triggered_blocks = 1
+                            triggered = True
+
+                            # if we were just triggered, send all the past audio blocks that were in the queue and empty it
+                            for stored_block in ring_buffer:
+                                yield stored_block
+                            ring_buffer.clear()
+
+                            # this is to track how many silent/ignore blocks we've had, so we can stop at some point
+                            post_silence = 60
+
+                    # TRIGGERED!
+                    # when triggered, it means we are currently in the middle of an utterance and accumulating it into a ball of data
+                    else:
+                        # increment this counter meant to limit the number of blocks to a sane amount
+                        triggered_blocks += 1
+
+                        # send the block whatever it is
+                        yield block
+
+                        # if this is a lover or lover_maybe block, reset the counter, else if it's not lover determine if we should end streaming
+                        # also I want to make it easier to trigger when already triggered
+                        if block_prob >= triggered_prob * 0.8:
+
+                            # reset the counter of consecutive silent blocks, because we got one that was not silent
+                            post_silence = 60
+
+                        else:
+
+                            # if there have been enough consecutive silent/ignore blocks,
+                            # then we're done with transmission, reset everything and throw a None to signal the end
+                            if post_silence <= 0 or triggered_blocks > triggered_block_limit:
+                                log.wernicke.debug("untriggered")
+                                triggered = False
+                                yield None
+                                ring_buffer.clear()
+                            else:
+                                post_silence -= 1
+
         # Start all the VAD detection stuff
-        audio = Audio()
+        if CONFIG['wernicke']['vad'] == 'pvcobra':
+            audio = AudioWithCobraVAD()
+        elif CONFIG['wernicke']['vad'] == 'webrtcvad':
+            audio = AudioWithWebRTC()
+        else:
+            log.main.error("Invalid VAD configuration: %s", CONFIG['wernicke']['vad'])
+            return
+        log.wernicke.info("Using VAD: %s", CONFIG['wernicke']['vad'])
 
         # blocks is a collector, iterate over it and out come blocks that were classified as speech
         blocks = audio.collector()
@@ -593,3 +708,6 @@ class Wernicke(threading.Thread):
 
 # Instantiate
 wernicke = Wernicke()
+
+# start the subprocess first thing to save memory
+wernicke.away_team_process.start()
