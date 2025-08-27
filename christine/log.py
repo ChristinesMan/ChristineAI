@@ -15,7 +15,7 @@ logging.basicConfig(
     filename="./logs/main.log",
     filemode="a",
     format="%(asctime)s - %(levelname)s - %(threadName)s - %(message)s",
-    level=logging.DEBUG,
+    level=logging.INFO,
 )
 
 
@@ -44,14 +44,14 @@ gyro = setup_logger("gyro")
 cputemp = setup_logger("cputemp")
 sleep = setup_logger("sleep")
 db = setup_logger("db", level=logging.WARNING)
-broca_main = setup_logger("broca_main", level=logging.DEBUG)
-broca_shuttlecraft = setup_logger("broca_shuttlecraft", level=logging.DEBUG)
-wernicke = setup_logger("wernicke", level=logging.DEBUG)
+broca_main = setup_logger("broca_main")
+broca_shuttlecraft = setup_logger("broca_shuttlecraft")
+wernicke = setup_logger("wernicke")
 light = setup_logger("light")
-touch = setup_logger("touch")
-sex = setup_logger("sex", level=logging.DEBUG)
+touch = setup_logger("touch", level=logging.DEBUG)
+sex = setup_logger("sex")
 horny = setup_logger("horny")
-vagina = setup_logger("vagina", level=logging.DEBUG)
+vagina = setup_logger("vagina")
 parietal_lobe = setup_logger("parietal_lobe", level=logging.DEBUG)
 llm_stream = setup_logger("llm_stream", level=logging.DEBUG)
 neocortex = setup_logger("neocortex", level=logging.DEBUG)
@@ -70,6 +70,3 @@ def log_exception(_, value, trace_back):
     main.exception("Uncaught exception: %s", value)
     main.exception("Detail: %s", format_tb(trace_back))
 sys.excepthook = log_exception
-
-# # log exceptions that occur in threads
-# threading.excepthook = log_exception

@@ -1,33 +1,23 @@
 [wernicke]
-
-# Your Picovoice key for using cobra and eagle
-pv_key=[YOUR_API_KEY_GOES_HERE]
-
-# Server IP or host where speech recognition is, or "auto" to listen for broadcast UDP packets from the server
-server=auto
+enabled = no
+pv_key = 
+server = auto
 
 [broca]
-
-# Server IP or host where voice synthesis is, or "auto" to listen for broadcast UDP packets from the server
-server=auto
+enabled = yes
+server = auto
 
 [parietal_lobe]
+user_name = Phantom
+char_name = Christine
 
-# The name of the carbon based unit
-user_name=Phantom
+repeat_what_i_say_enabled = no
 
-# The name of the silicon based unit
-char_name=Christine
-
-# Is chub an enabled LLM, and your api key
-chub_enabled = no
+chub_enabled = yes
 chub_api_key = 
 
-# Is Google Gemini LLM enabled, and your api key
-gemini_text_enabled = yes
-gemini_audio_enabled = no
-gemini_api_key = 
+openai_api_key = 
 
-# Is openai LLM enabled, and your api key
-openai_enabled = no
-openai_api_key =
+[neocortex]
+enabled = yes
+server = myserver.lan

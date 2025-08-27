@@ -21,5 +21,9 @@ CONFIG.read_dict({
         'base_url': 'https://inference.chub.ai',
         'api_key': 'None',
     },
+    'neocortex': {
+        'enabled': 'yes',
+        'server': 'localhost',
+    },
 })
 CONFIG.read('config.ini')
