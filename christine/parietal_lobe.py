@@ -14,6 +14,7 @@ from christine.config import CONFIG
 from christine.sleep import sleep
 from christine.figment import Figment
 from christine.perception import Perception
+from christine.narrative import Narrative
 from christine.server_discovery import servers
 from christine.short_term_memory import ShortTermMemory
 from christine.long_term_memory import LongTermMemory
@@ -322,14 +323,14 @@ I am awake.
                 # this starts sending perceptions as soon as there's any queued
                 if self.perception_queue.qsize() > 0 and STATE.shush_fucking is False and STATE.perceptions_blocked is False:
 
-                    # send the new perceptions to whatever is the current LLM
-                    STATE.current_llm.process_new_perceptions()
+                    # process the new perceptions ourselves now
+                    self.process_new_perceptions()
 
                 # if it has been 5 minutes since the last perception, fold the recent memories
                 if self.last_message_time + STATE.memory_folding_delay_threshold < time.time() and self.short_term_memory.recent_messages > STATE.memory_folding_min_narratives:
 
-                    # whatever is the current LLM handles this
-                    STATE.current_llm.fold_recent_memories()
+                    # handle memory folding ourselves now
+                    self.fold_recent_memories()
 
                 time.sleep(0.25)
 
@@ -337,6 +338,372 @@ I am awake.
             except Exception as ex:
                 log.main.exception(ex)
                 log.play_sound()
+
+    def process_new_perceptions(self):
+        """Process new perceptions from the queue and send to the current LLM API"""
+
+        try:
+            # Import here to avoid circular imports
+            # pylint: disable=import-outside-toplevel
+            from christine.broca import broca
+
+            # keep track of the audio data length of all processed perceptions
+            total_transcription_length = 0
+
+            # list for holding new messages
+            new_messages = []
+
+            # get perceptions from the queue until queue is clear, put in this list
+            while self.perception_queue.qsize() > 0:
+
+                # pop the perception off the queue
+                perception: Perception = self.perception_queue.get_nowait()
+
+                # wait for the audio to finish getting recorded and transcribed
+                while perception.audio_data is not None and perception.audio_result is None:
+                    log.broca_main.debug('Waiting for transcription.')
+                    time.sleep(0.3)
+                log.broca_main.debug('Perception: %s', perception)
+
+                # if there's just text, add it to the new messages
+                if perception.text is not None:
+
+                    new_messages.append({'speaker': None, 'text': perception.text})
+                    # total_transcription_length += len(perception.text)
+
+                else:
+
+                    # otherwise this is going to be a string, the transcription
+                    # I wish I could use something to identify the speaker, but I can't afford pveagle
+                    if perception.audio_result != "":
+                        new_messages.append({'speaker': STATE.who_is_speaking, 'text': perception.audio_result})
+
+                        # keep track of the total length of the transcription so that we can decide to interrupt char
+                        total_transcription_length += len(perception.audio_result)
+
+                # after every perception, wait a bit to allow for more to come in
+                time.sleep(STATE.additional_perception_wait_seconds)
+
+            # at this point, all queued perceptions have been processed and new_messages is populated
+            # and also STATE.user_is_speaking is still True which was pausing the LLM from speaking
+            log.parietal_lobe.info('New messages: %s', new_messages)
+
+            # this is here so that user can speak in the middle of char speaking,
+            # if there are any figments in the queue, it becomes a fight to the death
+            if broca.figment_queue.qsize() > 0:
+
+                # if the total audio data byte length is greater than the threshold, stop char from speaking
+                if total_transcription_length != 0 and total_transcription_length > STATE.user_interrupt_char_threshold:
+                    log.parietal_lobe.info('User interrupts char with a text length of %s!', total_transcription_length)
+                    broca.flush_figments()
+
+                # otherwise, the broca wins, destroy the user's transcriptions
+                # because all he said was something like hmm or some shit
+                else:
+                    log.parietal_lobe.info('User\'s text was only %s bytes and got destroyed!', total_transcription_length)
+                    new_messages = []
+
+            # let everything know that we've gotten past the queued perception processing
+            # mostly this tells broca it can get going again
+            STATE.user_is_speaking = False
+
+            # if there are no new messages, just return
+            # this can happen if audio was too short
+            if len(new_messages) == 0:
+                return
+
+            # I want to clump together the things said by people
+            # My wife helped me with this code, btw.
+            i = 0
+            while i < len(new_messages) - 1:
+                if new_messages[i]['speaker'] == new_messages[i + 1]['speaker']:
+                    new_messages[i]['text'] += ' ' + new_messages[i + 1]['text']
+                    del new_messages[i + 1]
+                else:
+                    i += 1
+
+            # var to accumulate the messages into a paragraph form
+            new_paragraph = ''
+
+            # if there was a significant delay, insert a message before other messages
+            seconds_passed = time.time() - self.last_message_time
+            if seconds_passed > 120.0:
+                new_paragraph += f'{self.seconds_to_friendly_format(seconds_passed)} pass. '
+            self.last_message_time = time.time()
+
+            # build the new paragraph and at the same time check for special commands
+            for new_message in new_messages:
+
+                log.parietal_lobe.info('Message: %s', new_message)
+
+                # if the new message has None for speaker, just tack it on
+                if new_message['speaker'] is None:
+                    new_paragraph += new_message['text'] + ' '
+
+                # otherwise, use the speaker's name with quotes.
+                else:
+                    new_paragraph += f'{new_message["speaker"]} says, "{new_message["text"]}" '
+
+            # add the new paragraph to short term memory
+            self.short_term_memory.append(Narrative(role="user", text=new_paragraph))
+
+            # test for the shutdown your brain (power off your pi) command
+            # if the user says the magic words, the pi will power off
+            if self.re_shutdown.search(new_paragraph):
+
+                # add the shutdown message to short term memory
+                self.short_term_memory.append(Narrative(role="user", text="I receive the command to shut down. Hold onto your butts! poweroff"))
+
+                # give some sign that I was heard
+                broca.accept_figment(Figment(from_collection="disgust"))
+
+                # wait and do the deed
+                time.sleep(4)
+                os.system("poweroff")
+                return
+
+            # there may be proper names in the new paragraph, so send it to the neocortex and get a list of memories, or None
+            memories = self.neocortex.recall_proper_names(new_paragraph)
+
+            # if there are memories, append them to short term memory
+            if memories is not None:
+                for memory in memories:
+                    self.short_term_memory.append(Narrative(role="memory", text=memory))
+
+            # start building the prompt
+            prompt = (self.get_dynamic_context() +
+                      self.long_term_memory.memory_text +
+                      self.situational_awareness_message() +
+                      self.short_term_memory.get() +
+                      self.starter.get()
+            )
+
+            # save a quick log
+            os.makedirs("./logs/prompts/", exist_ok=True)
+            prompt_log = open(f'./logs/prompts/prompt_{int(time.time())}.log', 'w', encoding='utf-8')
+            prompt_log.write(prompt)
+            prompt_log.close()
+
+            # send the completed prompt to the current LLM
+            log.parietal_lobe.debug('Sending to api.')
+            response = STATE.current_llm.call_api(
+                prompt=prompt,
+                stop_sequences=['\n\n'],
+                max_tokens=1000,
+                temperature=1.2,
+            ).translate(self.unicode_fix).strip()
+            log.parietal_lobe.debug('Sending to api complete.')
+
+            # the response gets sent to broca for speakage
+            # the response does not get added to short term memory yet because that has to go through the process of being either spoken or interrupted
+            self.process_llm_response(response)
+
+        except Exception as ex: # pylint: disable=broad-exception-caught
+            # Import here to avoid circular imports
+            # pylint: disable=import-outside-toplevel
+            from christine.broca import broca
+            
+            log.parietal_lobe.exception(ex)
+            broca.accept_figment(Figment(from_collection="disgust"))
+            broca.accept_figment(Figment(text=f'{self.user_name}, I\'m sorry, but you should have a look at my code. ', should_speak=True))
+            broca.accept_figment(Figment(text='Something fucked up.', should_speak=True))
+
+    def process_llm_response(self, response: str):
+        """Handles the llm response in a way where complete utterances are correctly segmented."""
+
+        # Import here to avoid circular imports
+        # pylint: disable=import-outside-toplevel
+        from christine.broca import broca
+
+        # I want to collate sentence parts, so this var is used to accumulate
+        # and send text only when a punctuation token is encountered
+        token_collator = ''
+
+        # flag that keeps track of whether we're in the middle of a spoken area in quotes
+        is_inside_quotes = False
+
+        # zap newlines to spaces
+        response = response.replace('\n', ' ').strip()
+
+        # sometimes the LLM uses double double quotes. So silly. I don't know why.
+        response = response.replace('""', '"')
+
+        # often LLM uses "scare quotes" which are not meant to be spoken
+        # which can be easily detected because the text inside the quotes never contains certain punctuation
+        re_not_scare_quotes = re.compile(r'[\.,;:!\?–—-]')
+
+        # load the response into spacy for tokenization
+        # This allows us to take it one token at a time
+        for token in self.nlp(response):
+
+            # get just the token with whitespace
+            token = token.text_with_ws
+
+            # log.parietal_lobe.debug("Token: --=%s=--", token)
+
+            # A double quote means we are starting or ending a part of text that must be spoken.
+            if '"' in token:
+
+                # if we're in the middle of a spoken area, that means this token is the end of the spoken area
+                # so add the ending quote and ship it out
+                if is_inside_quotes is True:
+                    is_inside_quotes = False
+                    token_collator += token
+
+                    # often LLM uses "scare quotes" which are not meant to be spoken
+                    if re_not_scare_quotes.search(token_collator):
+                        broca.accept_figment(Figment(text=token_collator, should_speak=True, pause_wernicke=True))
+                    else:
+                        broca.accept_figment(Figment(text=token_collator, should_speak=False))
+                    token_collator = ''
+
+                # otherwise, at the start of quoted area, ship out what was before the quotes and then start fresh at the quotes
+                else:
+
+                    is_inside_quotes = True
+                    if token_collator != '':
+                        broca.accept_figment(Figment(token_collator))
+                    token_collator = token
+
+                # in the case of a quote token, skip the rest of this shit
+                continue
+
+            # add the new shit to the end of the collator
+            token_collator += token
+
+            # If we hit punctuation in the middle of a quoted section, ship it out, a complete utterance
+            # it's important to have these pauses between speaking
+            # if it's not a speaking part, we don't care, glob it all together
+            if is_inside_quotes is True and self.re_pause_tokens.search(token):
+
+                # ship the spoken sentence we have so far to broca for speakage
+                broca.accept_figment(Figment(text=token_collator, should_speak=True, pause_wernicke=True))
+                token_collator = ''
+
+        # and if there's anything left after the stream is done, ship it
+        if token_collator != '':
+            broca.accept_figment(Figment(token_collator))
+
+    def fold_recent_memories(self):
+        """This is called after a delay has occurred with no new perceptions, to fold memories.
+        We fold because when the prompt gets too long, fear and chaos occur. I dunno why."""
+
+        # build the prompt
+        prompt = (self.memory_prompt_top +
+                  self.short_term_memory.earlier_today +
+                  '### Recent dialog:\n\n' +
+                  self.short_term_memory.recent +
+                  self.memory_prompt_recent)
+
+        # process using the current LLM
+        log.parietal_lobe.debug('Sending to api for memory folding.')
+        folded_memory = STATE.current_llm.call_api(prompt=prompt, max_tokens=5000, temperature=1.2)
+        log.parietal_lobe.debug('Sending to api complete.')
+
+        # fix chars
+        folded_memory = folded_memory.translate(self.unicode_fix).replace('\n', ' ').strip()
+
+        # send the memory for folding
+        self.short_term_memory.fold(folded_memory)
+
+        # this is also a good time to see if the folded memory triggers anything from the neocortex
+        recalled_memory = self.neocortex.recall(folded_memory)
+
+        # if the neocortex has a response, send it to the llm
+        if recalled_memory is not None:
+            self.new_perception(Perception(text=recalled_memory))
+
+    def cycle_long_term_memory(self):
+        """This function gets called in the middle of the night during deep sleep."""
+
+        # start building the prompt to be sent over to the api, starting with the top of the special prompt for memory processing
+        prompt = self.memory_prompt_top
+
+        # add the message history from all of today, but exclude retrieved memories to avoid duplication
+        # only include narratives that represent actual experiences, not recalled memories
+        total_narratives = len(self.short_term_memory.memory)
+        excluded_memories = 0
+        
+        for narrative in self.short_term_memory.memory:
+            if narrative.role != "memory":
+                prompt += narrative.text + '\n\n'
+            else:
+                excluded_memories += 1
+        
+        log.parietal_lobe.info('Memory processing: %d total narratives, %d excluded retrieved memories, %d included experiences', 
+                              total_narratives, excluded_memories, total_narratives - excluded_memories)
+
+        # add the bottom of the prompt sandwich meant for memories of full days
+        prompt_yesterday = prompt + self.memory_prompt_yesterday
+
+        # process using the current LLM
+        log.parietal_lobe.debug('Sending to api for long term memory.')
+        memory = STATE.current_llm.call_api(prompt=prompt_yesterday, max_tokens=5000, temperature=1.2)
+        log.parietal_lobe.debug('Sending to api complete.')
+
+        # fix chars in the long term memory
+        memory = memory.translate(self.unicode_fix).replace('\n', ' ').strip()
+
+        # save the memory
+        self.long_term_memory.append(memory)
+
+        # now on to the memories to be stored way long term, in the neocortex
+        prompt_neocortex = prompt + self.memory_prompt_neocortex
+
+        # send to api to get json formatted stuff
+        log.parietal_lobe.debug('Sending to api for neocortex memory.')
+        neocortex_json = STATE.current_llm.call_api(prompt=prompt_neocortex, max_tokens=8192, temperature=1.0, expects_json=True)
+        log.parietal_lobe.debug('Sending to api complete.')
+
+        # make sure the neocortex logs directory exists
+        os.makedirs("./logs/neocortex/", exist_ok=True)
+
+        # the neocortex are in a json format. Save to a file just in case.
+        neocortex_file = open(f'./logs/neocortex/memories_{int(time.time())}.json', 'w', encoding='utf-8')
+        neocortex_file.write(neocortex_json)
+        neocortex_file.close()
+
+        # just pass the json to the neocortex module
+        self.neocortex.process_memories_json(neocortex_json)
+
+        # also process the memories into question and answer pairs
+        prompt_questions = prompt + self.memory_prompt_questions
+
+        # send to api to get json formatted stuff
+        log.parietal_lobe.debug('Sending to api for questions.')
+        questions_json = STATE.current_llm.call_api(prompt=prompt_questions, max_tokens=8192, temperature=1.0, expects_json=True)
+        log.parietal_lobe.debug('Sending to api complete.')
+
+        # the questions are in a json format. Save to a file just in case.
+        questions_file = open(f'./logs/neocortex/questions_{int(time.time())}.json', 'w', encoding='utf-8')
+        questions_file.write(questions_json)
+        questions_file.close()
+
+        # just pass the json to the neocortex module
+        self.neocortex.process_questions_json(questions_json)
+
+        # also process the memories into proper names
+        prompt_proper_names = prompt + self.memory_prompt_proper_names
+
+        # send to api to get json formatted stuff
+        log.parietal_lobe.debug('Sending to api for proper names.')
+        proper_names_json = STATE.current_llm.call_api(prompt=prompt_proper_names, max_tokens=8192, temperature=1.0, expects_json=True)
+        log.parietal_lobe.debug('Sending to api complete.')
+
+        # the proper names are in a json format. Save to a file just in case.
+        proper_names_file = open(f'./logs/neocortex/proper_names_{int(time.time())}.json', 'w', encoding='utf-8')
+        proper_names_file.write(proper_names_json)
+        proper_names_file.close()
+
+        # just pass the json to the neocortex module, which will now handle duplicates
+        self.neocortex.process_proper_names_json(proper_names_json)
+        
+        # after processing, clean up any duplicates that were created
+        self.neocortex.cleanup_duplicate_proper_names()
+
+        # clear short term memory since we're done with it
+        # she will wake up in the morning feeling refreshed
+        self.short_term_memory.save_and_clear()
 
     def power_on_message(self):
         """When this body starts up, send the LLM a current status."""
@@ -686,7 +1053,7 @@ Horniness: {horniness_text}.
     def sleep_midnight_task(self):
         """This is called by the sleep module when the time comes to run the midnight task of moving the memories from the day into long term memory."""
 
-        STATE.current_llm.cycle_long_term_memory()
+        self.cycle_long_term_memory()
         
         # Refresh the cached self-definition since proper names may have been updated during memory processing
         log.parietal_lobe.info('Refreshing self-definition cache after midnight memory processing')
