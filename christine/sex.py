@@ -255,7 +255,7 @@ class Sex(threading.Thread):
                 if random.random() > 0.97:
 
                     log.sex.info('Allowing LLM to speak.')
-                    STATE.current_llm.process_new_perceptions()
+                    parietal_lobe.process_new_perceptions()
 
                 else:
 
