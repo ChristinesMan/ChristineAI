@@ -1,4 +1,4 @@
-"""This handles the API for Chub with whisper API for speech to text"""
+"""This handles the API for OpenRouter with whisper API for speech to text"""
 import os
 import time
 import re
@@ -12,10 +12,10 @@ from christine.status import STATE
 from christine.config import CONFIG
 from christine.llm_class import LLMAPI
 
-class Chub(LLMAPI):
-    """This handles the API for Chub with whisper API for speech to text"""
+class OpenRouter(LLMAPI):
+    """This handles the API for OpenRouter with whisper API for speech to text"""
 
-    name = "Chub"
+    name = "OpenRouter"
 
     def __init__(self):
 
@@ -30,11 +30,11 @@ class Chub(LLMAPI):
         os.makedirs(self.wav_save_dir, exist_ok=True)
 
         # How to connect to the LLM api. The api key comes from config.ini file
-        self.chub_url = 'https://inference.chub.ai/prompt'
-        self.api_key = CONFIG.chub_api_key
+        self.openrouter_url = 'https://openrouter.ai/api/v1/completions'
+        self.api_key = CONFIG.openrouter_api_key
 
         # check the config for a valid looking api key and if it's not correct-looking set it to None
-        if not re.match(r'^CHK-\S{46}$', self.api_key):
+        if not self.api_key or not re.match(r'^sk-or-', self.api_key):
             self.api_key = None
 
         # the api key for openai is used to access whisper
@@ -56,6 +56,13 @@ class Chub(LLMAPI):
             self.whisper_api = OpenAI(api_key=self.whisper_api_key)
         else:
             self.whisper_api = None
+
+        # default model for OpenRouter - can be overridden in config
+        self.model = CONFIG.openrouter_model
+
+        # optional site info for OpenRouter rankings
+        self.site_url = CONFIG.openrouter_site_url
+        self.site_name = CONFIG.openrouter_site_name
 
     def is_available(self):
         """Returns True if the LLM API is available, False otherwise. Assumes that the API is available if the API key is set."""
@@ -117,42 +124,28 @@ class Chub(LLMAPI):
         """This function will call the llm api and return the response."""
 
         headers = {
-            'CH-API-KEY': self.api_key,
+            'Authorization': f'Bearer {self.api_key}',
             'Content-Type': 'application/json',
-            'User-Agent': 'ChristineAI/1.0'
         }
 
+        # add optional site info for rankings if configured
+        if self.site_url:
+            headers['HTTP-Referer'] = self.site_url
+        if self.site_name:
+            headers['X-Title'] = self.site_name
+
         payload = {
-            "model": "soji",
-            "prompt": "",
-            "frequency_penalty": 0.1,
+            "model": self.model,
+            "prompt": prompt,
             "max_tokens": max_tokens,
-            "n": 1,
-            "presence_penalty": 0.0,
-            "stop": stop_sequences if stop_sequences is not None else [],
-            "stream": False,
             "temperature": temperature,
             "top_p": top_p,
-            "top_k": 50,
-            "min_p": 0,
-            "repetition_penalty": 1,
-            "length_penalty": 1,
-            "stop_token_ids": [0],
-            "include_stop_str_in_output": False,
-            "ignore_eos": False,
-            "min_tokens": 0,
-            "skip_special_tokens": True,
-            "spaces_between_special_tokens": True,
-            "truncate_prompt_tokens": 1,
-            "add_special_tokens": True,
-            "continue_final_message": False,
-            "add_generation_prompt": False,
-            "token_repetition_penalty": 1.05,
-            "token_repetition_range": -1,
-            "token_repetition_decay": 0,
-            "top_a": 0,
-            "template": prompt
+            "stream": False,
         }
+
+        # add stop sequences if provided
+        if stop_sequences is not None:
+            payload["stop"] = stop_sequences
 
         # this is for fault tolerance. Flag controls whether we're done here or need to try again.
         # and how long we ought to wait before retrying after an error
@@ -168,7 +161,7 @@ class Chub(LLMAPI):
                 start_time = time.time()
                 # send the api call
                 response = post(
-                    self.chub_url,
+                    self.openrouter_url,
                     headers=headers,
                     json=payload,
                     timeout=60
@@ -182,8 +175,8 @@ class Chub(LLMAPI):
                 # log the response
                 log.llm_stream.debug("Response: %s", response)
 
-                # get the text of the response
-                response_text=response['choices'][0]['message']['content'].strip()
+                # get the text of the response - OpenRouter /completions endpoint returns choices with 'text' field
+                response_text = response['choices'][0]['text'].strip()
 
                 # if the caller expects proper well formed json, let's try to fix common issues
                 if expects_json is True:

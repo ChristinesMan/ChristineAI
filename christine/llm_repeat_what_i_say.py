@@ -28,7 +28,7 @@ class RepeatWhatISayWithWhisper(LLMAPI):
         os.makedirs(self.wav_save_dir, exist_ok=True)
 
         # the api key for openai is used to access whisper
-        self.whisper_api_key = CONFIG['parietal_lobe']['openai_api_key']
+        self.whisper_api_key = CONFIG.openai_api_key
 
         # check the config for a valid looking api key, but I'm unsure about the format, whatever
         if not re.match(r'^sk-proj-', self.whisper_api_key):

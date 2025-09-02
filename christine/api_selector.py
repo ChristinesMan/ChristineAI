@@ -12,36 +12,38 @@ class LLMSelector:
     """Coordinates available and currently selected LLM APIs"""
 
     def __init__(self):
-
-        # list of all possible LLM APIs in order of preference
-        # "ClassName": "name",
-        self.llm_apis = {
-            "RepeatWhatISayWithWhisper": "repeat_what_i_say",
-            "Chub": "chub",
-        }
-
         # start with an empty list to be filled with enabled LLM APIs
         self.llm_enabled: list[LLMAPI] = []
 
     def find_enabled_llms(self):
         """This is called once at startup to populate the list of enabled LLM APIs."""
 
-        # for each LLM API, check if it is enabled in the config
-        # if it is, import it, instantiate it, and add it to the list of enabled LLM APIs
-        for llm_class_name, llm_name in self.llm_apis.items():
-            log.parietal_lobe.debug('Checking if %s is enabled', llm_class_name)
+        # Get the list of enabled LLM module names from config
+        llm_modules = CONFIG.get_llm_module_names()
+        
+        # Map module names to class names
+        class_mapping = {
+            'llm_openrouter': 'OpenRouter',
+            'llm_chub': 'Chub',
+            'llm_repeat_what_i_say': 'RepeatWhatISayWithWhisper'
+        }
+
+        # for each enabled LLM module, import it and instantiate the class
+        for module_name in llm_modules:
+            class_name = class_mapping.get(module_name)
+            if not class_name:
+                log.parietal_lobe.warning('Unknown LLM module: %s', module_name)
+                continue
+                
+            log.parietal_lobe.debug('Loading LLM module: %s', module_name)
             try:
-                if CONFIG['parietal_lobe'][f"{llm_name}_enabled"] == "yes":
-                    log.parietal_lobe.debug('LLM %s is enabled', llm_class_name)
-                    module = importlib.import_module(f"christine.llm_{llm_name}")
-                    llm_class = getattr(module, llm_class_name)
-                    log.parietal_lobe.info('Instantiating %s', llm_class_name)
-                    # LLMs no longer need a reference to the parietal lobe
-                    self.llm_enabled.append(llm_class())
-                else:
-                    log.parietal_lobe.debug('LLM %s is disabled', llm_class_name)
-            except KeyError as ex:
-                log.parietal_lobe.exception(ex)
+                module = importlib.import_module(f"christine.{module_name}")
+                llm_class = getattr(module, class_name)
+                log.parietal_lobe.info('Instantiating %s', class_name)
+                # LLMs no longer need a reference to the parietal lobe
+                self.llm_enabled.append(llm_class())
+            except Exception as ex:
+                log.parietal_lobe.exception('Failed to load LLM %s: %s', class_name, ex)
 
     def find_available_llm(self):
         """This is called once at startup and when the current LLM API is no longer available."""
