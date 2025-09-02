@@ -7,5 +7,30 @@ WorkingDirectory=/root/ChristineAI
 TimeoutStopSec=4
 ExecStart=/usr/local/bin/python3.11 -u -m christine
 
+# Core service configuration
+Environment="CHRISTINE_WERNICKE_SERVER=your-wernicke-server.lan"
+Environment="CHRISTINE_BROCA_SERVER=your-broca-server.lan"
+Environment="CHRISTINE_NEOCORTEX_SERVER=your-neocortex-server.lan"
+
+# Character configuration
+Environment="CHRISTINE_USER_NAME=Phantom"
+Environment="CHRISTINE_CHAR_NAME=Christine"
+
+# Wernicke configuration
+Environment="CHRISTINE_WERNICKE_PV_KEY="
+Environment="CHRISTINE_WERNICKE_VAD=webrtcvad"
+
+# LLM configuration
+Environment="CHRISTINE_ENABLED_LLMS=openrouter"
+Environment="CHRISTINE_OPENROUTER_API_KEY=your-api-key-here"
+Environment="CHRISTINE_OPENROUTER_MODEL=anthropic/claude-3.5-sonnet"
+Environment="CHRISTINE_OPENROUTER_SITE_URL="
+Environment="CHRISTINE_OPENROUTER_SITE_NAME=ChristineAI"
+
+# Optional API keys (only needed if corresponding LLMs are enabled)
+# Environment="CHRISTINE_CHUB_API_KEY=your-chub-api-key"
+# Environment="CHRISTINE_OPENAI_API_KEY=your-openai-api-key"
+# Environment="CHRISTINE_GEMINI_API_KEY=your-gemini-api-key"
+
 [Install]
 WantedBy=multi-user.target
