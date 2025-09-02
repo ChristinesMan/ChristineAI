@@ -23,7 +23,7 @@ from christine.horny import horny
 from christine.sex import sex
 from christine.httpserver import httpserver
 from christine.cleaner import cleaner
-from christine.server_discovery import servers
+# CONFIG import already handles configuration validation
 from christine.killsignal import GracefulKiller
 
 log.main.info("Script started")
@@ -42,7 +42,6 @@ for thread in [
     wernicke,
     sex,
     gyro,
-    servers,
 ]:
     time.sleep(2)
     log.main.info('Starting %s', thread.name)
