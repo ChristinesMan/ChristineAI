@@ -17,7 +17,7 @@ class Wernicke(threading.Thread):
     Wernicke is the name given to the brain area generally responsible for speech recognition.
     This is based on mic_vad_streaming.py, an example with the deepspeech chopped out and sent over wifi instead.
     Audio is captured, mixed, analyzed, and possibly sent over wifi for speech recognition.
-    Audio classification is done on pi. Speech recognition is done on a server (gaming rig, gpu).
+    Audio classification is done on pi. Speech recognition is done on a server.
     The classifier will classify silence vs not silence in 0.25s chunks. I tried a VAD module and it ended up getting
     triggered all night long by the white noise generator. Poor girl blew out her memory and crashed with an OOM. So I made my own VAD.
     All the audio capture and voice recognition happens in a subprocess for performance reasons.
@@ -134,19 +134,19 @@ class Wernicke(threading.Thread):
         """
         self.to_away_team.send({"msg": "stop_recording"})
 
-    def audio_processing_start(self):
-        """
-        Start audio processing after it has been stopped
-        """
-        log.wernicke.info("Started Wernicke processing")
-        self.to_away_team.send({"msg": "start_processing"})
-
     def audio_processing_stop(self):
         """
         Stop the processing of new audio data
         """
         log.wernicke.info("Stopped Wernicke processing")
         self.to_away_team.send({"msg": "stop_processing"})
+
+    def audio_processing_start(self):
+        """
+        Start audio processing after it has been stopped
+        """
+        log.wernicke.info("Started Wernicke processing")
+        self.to_away_team.send({"msg": "start_processing"})
 
     def audio_processing_pause(self, num_of_blocks):
         """
@@ -374,6 +374,8 @@ class Wernicke(threading.Thread):
 
             def __init__(self):
                 super().__init__(daemon=True)
+                self.last_processing_stop_time = None
+                self.max_processing_stop_duration = 30.0  # Max 30 seconds stopped
 
             def run(self):
                 nonlocal recording_state
@@ -381,25 +383,34 @@ class Wernicke(threading.Thread):
                 nonlocal shutdown
 
                 while True:
-                    # So basically, if there's something in the pipe, get it all out.
-                    # This will block until something comes through.
-                    comm = to_enterprise.recv()
-                    log.wernicke.debug(comm)
-                    if comm["msg"] == "start_recording":
-                        recording_state = comm
-                    elif comm["msg"] == "stop_recording":
-                        recording_state = None
-                    elif comm["msg"] == "start_processing":
+                    # Check for safety timeout - auto-resume if stopped too long
+                    if (not processing_state and 
+                        self.last_processing_stop_time is not None and
+                        time.time() - self.last_processing_stop_time > self.max_processing_stop_duration):
+                        log.wernicke.warning("Auto-resuming wernicke processing after safety timeout")
                         processing_state = True
-                    elif comm["msg"] == "stop_processing":
-                        processing_state = False
-                    elif comm["msg"] == "pause_processing":
-                        head_mic.pause_processing = comm["num_of_blocks"]
+                        self.last_processing_stop_time = None
 
-                    elif comm["msg"] == "shutdown":
-                        processing_state = False
-                        shutdown = True
-                        return
+                    # Check for messages with timeout so we can do safety checks
+                    if to_enterprise.poll(1.0):  # 1 second timeout
+                        comm = to_enterprise.recv()
+                        log.wernicke.debug(comm)
+                        if comm["msg"] == "start_recording":
+                            recording_state = comm
+                        elif comm["msg"] == "stop_recording":
+                            recording_state = None
+                        elif comm["msg"] == "start_processing":
+                            processing_state = True
+                            self.last_processing_stop_time = None
+                        elif comm["msg"] == "stop_processing":
+                            processing_state = False
+                            self.last_processing_stop_time = time.time()
+                        elif comm["msg"] == "pause_processing":
+                            head_mic.pause_processing = comm["num_of_blocks"]
+                        elif comm["msg"] == "shutdown":
+                            processing_state = False
+                            shutdown = True
+                            return
 
         # instantiate and start the thread
         messages_thread = CheckForMessages()
@@ -411,8 +422,8 @@ class Wernicke(threading.Thread):
 
             def __init__(self):
 
-                # get the key from the config file
-                self.pv_key = CONFIG['wernicke']['pv_key']
+                # get the key
+                self.pv_key = CONFIG.wernicke_pv_key
 
                 # no key, no vad, no service, no shoes, no shirt, no pants
                 if self.pv_key is None:
@@ -667,14 +678,14 @@ class Wernicke(threading.Thread):
                                 post_silence -= 1
 
         # Start all the VAD detection stuff
-        if CONFIG['wernicke']['vad'] == 'pvcobra':
+        if CONFIG.wernicke_vad == 'pvcobra':
             audio = AudioWithCobraVAD()
-        elif CONFIG['wernicke']['vad'] == 'webrtcvad':
+        elif CONFIG.wernicke_vad == 'webrtcvad':
             audio = AudioWithWebRTC()
         else:
-            log.main.error("Invalid VAD configuration: %s", CONFIG['wernicke']['vad'])
+            log.main.error("Invalid VAD configuration: %s", CONFIG.wernicke_vad)
             return
-        log.wernicke.info("Using VAD: %s", CONFIG['wernicke']['vad'])
+        log.wernicke.info("Using VAD: %s", CONFIG.wernicke_vad)
 
         # blocks is a collector, iterate over it and out come blocks that were classified as speech
         blocks = audio.collector()

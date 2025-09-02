@@ -7,7 +7,7 @@ import wave
 from requests import post, Timeout, HTTPError
 
 from christine import log
-from christine.server_discovery import servers
+from christine.config import CONFIG
 
 # create the directory if necessary where we will cache synthesized sounds
 os.makedirs("./sounds/synth/", exist_ok=True)
@@ -53,8 +53,8 @@ class Figment(threading.Thread):
         if self.should_speak:
 
             # if we have a broca server, convert the text to speech
-            if servers.broca_ip is not None:
-                self.do_tts()
+            # broca server is always available in the new design
+            self.do_tts()
 
             # if wav_file is still None, then we failed to convert the text to speech
             if self.wav_file is None:
@@ -77,7 +77,7 @@ class Figment(threading.Thread):
         # No cache, so send it to the api to be generated
         else:
 
-            url = f'http://{servers.broca_ip}:3001/tts'
+            url = f'http://{CONFIG.broca_server}:3001/tts'
             headers = {'Content-Type': 'application/json'}
             data = {'text': self.text}
 
@@ -107,9 +107,6 @@ class Figment(threading.Thread):
 
                 # if the connection failed, log the error
                 log.broca_main.error("Broca server not reachable. Text: %s  Error: %s", self.text, ex)
-
-                # and set the server to None
-                servers.broca_ip = None
 
     def __str__(self) -> str:
         if self.from_collection is not None:

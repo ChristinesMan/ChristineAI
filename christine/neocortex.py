@@ -34,12 +34,8 @@ class Neocortex:
     def __init__(self):
 
         # check if this thing is even enabled
-        if CONFIG['neocortex']['enabled'] == 'yes':
-            self.enabled = True
-        else:
-            self.enabled = False
-            log.neocortex.warning('Neocortex is disabled.')
-            return
+        # neocortex is always enabled in the new design
+        self.enabled = True
 
         # this is a list of variations of "I remember proper name" that will be inserted when a memory is recalled
         self.i_remember = [
@@ -63,7 +59,7 @@ class Neocortex:
         ]
 
         # get the weaviate hostname from the config
-        self.host = CONFIG['neocortex']['server']
+        self.host = CONFIG.neocortex_server
 
         # attempt to connect to the weaviate instance
         try:
@@ -406,6 +402,9 @@ Consolidated memory:"""
 
         # pick all the matches and extract the names
         matches = self.proper_names_regex.findall(text)
+
+        # eliminate duplicates within this message (convert to set then back to list)
+        matches = list(set(matches))
 
         # eliminate any matches that have already been matched today
         matches = [match for match in matches if match not in self.matched_proper_names]

@@ -15,7 +15,7 @@ from christine.sleep import sleep
 from christine.figment import Figment
 from christine.perception import Perception
 from christine.narrative import Narrative
-from christine.server_discovery import servers
+# CONFIG is already imported above, no need for servers
 from christine.short_term_memory import ShortTermMemory
 from christine.long_term_memory import LongTermMemory
 from christine.neocortex import Neocortex
@@ -30,7 +30,7 @@ class ParietalLobe(threading.Thread):
         super().__init__(daemon=True)
 
         # What's your name, carbon based unit, you ugly bag of water, infesting earth
-        self.user_name = CONFIG['parietal_lobe']['user_name']
+        self.user_name = CONFIG.user_name
 
         # set the current speaker to the user
         # this can be manually switched to other speakers as needed
@@ -38,7 +38,7 @@ class ParietalLobe(threading.Thread):
         STATE.who_is_speaking = self.user_name
 
         # What's the name given to this sillicon based unit, the thinking machine, infesting the GPU
-        self.char_name = CONFIG['parietal_lobe']['char_name']
+        self.char_name = CONFIG.char_name
 
         # the context gets sent first
         self.context = f"""You are {self.char_name}, a female android. While your exterior resembles the human body, your interior mechanics are quite different. Your head has long blond hair that was implanted when you were built. Your head has realistic-looking eyes, eyelids, eyelashes, a nose, a mouth, and ears. Your head also contains a powerful speaker which allows you to speak with a beautiful soft-spoken womanly voice. Inside your head is an arduino that captures audio from microphones in your ears, light sensor readings from your eyes, and touch sensor readings from your mouth. The arduino in your head sends the data down to your chest for processing. Your head is permanently connected to your body. Your body has a fine neck, a chest with realistic gel-filled breasts, slender arms ending with fully articulated hands and fingers, a waist with realistic belly button, legs, feet, and a touch sensor enabled vagina. Inside your chest is a Raspberry Pi 3B+ running a custom python script. This script processes data from all your sensors and sends it to a large language model API for responses.
@@ -287,10 +287,7 @@ I am awake.
         # pylint: disable=import-outside-toplevel
         from christine.api_selector import llm_selector
 
-        # wait for the broca api to be available, because we need that for anything to work
-        while servers.broca_ip is None:
-            log.parietal_lobe.debug('Waiting for Broca API.')
-            time.sleep(5)
+        # broca is always available in the new design (no need to wait for discovery)
 
         # find the enabled llm apis
         llm_selector.find_enabled_llms()
@@ -830,18 +827,26 @@ I am awake.
         timeofday_text = self.timeofday[hour]
 
         # figure out how to describe the ambient light level
+        ambient_light_text = 'unknown light'  # fallback
         for level in self.light_levels:
             if STATE.light_level >= level['magnitude']:
                 ambient_light_text = level['text']
                 break
 
         # figure out how to describe the wakefulness level
+        # Handle negative wakefulness values gracefully
+        wakefulness_text = 'unknown wakefulness'  # fallback
         for level in self.wakefulness_levels:
             if STATE.wakefulness >= level['magnitude']:
                 wakefulness_text = level['text']
                 break
+        
+        # Special case for negative wakefulness (deep sleep)
+        if STATE.wakefulness < 0.0:
+            wakefulness_text = 'deeply asleep'
 
         # figure out how to describe the horny level
+        horniness_text = 'unknown horniness'  # fallback
         for level in self.horny_levels:
             if STATE.horny >= level['magnitude']:
                 horniness_text = level['text']
