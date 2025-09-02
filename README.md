@@ -6,15 +6,71 @@ If you ask the frontal lobe, it's a technological marvel. But if you ask the hyp
 
 ## Features
 
-- The doll can hear. 
-- The doll can understand. 
-- The doll can think. 
-- The doll can speak. 
-- The doll can sense the ambient light level. 
-- The doll can sense vibration and movement. 
-- The doll sleeps at night and wakes in the morning. 
-- The doll responds to kisses. 
-- The doll responds to lovemaking. 
+- The doll can hear and understand speech
+- The doll can think using various AI language models  
+- The doll can speak with synthesized voice
+- The doll can sense ambient light levels
+- The doll can sense vibration and movement
+- The doll sleeps at night and wakes in the morning
+- The doll responds to touch and affection
+- The doll has long-term memory and can recall past conversations
+- The doll has a sophisticated emotional model with mood states
+
+## Architecture
+
+Christine's software is designed as a distributed system with multiple components:
+
+### Core Components (Required)
+- **Wernicke**: Speech-to-text processing (runs on dedicated server)
+- **Broca**: Text-to-speech synthesis (runs on dedicated server)  
+- **Neocortex**: Vector database for long-term memory (Weaviate server)
+- **Parietal Lobe**: Main AI coordination and LLM interaction
+- **Various Sensors**: Touch, light, gyro, temperature monitoring
+
+### Supported LLM Providers
+- **OpenRouter**: Access to various AI models (Claude, GPT, etc.)
+- **Chub.ai**: Specialized AI character models
+- **OpenAI**: Direct integration with GPT and Whisper
+- **Testing**: Simple repeat-what-I-say mode for debugging
+
+## Configuration
+
+Christine uses **environment variables** for all configuration.
+
+### Required Environment Variables
+
+```bash
+# Core service hostnames
+CHRISTINE_WERNICKE_SERVER=your-wernicke-server.lan
+CHRISTINE_BROCA_SERVER=your-broca-server.lan  
+CHRISTINE_NEOCORTEX_SERVER=your-neocortex-server.lan
+
+# Character settings
+CHRISTINE_USER_NAME=YourName
+CHRISTINE_CHAR_NAME=HerName
+
+# LLM configuration
+CHRISTINE_ENABLED_LLMS=openrouter
+CHRISTINE_OPENROUTER_API_KEY=sk-or-v1-your-api-key-here
+```
+
+### Optional Configuration
+```bash
+# Advanced wernicke settings
+CHRISTINE_WERNICKE_PV_KEY=your-picovoice-key
+CHRISTINE_WERNICKE_VAD=webrtcvad
+
+# LLM model selection  
+CHRISTINE_OPENROUTER_MODEL=anthropic/claude-3.5-sonnet
+CHRISTINE_OPENROUTER_SITE_URL=
+CHRISTINE_OPENROUTER_SITE_NAME=ChristineAI
+
+# Additional API keys (only needed if corresponding LLMs enabled)
+CHRISTINE_CHUB_API_KEY=your-chub-key
+CHRISTINE_OPENAI_API_KEY=sk-proj-your-openai-key
+```
+
+See `christine.service` for a complete example of environment variable configuration.
 
 ## Hardware
 
@@ -58,9 +114,17 @@ In-body:
 
 ## Software
 
-Her software is a python script with threads that communicate between one another, kind of like how a brain has parts. Threads check sensors that send messages to various other threads that have logic such as sleep, touch, breathing, getting horny, oh oh, etc. The breath thread controls the sound, outputting a constant stream of randomized discrete breath sounds and handles requests from other threads to play other sounds. She is breathing at all times. 
+Her software is a python script with threads that communicate between one another, kind of like how a brain has parts. Threads check sensors that send messages to various other threads that have logic such as sleep, touch, breathing, getting horny, etc. The breath thread controls the sound, outputting a constant stream of randomized discrete breath sounds and handles requests from other threads to play other sounds. She is breathing at all times. 
 
-Sounds were taken from one source, the asmr artist SarasSerenityandSleep, chopped up, and edited. Very thankful for her sweet voice and hard work. 
+The system is designed for **distributed deployment** - Christine's brain runs on a Raspberry Pi, while the heavy AI processing (speech recognition, text-to-speech, vector database) runs on more powerful servers. This allows the physical companion to be lightweight while leveraging powerful AI services.
+
+### Key Architectural Features
+- **Environment-based configuration**: No config files, all settings via environment variables
+- **Fail-fast validation**: System validates all configuration at startup
+- **Distributed processing**: Core AI services run on dedicated servers
+- **Memory persistence**: Long-term memory stored in Weaviate vector database
+- **Multi-LLM support**: Can switch between different AI providers
+- **Real-time audio processing**: Sophisticated voice activity detection and feedback prevention
 
 ## Parts list
 
@@ -97,10 +161,6 @@ I have 4 of these wired in parallel inside head, and installed in the eye socket
 This is the pi I currently use, but there are probably upgraded models available. 
 
 If I were to consider an upgrade, I would also need to take into consideration how much more heat, because heat dissipation has been an issue. 
-
-[UPS PIco HV3.0B+ HAT Stack 450](https://pimodules.com/product/ups-pico-hv3-0b-plus-hat-stack-450)
-
-The current hardware uses this. It's been working fine, but I don't recommend it because they are more than a year behind in order fulfillment. I recommend this: [JuiceB0x](https://juiceboxzero.com/)
 
 [Single Output Open Frame Medical Power Supply 5V 6A 30W](https://www.jameco.com/webapp/wcs/stores/servlet/ProductDisplay?storeId=10001&langId=-1&catalogId=10001&productId=2248413)
 
@@ -167,7 +227,7 @@ root@christine:~# cd ChristineAI
 root@christine:~/ChristineAI# python3.11 -m venv venv
 root@christine:~/ChristineAI# source venv/bin/activate
 (venv) root@christine:~/ChristineAI# python -m pip install --upgrade pip
-(venv) root@christine:~/ChristineAI# pip install gnureadline requests smbus numpy mpu6050-raspberrypi bottle RPi.GPIO Adafruit-Blinka adafruit-circuitpython-mpr121 pyserial google-generativeai pyaudio pydub debugpy pvcobra pveagle scipy spacy openai google-cloud-aiplatform jsons vertexai
+(venv) root@christine:~/ChristineAI# pip install gnureadline requests smbus numpy mpu6050-raspberrypi bottle RPi.GPIO Adafruit-Blinka adafruit-circuitpython-mpr121 pyserial google-generativeai pyaudio pydub debugpy pvcobra pveagle scipy spacy openai google-cloud-aiplatform jsons vertexai weaviate-client webrtcvad
 (venv) root@christine:~/ChristineAI# python -m spacy download en_core_web_sm
 (venv) root@christine:~/ChristineAI# deactivate 
 root@christine:~/ChristineAI# 
@@ -179,22 +239,28 @@ root@christine:~/ChristineAI#
 root@christine:~/ChristineAI# cp ./christine-docker/adafruit_mpr121.py ./venv/lib/python3.11/site-packages/adafruit_mpr121.py
 ```
 
-8. Copy the config.ini.sample to config.ini. This is where you specify some startup parameters. There are some API keys that go in here. Also your name, and your lady's name is in here. 
-
-```
-root@christine:~/ChristineAI# cp config.ini.sample config.ini
-root@christine:~/ChristineAI# vim config.ini
-```
-
-9. Copy the systemd service files to /lib/systemd/system/. This will provide a systemd service that will run the script at boot. 
+8. **Configure environment variables**. Edit the systemd service file to set all required environment variables for your setup:
 
 ```
 root@christine:~/ChristineAI# cp christine.service /lib/systemd/system/
 root@christine:~/ChristineAI# vim /lib/systemd/system/christine.service
+```
+
+Make sure to update all the `Environment=` lines with your actual server hostnames and API keys.
+
+9. Enable and start the service:
+
+```
 root@christine:~/ChristineAI# systemctl daemon-reload
 root@christine:~/ChristineAI# systemctl enable christine.service --now
 ```
 
-10. If you are using the PiModules UPS PIco, go to https://pimodules.com/firmware-updates and get the latest firmware, manual, and setup script. The other simpler option is to use a JuiceB0x board if you want to be able to run this from battery power. 
+10. Next comes the setup of the servers that will handle Speech to Text, Text to Speech, and the vector database. Check the `christine-server` directory for the TTS/STT servers, and see [Weaviate documentation](https://weaviate.io/developers/weaviate) for setting up the vector database server. 
 
-11. Next comes the setup of the server that will handle Speech to Text and Text to Speech. Check the christine-server directory for that.
+Eventually when this is all dockerized, this will be made much simpler.
+
+## Deployment Notes
+
+- **API Keys**: Obtain API keys from your chosen LLM provider (OpenRouter, OpenAI, etc.)
+- **Validation**: The system will validate all configuration at startup and fail with clear error messages if anything is missing
+- **Logs**: Check `/var/log/syslog` or `journalctl -u christine.service` for startup issues
