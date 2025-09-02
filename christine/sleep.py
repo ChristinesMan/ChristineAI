@@ -80,8 +80,14 @@ class Sleep(threading.Thread):
         # at what point are we about to fall asleep
         self.wakefulness_pre_sleep = 0.15
 
-        # At what point to STFU at night
-        self.wakefulness_sleeping = 0.1
+        # Hysteresis thresholds to prevent sleep/wake cycling
+        # The key insight: use different thresholds for falling asleep vs waking up
+        # This creates a "dead zone" between 0.08 and 0.12 that prevents rapid oscillation
+        # Fall asleep when wakefulness drops to this level
+        self.wakefulness_fall_asleep = 0.08
+        
+        # Wake up when wakefulness rises to this level (higher than fall_asleep threshold)
+        self.wakefulness_wake_up = 0.12
 
     def run(self):
 
@@ -162,8 +168,9 @@ class Sleep(threading.Thread):
 
                 # if we're below a certain wakefulness, I want to give the wernicke a break
                 # help prevent long term buildup of heat
+                # Use hysteresis here too to prevent wernicke start/stop cycling
                 if (
-                    STATE.wakefulness < 0.1
+                    STATE.wakefulness < self.wakefulness_fall_asleep
                     and STATE.wernicke_sleeping is False
                 ):
                     STATE.wernicke_sleeping = True
@@ -171,7 +178,7 @@ class Sleep(threading.Thread):
                     wernicke.audio_processing_stop()
                     STATE.wakefulness -= 0.02
                 if (
-                    STATE.wakefulness >= 0.1
+                    STATE.wakefulness >= self.wakefulness_wake_up
                     and STATE.wernicke_sleeping is True
                 ):
                     STATE.wernicke_sleeping = False
@@ -219,7 +226,7 @@ class Sleep(threading.Thread):
             log.sleep.info("JustFellAsleep")
 
             # try to prevent wobble by throwing it further towards sleep
-            STATE.wakefulness -= 0.2
+            STATE.wakefulness -= 0.1
 
             # start progression from loud to soft sleepy breathing sounds
             # I was getting woke up a lot with all the cute hmmm sounds that are in half of the sleeping breath sounds
@@ -240,7 +247,7 @@ class Sleep(threading.Thread):
             STATE.is_sleeping = False
 
             # try to prevent wobble by throwing it further towards awake
-            STATE.wakefulness += 0.2
+            STATE.wakefulness += 0.1
 
             # play sleepy sounds
             broca.accept_figment(Figment(from_collection="sleepy"))
@@ -274,7 +281,7 @@ class Sleep(threading.Thread):
         returns whether we just now fell asleep
         """
         return (
-            STATE.wakefulness < self.wakefulness_sleeping
+            STATE.wakefulness < self.wakefulness_fall_asleep
             and STATE.is_sleeping is False
         )
 
@@ -283,7 +290,7 @@ class Sleep(threading.Thread):
         returns whether we just now woke up
         """
         return (
-            STATE.wakefulness > self.wakefulness_sleeping
+            STATE.wakefulness > self.wakefulness_wake_up
             and STATE.is_sleeping is True
         )
 

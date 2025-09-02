@@ -33,6 +33,9 @@ class Broca(threading.Thread):
         # queue up figments to feed into broca one at a time
         self.figment_queue = queue.Queue()
 
+        # track wernicke pause state to prevent conflicts
+        self.wernicke_paused_by_broca = False
+
         # regexes to detect certain text in non-spoken figments that should set off an emote
         self.re_emote_laugh = re.compile(
             r"tease|amusement|haha|laugh|chuckle|snicker|chortle|giggle|guffaw|smile|blush", flags=re.IGNORECASE
@@ -86,9 +89,20 @@ class Broca(threading.Thread):
                 msg = self.to_shuttlecraft.recv()
                 log.broca_main.debug("Received: %s", msg)
 
-                if msg['action'] == 'pause_wernicke':
+                if msg['action'] == 'pause_wernicke_start':
+                    # Signal from shuttlecraft that audio is about to start - pause wernicke immediately
+                    wernicke.audio_processing_stop()
+                    self.wernicke_paused_by_broca = True
+                    log.broca_main.info("Wernicke paused - audio starting")
 
-                    # when the shuttlecraft is ready to play a sound that the ears should not hear, it will send this signal
+                elif msg['action'] == 'pause_wernicke_end':
+                    # Signal from shuttlecraft that audio has ended - resume wernicke immediately
+                    wernicke.audio_processing_start()
+                    self.wernicke_paused_by_broca = False
+                    log.broca_main.info("Wernicke resumed - audio ended")
+
+                elif msg['action'] == 'pause_wernicke':
+                    # Legacy support for old pause_wernicke message format
                     wernicke.audio_processing_pause(msg['pause_wernicke'])
 
                 elif msg['action'] == 'idle':
@@ -160,13 +174,9 @@ class Broca(threading.Thread):
                     return
 
                 # let the ears know that the mouth is going to emit noises that are not breathing
-                # estimating the total sound play time by file size
-                # and some sounds are marked as needing a pause vs others that do not
-                if sound.pause_wernicke is True:
-                    pause_cycles = ceil( os.stat(sound.file_path).st_size / 2100 )
-                else:
-                    pause_cycles = 0
-                    log.broca_main.debug('No pause for this sound.')
+                # send the message to the subprocess with signal-based coordination
+                # the subprocess will handle timing the wernicke pause precisely
+                pause_wernicke = sound.pause_wernicke if sound.pause_wernicke is True else False
 
                 # send the message to the subprocess
                 self.to_shuttlecraft.send(
@@ -174,7 +184,7 @@ class Broca(threading.Thread):
                         "action": "playwav",
                         "wavfile": sound.file_path,
                         "vol": 100,
-                        "pause_wernicke": pause_cycles,
+                        "pause_wernicke": pause_wernicke,
                     }
                 )
 
@@ -222,9 +232,8 @@ class Broca(threading.Thread):
                         time.sleep(0.2)
 
                     # let the ears know that the mouth is going to emit noises that are not breathing
-                    # estimating the total sound play time by file size, and magic numbers
-                    # the pause will be started by the subprocess just before playing the wav
-                    pause_cycles = ceil( os.stat(figment.wav_file).st_size / 2100 )
+                    # send the message to the subprocess with signal-based coordination
+                    # the subprocess will handle timing the wernicke pause precisely
 
                     # send the message to the subprocess
                     self.to_shuttlecraft.send(
@@ -232,7 +241,7 @@ class Broca(threading.Thread):
                             "action": "playwav",
                             "wavfile": figment.wav_file,
                             "vol": 100,
-                            "pause_wernicke": pause_cycles,
+                            "pause_wernicke": True,  # always pause for speech
                         }
                     )
 
@@ -310,6 +319,18 @@ class Broca(threading.Thread):
         # import here to avoid circular import
         # pylint: disable=import-outside-toplevel
         from christine.parietal_lobe import parietal_lobe
+        from christine.wernicke import wernicke
+
+        # CRITICAL: Tell shuttlecraft to stop any ongoing audio immediately
+        # This prevents audio from playing after interruption
+        self.to_shuttlecraft.send({"action": "stop_audio"})
+
+        # When flushing, we need to ensure wernicke gets restarted ONLY if we paused it
+        # This prevents conflicts with the signal-based system
+        if self.wernicke_paused_by_broca:
+            wernicke.audio_processing_start()
+            self.wernicke_paused_by_broca = False
+            log.broca_main.info("Wernicke resumed due to interruption")
 
         # keeps track of whether speaking was actually interrupted
         interrupted = False
@@ -421,6 +442,16 @@ class Broca(threading.Thread):
                     log.broca_shuttlecraft.info("Shuttlecraft self destruct activated.")
                     sys.exit()
 
+                elif comms["action"] == "stop_audio":
+                    
+                    # IMMEDIATE AUDIO STOP for interruptions
+                    # Stop the current stream immediately to prevent feedback
+                    if pya_stream.is_active():
+                        log.broca_shuttlecraft.info("STOP AUDIO - Interruption detected")
+                        pya_stream.stop_stream()
+                        # Signal back that audio has been stopped
+                        to_starship.send({"action": "pause_wernicke_end"})
+
                 elif comms["action"] == "playwav":
 
                     # if seconds_idle is greater than the threshold, play a sound to get the speaker started back up
@@ -442,15 +473,13 @@ class Broca(threading.Thread):
                         os.system(f'amixer -q cset numid=1 {comms["vol"]}%')
                         last_volume = comms["vol"]
 
-                    # send a message back to the main thread to pause the wernicke,
-                    # so that the sound being played is not also heard by the ears
-                    if comms["pause_wernicke"] > 0:
-                        to_starship.send({"action": "pause_wernicke", "pause_wernicke": comms["pause_wernicke"]})
-
-                    # sleep a short while to allow time for the wernicke to pause
-                    # this message has to traverse back to main process, then into wernicke subprocess
-                    # doing this way for best timing
-                    time.sleep(0.1)
+                    # SIGNAL-BASED WERNICKE COORDINATION
+                    # if we need to pause wernicke, send start signal now
+                    if comms["pause_wernicke"]:
+                        log.broca_shuttlecraft.info("Sending pause_wernicke_start signal")
+                        to_starship.send({"action": "pause_wernicke_start"})
+                        # small delay to ensure wernicke gets the message before we start playing
+                        time.sleep(0.1)
 
                     # stop stream, open new wav file, and start the stream back up
                     log.broca_shuttlecraft.info("Play %s", comms["wavfile"])
@@ -463,6 +492,12 @@ class Broca(threading.Thread):
                         time.sleep(0.2)
 
                     log.broca_shuttlecraft.debug("Play %s END", comms["wavfile"])
+
+                    # SIGNAL-BASED WERNICKE COORDINATION
+                    # if we paused wernicke, send end signal now
+                    if comms["pause_wernicke"]:
+                        log.broca_shuttlecraft.info("Sending pause_wernicke_end signal")
+                        to_starship.send({"action": "pause_wernicke_end"})
 
                     # reset this counter
                     seconds_idle = 0.0

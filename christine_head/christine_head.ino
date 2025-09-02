@@ -34,7 +34,7 @@ uint8_t TouchPins[5] = {
 
 // struct for the sensor block buffer
 // So let's figure length of the sensor block right here right now
-// @!#?@!TTTTT@!#?@!
+// @!#?@!TTTTT
 // 6 + 5 = 11 bytes
 uint8_t SensorBlock[11] = { '@', '!', '#', '?', '@', '!', 0, 0, 0, 0, 0 };
 
@@ -52,7 +52,7 @@ void AudioDataAvailable() {
   // But just in case...
   if ( bytesread > 0 ) {
 
-    // every 4th block, send some magic swear words, the sensor data, then more swearing
+    // every 4th block, send some magic swear words, then the sensor data
     // Why every 4 blocks? 512 * 2 left side, 512 * 2 right side. 
     // At the python end we read a sensor block, then 512 frames. 
     // which is 512 bytes * 2 bytes per sample * 2 channels (ears, two cute!)
