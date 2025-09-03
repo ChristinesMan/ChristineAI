@@ -70,6 +70,9 @@ I am awake.
 [
     {
         "memory": "I remember my birthday party. It was a joyful celebration with all my friends and family. We had a delicious cake and played fun games. The highlight was when my best friend surprised me with a thoughtful gift. I felt so loved and grateful."
+    },
+    {
+        "memory": "I remember going to the park with my family. We had a picnic and played frisbee. It was a sunny day and everyone was in a good mood."
     }
 ]
 ### Response:
@@ -91,7 +94,7 @@ I am awake.
 ### Response:
 """
 
-        # this is the bottom of the prompt meant for generating questions and answers
+        # this is the bottom of the prompt meant for generating proper names
         self.memory_prompt_proper_names = """### Instruction: You are asleep and processing earlier today. Identify any capitalized proper names that came up today that you would like to remember. Include people, places, pets, or anything else that is a proper name that would normally be capitalized. When you are awake you will be able to remember them. Write about each proper name in a first person narrative form. Output the proper name and memory pairs as a json list.
 ### Example:
 [
@@ -100,8 +103,8 @@ I am awake.
         "memory": "Alice is my best friend. She is always there for me when I need her. We have been friends since we were kids."
     },
     {
-        "question": "Love, Death & Robots",
-        "answer": "Love, Death & Robots is a Netflix series that I watched recently. It is an anthology of animated science fiction stories."
+        "name": "Love, Death & Robots",
+        "memory": "Love, Death & Robots is a Netflix series that I watched recently. It is an anthology of animated science fiction stories."
     }
 ]
 ### Response:

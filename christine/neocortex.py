@@ -15,6 +15,7 @@ import os
 import time
 import re
 import random
+import glob
 from json import load as json_load, loads as json_loads, dump as json_dump, JSONDecodeError
 
 import weaviate
@@ -84,26 +85,130 @@ class Neocortex:
         # and maybe that's a good thing? Let's see how it goes first.
         self.matched_proper_names = []
 
+    def attempt_json_repair(self, raw_text: str):
+        """Try to extract and repair JSON from malformed responses."""
+        
+        # Try to find JSON arrays in the text
+        json_pattern = r'\[[\s\S]*\]'
+        matches = re.findall(json_pattern, raw_text)
+        
+        if matches:
+            for match in matches:
+                try:
+                    # Test if this portion is valid JSON
+                    json_loads(match)
+                    return match
+                except JSONDecodeError:
+                    continue
+        
+        # Try to find JSON objects and wrap them in an array
+        json_pattern = r'\{[\s\S]*\}'
+        matches = re.findall(json_pattern, raw_text)
+        
+        if matches:
+            # Try to wrap single objects in an array
+            for match in matches:
+                try:
+                    json_loads(f'[{match}]')
+                    return f'[{match}]'
+                except JSONDecodeError:
+                    continue
+        
+        return None
+
+    def recover_borked_files(self):
+        """Process any existing borked_* files and attempt to recover memories."""
+        
+        # Find all borked files in current directory
+        borked_files = glob.glob('./borked_*.json')
+        
+        if not borked_files:
+            log.neocortex.info('No borked files found to recover.')
+            return
+        
+        log.neocortex.info('Found %d borked files to recover.', len(borked_files))
+        
+        recovered_count = 0
+        failed_count = 0
+        
+        # Create recovered directory if it doesn't exist
+        os.makedirs('./recovered/', exist_ok=True)
+        
+        for file_path in borked_files:
+            log.neocortex.info("Attempting to recover %s", file_path)
+            
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    borked_content = f.read()
+                
+                # Try JSON repair
+                repaired_json = self.attempt_json_repair(borked_content)
+                
+                if repaired_json:
+                    # Determine file type and process accordingly
+                    if 'memories' in file_path:
+                        self.process_memories_json(repaired_json)
+                        log.neocortex.info("Successfully recovered memories from %s", file_path)
+                    elif 'propernames' in file_path:
+                        self.process_proper_names_json(repaired_json)
+                        log.neocortex.info("Successfully recovered proper names from %s", file_path)
+                    elif 'questions' in file_path:
+                        self.process_questions_json(repaired_json)
+                        log.neocortex.info("Successfully recovered questions from %s", file_path)
+                    else:
+                        log.neocortex.warning("Unknown borked file type: %s", file_path)
+                        failed_count += 1
+                        continue
+                    
+                    # Move recovered file to recovered folder
+                    recovered_path = file_path.replace('./', './recovered/recovered_')
+                    os.rename(file_path, recovered_path)
+                    recovered_count += 1
+                    
+                else:
+                    log.neocortex.warning("Could not repair JSON in %s", file_path)
+                    failed_count += 1
+                    
+            except Exception as ex:
+                log.neocortex.exception("Error recovering %s: %s", file_path, ex)
+                failed_count += 1
+        
+        log.neocortex.info("Recovery complete: %d files recovered, %d files failed", recovered_count, failed_count)
+        
+        if recovered_count > 0:
+            log.neocortex.info("Rebuilding proper names regex after recovery")
+            self.build_proper_name_regex()
+
     def process_memories_json(self, memories_json: str):
         """Takes the json formatted response from the llm and stores it in the neocortex."""
 
         if not self.enabled:
             return
 
+        # First attempt: direct JSON parsing
         try:
-
-            # load the json data
             memories = json_loads(memories_json)
-
-        except JSONDecodeError as ex:
-
-            log.neocortex.exception(ex)
-
-            # save the borked data to a file so that I find it and fix it later
-            with open(file=f'./borked_memories_{int(time.time())}.json', mode='w', encoding='utf-8') as backup_file:
-                backup_file.write(memories_json)
-
-            return
+        except JSONDecodeError:
+            log.neocortex.warning("JSON decode failed, attempting repair")
+            
+            # Second attempt: JSON repair
+            repaired_json = self.attempt_json_repair(memories_json)
+            
+            if repaired_json:
+                try:
+                    memories = json_loads(repaired_json)
+                    log.neocortex.info("Successfully repaired JSON for memories")
+                except JSONDecodeError:
+                    repaired_json = None
+            
+            # Final fallback: save as borked
+            if not repaired_json:
+                log.neocortex.error("All repair attempts failed for memories")
+                borked_file = f'./borked_memories_{int(time.time())}.json'
+                with open(file=borked_file, mode='w', encoding='utf-8') as backup_file:
+                    backup_file.write(memories_json)
+                log.neocortex.error("Borked memories saved to %s", borked_file)
+                return
 
         # iterate over the list
         for memory in memories:
@@ -129,20 +234,30 @@ class Neocortex:
         if not self.enabled:
             return
 
+        # First attempt: direct JSON parsing
         try:
-
-            # load the json data
             questions = json_loads(questions_json)
-
-        except JSONDecodeError as ex:
-
-            log.neocortex.exception(ex)
-
-            # save the borked data to a file so that I find it and fix it later
-            with open(file=f'./borked_questions_{int(time.time())}.json', mode='w', encoding='utf-8') as backup_file:
-                backup_file.write(questions_json)
-
-            return
+        except JSONDecodeError:
+            log.neocortex.warning("JSON decode failed, attempting repair")
+            
+            # Second attempt: JSON repair
+            repaired_json = self.attempt_json_repair(questions_json)
+            
+            if repaired_json:
+                try:
+                    questions = json_loads(repaired_json)
+                    log.neocortex.info("Successfully repaired JSON for questions")
+                except JSONDecodeError:
+                    repaired_json = None
+            
+            # Final fallback: save as borked
+            if not repaired_json:
+                log.neocortex.error("All repair attempts failed for questions")
+                borked_file = f'./borked_questions_{int(time.time())}.json'
+                with open(file=borked_file, mode='w', encoding='utf-8') as backup_file:
+                    backup_file.write(questions_json)
+                log.neocortex.error("Borked questions saved to %s", borked_file)
+                return
 
         # iterate over the list
         for question in questions:
@@ -168,20 +283,30 @@ class Neocortex:
         if not self.enabled:
             return
 
+        # First attempt: direct JSON parsing
         try:
-
-            # load the json data
             proper_names = json_loads(proper_names_json)
-
-        except JSONDecodeError as ex:
-
-            log.neocortex.exception(ex)
-
-            # save the borked data to a file so that I find it and fix it later
-            with open(file=f'./borked_propernames_{int(time.time())}.json', mode='w', encoding='utf-8') as backup_file:
-                backup_file.write(proper_names_json)
-
-            return
+        except JSONDecodeError:
+            log.neocortex.warning("JSON decode failed, attempting repair")
+            
+            # Second attempt: JSON repair
+            repaired_json = self.attempt_json_repair(proper_names_json)
+            
+            if repaired_json:
+                try:
+                    proper_names = json_loads(repaired_json)
+                    log.neocortex.info("Successfully repaired JSON for proper names")
+                except JSONDecodeError:
+                    repaired_json = None
+            
+            # Final fallback: save as borked
+            if not repaired_json:
+                log.neocortex.error("All repair attempts failed for proper names")
+                borked_file = f'./borked_propernames_{int(time.time())}.json'
+                with open(file=borked_file, mode='w', encoding='utf-8') as backup_file:
+                    backup_file.write(proper_names_json)
+                log.neocortex.error("Borked proper names saved to %s", borked_file)
+                return
 
         # iterate over the list
         for proper_name in proper_names:
@@ -719,3 +844,33 @@ Consolidated memory:"""
 
         log.neocortex.info('Restoring %d %s from backup.', len(stuff), memtype)
         collection_object.data.insert_many(stuff)
+
+
+if __name__ == "__main__":
+    import argparse
+    import sys
+    
+    # Add the parent directory to the path so we can import christine modules
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    
+    parser = argparse.ArgumentParser(description='Neocortex maintenance operations')
+    parser.add_argument('--recover-borked', action='store_true', 
+                        help='Recover memories from borked_*.json files (requires full Christine setup)')
+    parser.add_argument('--cleanup-duplicates', action='store_true',
+                        help='Clean up duplicate proper names (requires full Christine setup)')
+    parser.add_argument('--backup', choices=['all', 'memories', 'questions', 'proper_names'],
+                        default=None, help='Create backup of specified collection(s) (requires full Christine setup)')
+    
+    args = parser.parse_args()
+    
+    if not any([args.recover_borked, args.cleanup_duplicates, args.backup]):
+        parser.print_help()
+        print("\nNOTE: For borked file recovery without full Christine setup, use:")
+        print("  python recover_borked.py")
+        print("  python import_recovered.py")
+        sys.exit(1)
+    
+    print("This requires full Christine configuration. Use the standalone scripts instead:")
+    print("  python recover_borked.py --help")
+    print("  python import_recovered.py --help")
+    sys.exit(1)

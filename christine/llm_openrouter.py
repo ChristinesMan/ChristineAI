@@ -181,12 +181,11 @@ class OpenRouter(LLMAPI):
                 # if the caller expects proper well formed json, let's try to fix common issues
                 if expects_json is True:
 
-                    # the most likely glitch so far is that the model includes ```json and ``` at the end
-                    # so let's remove those
-                    if response_text.startswith('```json'):
-                        response_text = response_text[7:].strip()
-                    if response_text.endswith('```'):
-                        response_text = response_text[:-3].strip()
+                    # strip everything before [ and after ] to extract just the JSON array
+                    start_bracket = response_text.find('[')
+                    end_bracket = response_text.rfind(']')
+                    if start_bracket != -1 and end_bracket != -1 and end_bracket > start_bracket:
+                        response_text = response_text[start_bracket:end_bracket + 1]
 
                 # if we got here that means no errors, so signal we're done
                 llm_is_done_or_failed = True
