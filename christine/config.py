@@ -52,7 +52,9 @@ class Config:
         self.openai_api_key = os.getenv('CHRISTINE_OPENAI_API_KEY', '')
         
         self.gemini_api_key = os.getenv('CHRISTINE_GEMINI_API_KEY', '')
-    
+
+        self.http_security_token = os.getenv('CHRISTINE_HTTP_SECURITY_TOKEN', 'christine_lovely_2025')
+
     def _parse_llm_list(self, llm_string: str) -> List[str]:
         """Parse comma-separated list of enabled LLMs."""
         if not llm_string.strip():

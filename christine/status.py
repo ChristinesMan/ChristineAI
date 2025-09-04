@@ -72,6 +72,10 @@ class Status(threading.Thread):
         # We call this turning off your ears
         self.perceptions_blocked = False
 
+        # Silent mode - Christine can think and respond via web chat but won't speak audio
+        # Perfect for work meetings when you want to chat but she shouldn't make noise
+        self.silent_mode = False
+
         # I want to run midnight tasks, like moving memory around, only once per night
         # so this is here to coordinate that activity
         # records the exact time the task was done so that we can't double it up
@@ -151,6 +155,7 @@ class Status(threading.Thread):
             "breath_intensity": str(self.breath_intensity),
             "wernicke_sleeping": str(self.wernicke_sleeping),
             "perceptions_blocked": str(self.perceptions_blocked),
+            "silent_mode": str(self.silent_mode),
             "gyro_available": str(self.gyro_available),
             "vagina_available": str(self.vagina_available),
             "pause_question": str(self.pause_question),

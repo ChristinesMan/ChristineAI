@@ -410,6 +410,19 @@ Respond with the JSON array now:
                     if perception.audio_result != "":
                         new_messages.append({'speaker': STATE.who_is_speaking, 'text': perception.audio_result})
 
+                        # VOICE-TRIGGERED SILENT MODE EXIT: If user speaks, automatically exit silent mode
+                        if STATE.silent_mode:
+                            log.parietal_lobe.info("User spoke - automatically exiting silent mode")
+                            STATE.silent_mode = False
+
+                        # Send user's spoken message to web chat
+                        try:
+                            # pylint: disable=import-outside-toplevel
+                            from christine.httpserver import add_user_message
+                            add_user_message(perception.audio_result)
+                        except Exception as e:
+                            log.parietal_lobe.debug("Could not send user message to web chat: %s", str(e))
+
                         # keep track of the total length of the transcription so that we can decide to interrupt char
                         total_transcription_length += len(perception.audio_result)
 
@@ -1098,21 +1111,31 @@ Horniness: {horniness_text}.
         log.parietal_lobe.info('Refreshing self-definition cache after midnight memory processing')
         self.refresh_self_definition()
 
-    def new_perception(self, perception: Perception):
+    def web_chat_message(self, message: str, sender: str = "User"):
+        """This is called by the httpserver module when a chat message is received via the web interface."""
+        
+        # Auto-enable silent mode when receiving web chat messages (for meeting scenarios)
+        if not STATE.silent_mode:
+            log.parietal_lobe.info("Auto-enabling silent mode due to web chat message")
+            STATE.silent_mode = True
+        
+        self.new_perception(Perception(text=f"Web chat message from {sender}: {message}"))
+
+    def new_perception(self, new_perception):
         """When stuff happens in the outside world, they should end up here."""
 
         if STATE.is_sleeping is True:
-            log.parietal_lobe.info('Blocked for sleep: %s', perception)
+            log.parietal_lobe.info('Blocked for sleep: %s', new_perception)
             return
 
         if STATE.perceptions_blocked is True:
-            log.parietal_lobe.info('Blocked for reasons: %s', perception)
+            log.parietal_lobe.info('Blocked for reasons: %s', new_perception)
             return
 
-        log.parietal_lobe.info("Perception: %s", perception)
+        log.parietal_lobe.info("Perception: %s", new_perception)
 
         # add the perception to the queue
-        self.perception_queue.put_nowait(perception)
+        self.perception_queue.put_nowait(new_perception)
 
         # wake up a little bit
         sleep.wake_up(0.005)

@@ -242,6 +242,17 @@ class Broca(threading.Thread):
                         }
                     )
 
+                    # Send spoken text to web chat AFTER it has actually been spoken (normal mode)
+                    try:
+                        # pylint: disable=import-outside-toplevel
+                        from christine.httpserver import add_christine_response
+                        # Clean up the text - remove quotes from both ends and extra whitespace
+                        clean_text = figment.text.strip().strip('"').strip()
+                        if clean_text:
+                            add_christine_response(clean_text)
+                    except Exception as e:
+                        log.broca_main.debug("Could not send to web chat: %s", str(e))
+
                 # notify the parietal lobe that something with text that was queued by it is now playing
                 parietal_lobe.broca_figment_was_processed(figment)
 
@@ -258,6 +269,31 @@ class Broca(threading.Thread):
             # if a spoken figment gets through with no letters at all, drop it. Usually this is '" '
             if re.search(r'[a-zA-Z]', figment.text) is None:
                 log.broca_main.warning("Empty string spoken figment.")
+                return
+
+            # Check if we're in silent mode - if so, don't queue audio but send to web chat immediately
+            if STATE.silent_mode:
+                log.broca_main.debug("Silent mode: Skipping audio for spoken figment: %s", figment.text)
+                
+                # Send to web chat immediately in silent mode since no audio will play
+                try:
+                    # pylint: disable=import-outside-toplevel
+                    from christine.httpserver import add_christine_response
+                    # Clean up the text - remove quotes from both ends and extra whitespace
+                    clean_text = figment.text.strip().strip('"').strip()
+                    if clean_text:
+                        add_christine_response(clean_text)
+                except Exception as e:
+                    log.broca_main.debug("Could not send to web chat: %s", str(e))
+                
+                # CRITICAL: Notify parietal lobe that figment was processed for message history
+                try:
+                    # pylint: disable=import-outside-toplevel
+                    from christine.parietal_lobe import parietal_lobe
+                    parietal_lobe.broca_figment_was_processed(figment)
+                except Exception as e:
+                    log.broca_main.debug("Could not notify parietal lobe: %s", str(e))
+                
                 return
 
             # start the thread asap to get the api call for synthesized speech going
