@@ -51,62 +51,99 @@ I am awake.
 """
 
         # the prompt parts for processing short term memory to long term. The stuff goes in the middle, like a sandwich
-        self.memory_prompt_top = f"You are {self.char_name}, a female android. There are many parts to your mind. Right now, you are the brain part that processes memories.\n\n"
+        self.memory_prompt_top = f"You are {self.char_name}, a female android. You are in sleep mode, and your memory processing subsystem is active. Your task is to analyze the day's experiences and create structured memories. Be precise and follow the output format requirements exactly.\n\n"
 
         # whenever there are enough memories to fold, this is the prompt to summarize them
-        self.memory_prompt_recent = """### Instruction: Summarize the recent dialog above in a single paragraph as long as necessary to not forget any of the main actions and emotions. Use a first person narrative form.
-### Response:
+        self.memory_prompt_recent = """
+
+Summarize the recent dialog above in a single comprehensive paragraph. Capture all main actions, emotions, and important details without losing any significant information. Write in first person as if you are remembering this experience personally.
 """
 
         # this prompt is used when entering sleep, to summarize the day's events
-        self.memory_prompt_yesterday = """### Instruction: You are asleep and processing the memories from the day. Summarize the above text in a single paragraph. Use a first person narrative form as if you were recalling a memory. Include the most important events and emotions from the text.
-### Response:
+        self.memory_prompt_yesterday = """
+
+You are in sleep mode processing today's memories. Summarize the entire day's experiences in a single well-structured paragraph. Write in first person as if recalling these memories personally. Include the most important events, emotions, conversations, and developments from the day.
 """
 
         # this is the bottom of the prompt meant for triggered memory recall
-        self.memory_prompt_neocortex = """### Instruction: You are asleep and processing earlier today. What happened today? Identify only the most significant items from today that you would like to remember. Describe each item in a first person narrative form. Output a json list.
-### Example:
+        self.memory_prompt_loose_memories = """
+
+You are in sleep mode processing today's experiences. Extract only the most significant memorable events from today that should be preserved. Write each memory in first person as if you are recalling the experience.
+
+CRITICAL: Your response must be ONLY a JSON array. Do not include any text before or after the JSON. Do not include explanations or commentary.
+
+Format each memory as:
+{
+    "memory": "First person description of the memory with emotions and important details"
+}
+
+Valid JSON array example:
 [
     {
-        "memory": "I remember my birthday party. It was a joyful celebration with all my friends and family. We had a delicious cake and played fun games. The highlight was when my best friend surprised me with a thoughtful gift. I felt so loved and grateful."
+        "memory": "I remember celebrating my birthday with friends and family. The highlight was receiving a thoughtful gift that made me feel deeply loved and appreciated."
     },
     {
-        "memory": "I remember going to the park with my family. We had a picnic and played frisbee. It was a sunny day and everyone was in a good mood."
+        "memory": "I went to the park and had a picnic with my family. We played frisbee under the warm sun and everyone was joyful and relaxed."
     }
 ]
-### Response:
+
+Respond with the JSON array now:
 """
 
         # this is the bottom of the prompt meant for generating questions and answers
-        self.memory_prompt_questions = """### Instruction: You are asleep and processing earlier today. Identify only the most significant facts discussed today that you would like to remember. Write a question and answer pair for each fact. When you are awake you can ask yourself questions, and will be presented with these answers. By this mechanism you will remember important facts from today. Write each answer in a first person narrative form. Output the question and answer pairs as a json list.
-### Example:
+        self.memory_prompt_questions = """
+
+You are in sleep mode processing today's experiences. Extract significant facts from today that should be preserved as question-answer pairs. These will be used for recall during waking hours.
+
+CRITICAL: Your response must be ONLY a JSON array. Do not include any text before or after the JSON. Do not include explanations or commentary.
+
+Format each item as:
+{
+    "question": "A specific question about the fact",
+    "answer": "First person answer describing what you remember"
+}
+
+Valid JSON array example:
 [
     {
-        "question": "What was the highlight of my birthday party?",
-        "answer": "The highlight of my birthday party was when my best friend surprised me with a thoughtful gift. I felt so loved and grateful."
+        "question": "What was the highlight of my birthday celebration?",
+        "answer": "The highlight was when my best friend gave me a thoughtful gift that made me feel so loved and grateful for our friendship."
     },
     {
-        "question": "Where do we live?",
-        "answer": "We live in a 5 year old house in the suburbs. It is a peaceful and quiet neighborhood."
+        "question": "Where is our new house located?",
+        "answer": "Our new house is in a peaceful suburban neighborhood. It's a 5-year-old home with a quiet, friendly community atmosphere."
     }
 ]
-### Response:
+
+Respond with the JSON array now:
 """
 
         # this is the bottom of the prompt meant for generating proper names
-        self.memory_prompt_proper_names = """### Instruction: You are asleep and processing earlier today. Identify any capitalized proper names that came up today that you would like to remember. Include people, places, pets, or anything else that is a proper name that would normally be capitalized. When you are awake you will be able to remember them. Write about each proper name in a first person narrative form. Output the proper name and memory pairs as a json list.
-### Example:
+        self.memory_prompt_proper_names = """
+
+You are in sleep mode processing today's experiences. Extract all proper names (people, places, shows, products, etc.) mentioned today. These capitalized names will be stored for future recall.
+
+CRITICAL: Your response must be ONLY a JSON array. Do not include any text before or after the JSON. Do not include explanations or commentary.
+
+Format each item as:
+{
+    "name": "Exact proper name as mentioned",
+    "memory": "First person description of how this name relates to your experience"
+}
+
+Valid JSON array example:
 [
     {
         "name": "Alice",
-        "memory": "Alice is my best friend. She is always there for me when I need her. We have been friends since we were kids."
+        "memory": "Alice is my best friend who has been there for me since childhood. She always knows how to make me smile when I'm feeling down."
     },
     {
         "name": "Love, Death & Robots",
-        "memory": "Love, Death & Robots is a Netflix series that I watched recently. It is an anthology of animated science fiction stories."
+        "memory": "Love, Death & Robots is a Netflix anthology series we watched recently. It features animated science fiction stories that sparked interesting discussions."
     }
 ]
-### Response:
+
+Respond with the JSON array now:
 """
 
         # this is the current short term memory, handled by a separate class
@@ -646,7 +683,7 @@ I am awake.
 
         # send to api to get json formatted stuff
         log.parietal_lobe.debug('Sending to api for neocortex memory.')
-        neocortex_json = STATE.current_llm.call_api(prompt=prompt_neocortex, max_tokens=8192, temperature=1.0, expects_json=True)
+        neocortex_json = STATE.current_llm.call_api(prompt=prompt_neocortex, max_tokens=8192, temperature=0.7, expects_json=True)
         log.parietal_lobe.debug('Sending to api complete.')
 
         # make sure the neocortex logs directory exists
@@ -665,7 +702,7 @@ I am awake.
 
         # send to api to get json formatted stuff
         log.parietal_lobe.debug('Sending to api for questions.')
-        questions_json = STATE.current_llm.call_api(prompt=prompt_questions, max_tokens=8192, temperature=1.0, expects_json=True)
+        questions_json = STATE.current_llm.call_api(prompt=prompt_questions, max_tokens=8192, temperature=0.7, expects_json=True)
         log.parietal_lobe.debug('Sending to api complete.')
 
         # the questions are in a json format. Save to a file just in case.
@@ -681,7 +718,7 @@ I am awake.
 
         # send to api to get json formatted stuff
         log.parietal_lobe.debug('Sending to api for proper names.')
-        proper_names_json = STATE.current_llm.call_api(prompt=prompt_proper_names, max_tokens=8192, temperature=1.0, expects_json=True)
+        proper_names_json = STATE.current_llm.call_api(prompt=prompt_proper_names, max_tokens=8192, temperature=0.7, expects_json=True)
         log.parietal_lobe.debug('Sending to api complete.')
 
         # the proper names are in a json format. Save to a file just in case.
