@@ -2,19 +2,111 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" href="data:,">
-    <title>Christine's Brain</title>
+    <title>Christine's Brain 💕</title>
     <style>
-
-        .tab {
-            overflow: hidden;
-            border: 1px solid #ccc;
-            background-color: #f1f1f1;
+        :root {
+            --pink-primary: #ff69b4;
+            --pink-light: #ffb6c1;
+            --pink-lighter: #ffc0cb;
+            --pink-dark: #c85a7a;
+            --pink-darker: #a0466b;
+            --background: #fdf2f8;
+            --card-bg: #fef7ff;
+            --text-dark: #4a1a2c;
+            --text-medium: #6b2c42;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --error: #ef4444;
+            --border: #f3e8ff;
         }
 
-        .tab button {
-            background-color: inherit;
-            float: left;
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, var(--background) 0%, var(--pink-lighter) 100%);
+            color: var(--text-dark);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: auto auto 1fr;
+            gap: 20px;
+            height: calc(100vh - 40px);
+        }
+
+        .header {
+            grid-column: 1 / -1;
+            background: var(--card-bg);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(255, 105, 180, 0.1);
+            border: 2px solid var(--pink-light);
+        }
+
+        .header h1 {
+            color: var(--pink-primary);
+            font-size: 2.5em;
+            text-align: center;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(255, 105, 180, 0.3);
+        }
+
+        .header .subtitle {
+            text-align: center;
+            color: var(--text-medium);
+            font-size: 1.1em;
+        }
+
+        .controls {
+            background: var(--card-bg);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(255, 105, 180, 0.1);
+            border: 2px solid var(--pink-light);
+        }
+
+        .status {
+            background: var(--card-bg);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(255, 105, 180, 0.1);
+            border: 2px solid var(--pink-light);
+        }
+
+        .chat {
+            grid-column: 1 / -1;
+            background: var(--card-bg);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(255, 105, 180, 0.1);
+            border: 2px solid var(--pink-light);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .section-title {
+            color: var(--pink-primary);
+            font-size: 1.5em;
+            margin-bottom: 15px;
+            border-bottom: 2px solid var(--pink-light);
+            padding-bottom: 8px;
+        }
+
+        .button {
+            background: linear-gradient(135deg, var(--pink-primary) 0%, var(--pink-dark) 100%);
+            color: white;
             border: none;
             padding: 12px 20px;
             border-radius: 25px;
@@ -150,185 +242,512 @@
             border-radius: 25px;
             font-size: 1em;
             outline: none;
+            background: var(--background);
+        }
+
+        .chat-input input:focus {
+            border-color: var(--pink-primary);
+            box-shadow: 0 0 0 3px rgba(255, 105, 180, 0.1);
+        }
+
+        .auto-refresh {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 15px;
+            padding: 10px;
+            background: var(--background);
+            border-radius: 8px;
+            border: 1px solid var(--pink-light);
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 50px;
+            height: 25px;
+            background: var(--pink-light);
+            border-radius: 25px;
             cursor: pointer;
-            padding: 14px 16px;
-            transition: 0.3s;
+            transition: background 0.3s;
         }
 
-        .tab button:hover {
-            background-color: #ddd;
+        .toggle-switch.active {
+            background: var(--pink-primary);
         }
 
-        .tab button.active {
-            background-color: #ccc;
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            width: 21px;
+            height: 21px;
+            background: white;
+            border-radius: 50%;
+            top: 2px;
+            left: 2px;
+            transition: transform 0.3s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
 
-        .tabcontent {
-            display: none;
-            padding: 6px 12px;
-            border: 1px solid #ccc;
-            border-top: none;
+        .toggle-switch.active::after {
+            transform: translateX(25px);
         }
 
-/*
- * Styling for status table
- */
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            border-radius: 10px;
+            color: white;
+            font-weight: 500;
+            z-index: 1000;
+            transform: translateX(400px);
+            transition: transform 0.3s ease;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
 
-        .statusTable  {border-collapse:collapse;border-spacing:0;}
-        .statusTable td{border-color:black;border-width:1px;font-family:Arial, sans-serif;font-size:12px;
-        overflow:hidden;padding:4px 5px;word-break:normal;}
-        .statusTable th{border-color:black;border-width:1px;font-family:Arial, sans-serif;font-size:12px;
-        font-weight:normal;overflow:hidden;padding:4px 5px;word-break:normal;}
-        .statusTable .statusTable-value{border-color:#ffffff;text-align:left;vertical-align:top}
-        .statusTable .statusTable-label{border-color:#ffffff;text-align:left;vertical-align:top}
+        .notification.show {
+            transform: translateX(0);
+        }
+
+        .notification.success {
+            background: var(--success);
+        }
+
+        .notification.error {
+            background: var(--error);
+        }
+
+        .logs-container {
+            margin-top: 15px;
+            background: var(--background);
+            border-radius: 10px;
+            padding: 15px;
+            border: 1px solid var(--pink-light);
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.8em;
+        }
+
+        .log-line {
+            margin-bottom: 2px;
+            word-wrap: break-word;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--pink-light);
+            border-radius: 50%;
+            border-top-color: var(--pink-primary);
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-left: 8px;
+        }
+
+        .status-indicator.online {
+            background: var(--success);
+            box-shadow: 0 0 8px var(--success);
+        }
+
+        .status-indicator.offline {
+            background: var(--error);
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto auto auto 1fr;
+            }
+            
+            .controls-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .status-grid {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
+    <div class="container">
+        <div class="header">
+            <h1>Christine's Brain 🌸</h1>
+            <p class="subtitle">Web Interface for Christine AI • Built with love 💕</p>
+        </div>
 
-<div class="tab">
-    <button class="tablinks" onclick="openTab(event, 'Status')">Status</button>
-    <button class="tablinks" onclick="openTab(event, 'Control')">Control</button>
-    <button class="tablinks" onclick="openTab(event, 'Chat')">Chat</button>
-    <button class="tablinks" onclick="openTab(event, 'WhoIsSpeaking')">Who Is Speaking</button>
-</div>
+        <div class="controls">
+            <h2 class="section-title">Control Panel</h2>
+            
+            <div class="auto-refresh">
+                <span>Auto-refresh status</span>
+                <div class="toggle-switch" id="autoRefreshToggle"></div>
+            </div>
 
-<div id="Status" class="tabcontent">
-    <h3>Status</h3>
-    <table id="statusTable">
-        <thead>
-            <tr>
-                <th>Parameter</th>
-                <th>Value</th>
-            </tr>
-        </thead>
-        <tbody>
-            <!-- Data will be populated here -->
-        </tbody>
-    </table>
+            <div class="controls-grid">
+                <button class="button" onclick="controlAction('toggle_wernicke')" id="wernickeBtn">
+                    Toggle Wernicke (Ears)
+                </button>
+                <button class="button" onclick="controlAction('toggle_shush')" id="shushBtn">
+                    Toggle Shush
+                </button>
+                <button class="button" onclick="controlAction('toggle_silent')" id="silentBtn">
+                    🤐 Silent Mode
+                </button>
+                <button class="button success" onclick="controlAction('test_sound')">
+                    🔊 Test Sound
+                </button>
+                <button class="button warning" onclick="controlAction('restart')">
+                    🔄 Restart Christine
+                </button>
+                <button class="button danger" onclick="controlAction('stop')">
+                    ⏹️ Stop Christine
+                </button>
+                <button class="button warning" onclick="controlAction('reboot')">
+                    🔄 Reboot Pi
+                </button>
+                <button class="button danger" onclick="controlAction('poweroff')">
+                    ⏻ Power Off Pi
+                </button>
+                <button class="button" onclick="toggleLogs()">
+                    📝 Toggle Logs
+                </button>
+            </div>
+
+            <div class="logs-container" id="logsContainer" style="display: none;">
+                <div id="logContent">Loading logs...</div>
+            </div>
+        </div>
+
+        <div class="status">
+            <h2 class="section-title">Status Monitor <span class="status-indicator online" id="connectionStatus"></span></h2>
+            <div class="status-grid" id="statusGrid">
+                <div class="status-item">
+                    <span class="status-label">Loading...</span>
+                    <span class="status-value"><div class="loading"></div></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="chat">
+            <h2 class="section-title">Chat with Christine 💬</h2>
+            <div class="chat-messages" id="chatMessages">
+                <div style="text-align: center; color: var(--text-medium); font-style: italic;">
+                    Start a conversation with Christine! 💕
+                </div>
+            </div>
+            <div class="chat-input">
+                <input type="text" id="nameInput" placeholder="Your name (required)" maxlength="50">
+                <div class="chat-input-row">
+                    <input type="text" id="chatInput" placeholder="Type your message to Christine..." maxlength="500">
+                    <button class="button" onclick="sendMessage()" id="sendBtn">Send 💕</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="notification" id="notification"></div>
 
     <script>
-        async function fetchStatus() {
-            try {
-                const response = await fetch('/status');
-                const data = await response.json();
-                updateStatusTable(data);
-            } catch (error) {
-                console.error('Error fetching status:', error);
+        // Security token passed from server
+        const authToken = '{{token}}';
+        
+        // Helper function to make authenticated requests
+        function authenticatedFetch(url, options = {}) {
+            // Add token to URL parameters
+            const urlObj = new URL(url, window.location.origin);
+            if (authToken) {
+                urlObj.searchParams.set('token', authToken);
             }
-        }
-
-        function updateStatusTable(data) {
-            const tbody = document.getElementById('statusTable').getElementsByTagName('tbody')[0];
-            tbody.innerHTML = ''; // Clear existing data
-
-            for (const [key, value] of Object.entries(data)) {
-                const row = document.createElement('tr');
-                const cellKey = document.createElement('td');
-                const cellValue = document.createElement('td');
-
-                cellKey.textContent = key;
-                cellValue.textContent = value;
-
-                row.appendChild(cellKey);
-                row.appendChild(cellValue);
-                tbody.appendChild(row);
+            
+            // For POST requests with JSON, include token in body
+            if (options.method === 'POST' && options.headers && options.headers['Content-Type'] === 'application/json') {
+                try {
+                    const body = JSON.parse(options.body);
+                    body.token = authToken;
+                    options.body = JSON.stringify(body);
+                } catch (e) {
+                    // If body parsing fails, fall back to URL parameter
+                }
             }
+            
+            return fetch(urlObj.toString(), options);
         }
+        
+        let autoRefresh = true;
+        let refreshInterval;
+        let logsVisible = false;
+        let lastMessageCount = 0; // Track number of messages to detect new ones
 
-        // Fetch status data every 5 seconds
-        setInterval(fetchStatus, 5000);
+        // Initialize the interface
+        document.addEventListener('DOMContentLoaded', function() {
+            updateStatus();
+            loadChatMessages();
+            startAutoRefresh();
+            
+            // Set up chat input enter key handlers
+            document.getElementById('nameInput').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    document.getElementById('chatInput').focus();
+                }
+            });
+            
+            document.getElementById('chatInput').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
 
-        // Initial fetch
-        fetchStatus();
-    </script>
-</div>
+            // Set up auto-refresh toggle
+            document.getElementById('autoRefreshToggle').addEventListener('click', function() {
+                toggleAutoRefresh();
+            });
+        });
 
-<div id="Control" class="tabcontent">
-    <h3>Control</h3>
-    <button onclick="controlAction('restart')">Restart</button>
-    <button onclick="controlAction('stop')">Stop</button><br/>
-    <button onclick="controlAction('reboot')">Reboot</button>
-    <button onclick="controlAction('poweroff')">Power Off</button><br/>
-    <button onclick="controlAction('wernicke_on')">Wernicke On</button>
-    <button onclick="controlAction('wernicke_off')">Wernicke Off</button>
+        function updateStatus() {
+            authenticatedFetch('/api/status')
+                .then(response => response.json())
+                .then(data => {
+                    const statusGrid = document.getElementById('statusGrid');
+                    statusGrid.innerHTML = '';
+                    
+                    // Create status items
+                    const statusItems = [
+                        ['Current Time', data.current_time],
+                        ['CPU Temperature', data.cpu_temp],
+                        ['Uptime', data.uptime],
+                        ['Memory Usage', data.memory_usage],
+                        ['Disk Usage', data.disk_usage],
+                        ['User Speaking', data.user_is_speaking],
+                        ['Who Speaking', data.who_is_speaking],
+                        ['Light Level', data.light_level],
+                        ['Wakefulness', data.wakefulness],
+                        ['Horny Level', data.horny],
+                        ['Sexual Arousal', data.sexual_arousal],
+                        ['Is Sleeping', data.is_sleeping],
+                        ['Shush Please', data.shush_please_honey],
+                        ['Perceptions Blocked', data.perceptions_blocked],
+                        ['Silent Mode', data.silent_mode],
+                        ['Wernicke OK', data.wernicke_ok],
+                        ['Gyro Available', data.gyro_available],
+                        ['Vagina Available', data.vagina_available]
+                    ];
 
-    <script>
-        async function controlAction(action) {
-            try {
-                const response = await fetch('/control', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ action: action })
+                    statusItems.forEach(([label, value]) => {
+                        const item = document.createElement('div');
+                        item.className = 'status-item';
+                        item.innerHTML = `
+                            <span class="status-label">${label}</span>
+                            <span class="status-value">${value}</span>
+                        `;
+                        statusGrid.appendChild(item);
+                    });
+
+                    // Update connection status
+                    document.getElementById('connectionStatus').className = 'status-indicator online';
+                })
+                .catch(error => {
+                    console.error('Error updating status:', error);
+                    document.getElementById('connectionStatus').className = 'status-indicator offline';
                 });
-                const result = await response.json();
-                alert(result.message);
-            } catch (error) {
-                console.error('Error performing control action:', error);
-            }
         }
-    </script>
-</div>
 
-<div id="Chat" class="tabcontent">
-    <h3>Chat</h3>
-    
-</div>
+        function controlAction(action) {
+            authenticatedFetch(`/api/control/${action}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({})
+            })
+            .then(response => response.json())
+            .then(data => {
+                showNotification(data.message, data.status === 'success' ? 'success' : 'error');
+                if (data.status === 'success') {
+                    updateStatus();
+                }
+            })
+            .catch(error => {
+                showNotification('Error: ' + error.message, 'error');
+            });
+        }
 
-<div id="WhoIsSpeaking" class="tabcontent">
-    <h3>Who Is Speaking</h3>
-    <button onclick="submitSpeaker('{{USER_NAME}}')">{{USER_NAME}}</button><br/><br/>
-    <button onclick="submitSpeaker('Somebody')">Somebody</button><br/><br/>
-    <button onclick="submitSpeaker('Somebody in the work meeting')">Work meeting</button><br/><br/>
-    <input type="text" id="customSpeaker" placeholder="Enter custom name">
-    <button onclick="submitCustomSpeaker()">Submit</button>
+        function sendMessage() {
+            const nameInput = document.getElementById('nameInput');
+            const chatInput = document.getElementById('chatInput');
+            const name = nameInput.value.trim();
+            const message = chatInput.value.trim();
+            
+            if (!name) {
+                showNotification('Please enter your name first', 'error');
+                nameInput.focus();
+                return;
+            }
+            
+            if (!message) {
+                chatInput.focus();
+                return;
+            }
 
-    <script>
-        async function submitSpeaker(name) {
-            try {
-                const response = await fetch('/who_is_speaking', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ speaker: name })
+            const sendBtn = document.getElementById('sendBtn');
+            sendBtn.disabled = true;
+            sendBtn.innerHTML = 'Sending...';
+
+            authenticatedFetch('/api/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    sender: name,
+                    message: message
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    chatInput.value = '';
+                    loadChatMessages();
+                } else {
+                    showNotification(data.message, 'error');
+                }
+            })
+            .catch(error => {
+                showNotification('Error sending message: ' + error.message, 'error');
+            })
+            .finally(() => {
+                sendBtn.disabled = false;
+                sendBtn.innerHTML = 'Send 💕';
+            });
+        }
+
+        function loadChatMessages() {
+            authenticatedFetch('/api/chat')
+                .then(response => response.json())
+                .then(messages => {
+                    const chatMessages = document.getElementById('chatMessages');
+                    const hadNewMessages = messages.length > lastMessageCount;
+                    lastMessageCount = messages.length;
+                    
+                    if (messages.length === 0) {
+                        chatMessages.innerHTML = `
+                            <div style="text-align: center; color: var(--text-medium); font-style: italic;">
+                                Start a conversation with Christine! 💕
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    chatMessages.innerHTML = '';
+                    messages.forEach(msg => {
+                        const messageDiv = document.createElement('div');
+                        messageDiv.className = `message ${msg.type}`;
+                        messageDiv.innerHTML = `
+                            <div class="message-sender">${msg.sender || (msg.type === 'christine' ? 'Christine' : 'User')}</div>
+                            <div>${msg.message}</div>
+                            <div class="message-time">${msg.timestamp}</div>
+                        `;
+                        chatMessages.appendChild(messageDiv);
+                    });
+                    
+                    // Only auto-scroll if there were new messages
+                    if (hadNewMessages) {
+                        chatMessages.scrollTop = chatMessages.scrollHeight;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading chat messages:', error);
                 });
-                const result = await response.json();
-                // alert(result.message);
-            } catch (error) {
-                console.error('Error submitting speaker:', error);
-            }
         }
 
-        async function submitCustomSpeaker() {
-            const customName = document.getElementById('customSpeaker').value;
-            if (customName) {
-                submitSpeaker(customName);
+        function toggleLogs() {
+            logsVisible = !logsVisible;
+            const logsContainer = document.getElementById('logsContainer');
+            
+            if (logsVisible) {
+                logsContainer.style.display = 'block';
+                loadLogs();
             } else {
-                alert('Please enter a custom name.');
+                logsContainer.style.display = 'none';
             }
         }
+
+        function loadLogs() {
+            authenticatedFetch('/api/logs')
+                .then(response => response.json())
+                .then(data => {
+                    const logContent = document.getElementById('logContent');
+                    logContent.innerHTML = '';
+                    
+                    data.logs.forEach(line => {
+                        if (line.trim()) {
+                            const logLine = document.createElement('div');
+                            logLine.className = 'log-line';
+                            logLine.textContent = line;
+                            logContent.appendChild(logLine);
+                        }
+                    });
+                    
+                    logContent.scrollTop = logContent.scrollHeight;
+                })
+                .catch(error => {
+                    document.getElementById('logContent').textContent = 'Error loading logs: ' + error.message;
+                });
+        }
+
+        function startAutoRefresh() {
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+            }
+            
+            refreshInterval = setInterval(() => {
+                if (autoRefresh) {
+                    updateStatus();
+                    loadChatMessages();
+                    if (logsVisible) {
+                        loadLogs();
+                    }
+                }
+            }, 3000);
+        }
+
+        function toggleAutoRefresh() {
+            autoRefresh = !autoRefresh;
+            const toggle = document.getElementById('autoRefreshToggle');
+            
+            if (autoRefresh) {
+                toggle.classList.add('active');
+            } else {
+                toggle.classList.remove('active');
+            }
+        }
+
+        function showNotification(message, type) {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.className = `notification ${type}`;
+            notification.classList.add('show');
+            
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 4000);
+        }
+
+        // Initialize auto-refresh toggle state
+        document.getElementById('autoRefreshToggle').classList.add('active');
     </script>
-</div>
-
-<script>
-
-    function openTab(evt, tabName) {
-        var i, tabcontent, tablinks;
-        tabcontent = document.getElementsByClassName("tabcontent");
-        for (i = 0; i < tabcontent.length; i++) {
-            tabcontent[i].style.display = "none";
-        }
-        tablinks = document.getElementsByClassName("tablinks");
-        for (i = 0; i < tablinks.length; i++) {
-            tablinks[i].className = tablinks[i].className.replace(" active", "");
-        }
-        document.getElementById(tabName).style.display = "block";
-        evt.currentTarget.className += " active";
-    }
-
-</script>
-
 </body>
 </html>
