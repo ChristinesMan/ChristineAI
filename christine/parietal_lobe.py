@@ -19,7 +19,6 @@ from christine.narrative import Narrative
 from christine.short_term_memory import ShortTermMemory
 from christine.long_term_memory import LongTermMemory
 from christine.neocortex import Neocortex
-from christine.starter import Starter
 
 class ParietalLobe(threading.Thread):
     """Interact with a Large Language Model."""
@@ -123,10 +122,6 @@ I am awake.
         # this avoids querying the neocortex on every turn since it only changes once per day
         self.cached_self_definition = None
         self.self_definition_last_updated = 0.0
-
-        # this is a list of variations on a paragraph tacked to the end
-        # putting this into a class so that decisions can be made for what kind of starter to use
-        self.starter = Starter()
 
         # patterns that should be detected and handled apart from LLM
         self.re_shutdown = re.compile(
@@ -474,8 +469,7 @@ I am awake.
             prompt = (self.get_dynamic_context() +
                       self.long_term_memory.memory_text +
                       self.situational_awareness_message() +
-                      self.short_term_memory.get() +
-                      self.starter.get()
+                      self.short_term_memory.get()
             )
 
             # save a quick log
