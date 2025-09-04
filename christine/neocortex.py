@@ -574,6 +574,9 @@ Consolidated memory:"""
             if len(proper_name.properties["name"]) > 2:
                 names.append(proper_name.properties["name"])
         names = list(set(names))
+        # remove the character name (CONFIG.char_name) from the list
+        if CONFIG.char_name in names:
+            names.remove(CONFIG.char_name)
         names = [rf'\b{re.escape(name)}\b' for name in names]
         self.proper_names_regex = re.compile(rf"({'|'.join(names)})", re.IGNORECASE)
 
