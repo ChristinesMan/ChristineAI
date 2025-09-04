@@ -34,7 +34,7 @@ class Cleaner(threading.Thread):
             # log the exception but keep the thread running
             except Exception as ex:
                 log.main.exception(ex)
-                log.play_sound()
+                log.play_erro_sound()
 
     def clean_broca_cache(self):
         """As voice is synthesized, wav files are cached for future use. But after a while that cache sounds stale. So clean it."""

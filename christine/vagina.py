@@ -105,7 +105,7 @@ class Vagina(threading.Thread):
             # log the exception but keep the thread running
             except Exception as ex:
                 log.main.exception(ex)
-                log.play_sound()
+                log.play_erro_sound()
 
     def class_one_probe(self, to_enterprise):
         """

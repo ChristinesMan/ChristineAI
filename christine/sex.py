@@ -172,7 +172,7 @@ class Sex(threading.Thread):
             # log the exception but keep the thread running
             except Exception as ex:
                 log.main.exception(ex)
-                log.play_sound()
+                log.play_erro_sound()
 
 
     def vagina_got_hit(self, sensor_data):

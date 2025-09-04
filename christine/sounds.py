@@ -46,7 +46,7 @@ class SoundsDB():
             collections = row[db_field_names["collections"]].split(',')
             replay_wait = row[db_field_names["replay_wait"]]
             intensity = row[db_field_names["intensity"]]
-            pause_wernicke = row[db_field_names["pause_processing"]]
+            pause_wernicke = bool(row[db_field_names["pause_processing"]])
 
             if os.path.isfile(file_path) is False:
                 log.main.warning('This sound does not exist in the file system: %s', row)

@@ -12,4 +12,5 @@ config.ini
 unit_testing.py
 christine-docker/.ssh
 christine-docker/.vscode-server
-mcp_sysadmin
+christine-docker/.bashrc
+mcp

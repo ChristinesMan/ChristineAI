@@ -61,6 +61,7 @@ class Wernicke(threading.Thread):
         # pylint: disable=import-outside-toplevel
         # importing here to avoid circular imports
         from christine.touch import touch
+        # from christine.light import light
         from christine.parietal_lobe import parietal_lobe
 
         log.wernicke.debug("Thread started.")
@@ -70,9 +71,9 @@ class Wernicke(threading.Thread):
         # Because it seemed like having everything happen all at once caused high cpu, then it would have to catch up
         # So wait some time, then send the signal to start
         # but if there's no llm, then we don't want to start the audio processing
-        time.sleep(60)
+        time.sleep(30)
         while STATE.current_llm.name == "Nothing_LLM":
-            time.sleep(30)
+            time.sleep(5)
         self.audio_processing_start()
 
         while True:
@@ -114,6 +115,7 @@ class Wernicke(threading.Thread):
                 elif comm["class"] == "sensor_data":
 
                     touch.new_data(comm["touch"])
+                    # light.new_data(comm["light"])
 
                 # Words from the speech recognition server
                 elif comm["class"] == "utterance":
@@ -135,7 +137,7 @@ class Wernicke(threading.Thread):
             # log the exception but keep the thread running
             except Exception as ex:
                 log.main.exception(ex)
-                log.play_sound()
+                log.play_erro_sound()
 
     def audio_recording_start(self, label):
         """
@@ -212,8 +214,7 @@ class Wernicke(threading.Thread):
         # This starts False, and is flipped to true after some seconds to give pi time to catch up
         processing_state = False
 
-        # This is to signal that the thread should close the serial port and shutdown
-        # we have a status.Shutdown but that's in the main process. This needs something separate
+        # This is to signal that the subprocess should close the serial port and shutdown
         shutdown = False
 
         # This is a queue where the audio data in 512 frame chunks inbound from the serial port gets put
@@ -260,7 +261,7 @@ class Wernicke(threading.Thread):
                 nonlocal shutdown
 
                 # delay for a bit at startup to let the CPU catch up
-                time.sleep(40)
+                time.sleep(20)
 
                 # open the serial port
                 log.wernicke.info("Opening serial port")
@@ -333,12 +334,8 @@ class Wernicke(threading.Thread):
                             # And.. it shappened again.
                             # I don't even know where it's getting stuck at. It always gets here 4 times, and then nothing.
                             # It did, however, just auto-recover using this method, so let's just jack up the delay
-                            # log.wernicke.debug(data)
-                            # log.wernicke.info("No sensor data found. Adjusting audio stream by 3000 bytes")
-                            # data = self.serial_port_from_head.read(3000)
-                            # log.wernicke.info("Adjust done")
                             log.wernicke.info("No sensor data found. Ripping it out.")
-                            log.play_sound()
+                            log.play_erro_sound()
                             self.serial_port_from_head.close()
                             time.sleep(15)
                             self.serial_port_from_head = serial.Serial(  # pylint: disable=no-member
@@ -372,7 +369,6 @@ class Wernicke(threading.Thread):
 
                     else:
 
-                        # log.wernicke.debug('pp %s qs %s', self.pause_processing, buffer_queue.qsize())
                         self.pause_processing -= 1
 
                         if self.pause_processing == 0:

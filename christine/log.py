@@ -57,7 +57,7 @@ llm_stream = setup_logger("llm_stream", level=logging.DEBUG)
 neocortex = setup_logger("neocortex", level=logging.DEBUG)
 imhere = setup_logger("imhere", level=logging.INFO, msg_format="%(module)s.%(funcName)s.%(created)d")
 
-def play_sound():
+def play_erro_sound():
     """Function to play an exception sound"""
 
     os.system('aplay ./sounds/erro.wav')
@@ -69,3 +69,5 @@ def log_exception(_, value, trace_back):
     main.exception("Uncaught exception: %s", value)
     main.exception("Detail: %s", format_tb(trace_back))
 sys.excepthook = log_exception
+
+main.info("Script started")

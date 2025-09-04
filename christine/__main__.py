@@ -47,10 +47,7 @@ from christine.horny import horny
 from christine.sex import sex
 from christine.httpserver import httpserver
 from christine.cleaner import cleaner
-# CONFIG import already handles configuration validation
 from christine.killsignal import GracefulKiller
-
-log.main.info("Script started")
 
 # for the modules above that are background threads, call their start() methods one at a time
 for thread in [
@@ -62,7 +59,6 @@ for thread in [
     vagina,
     httpserver,
     horny,
-    wernicke,
     sex,
     gyro,
 ]:

@@ -114,7 +114,7 @@ class Broca(threading.Thread):
             # log the exception but keep the thread running
             except Exception as ex:
                 log.main.exception(ex)
-                log.play_sound()
+                log.play_erro_sound()
 
     def play_next_figment(self):
         """Get the next figment from the queue and process it."""

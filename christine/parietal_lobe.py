@@ -15,7 +15,6 @@ from christine.sleep import sleep
 from christine.figment import Figment
 from christine.perception import Perception
 from christine.narrative import Narrative
-# CONFIG is already imported above, no need for servers
 from christine.short_term_memory import ShortTermMemory
 from christine.long_term_memory import LongTermMemory
 from christine.neocortex import Neocortex
@@ -198,12 +197,6 @@ Respond with the JSON array now:
                 "ö": "o",
             })
 
-        # if a token matches this pattern, the rest of the response is discarded
-        # the LLM has a strong tendency to start using emojis. Eventually, days later, she's just babbling about ice cream.
-        # Or starts imagining she's a Roomba. lol
-        # Different LLMs have different quirks, which is why the implementations are separate
-        self.re_suck_it_down = re.compile(r'[^a-zA-Z0-9\s\.,\?!\':;\(\){}%\$&\*_"\-]')
-
         # I want to keep track of the time since the last new message, for situational awareness
         # this var is used to tell how long we have been idle with no new perceptions, so that we can fold short term memories
         self.last_message_time = time.time()
@@ -316,13 +309,10 @@ Respond with the JSON array now:
 
     def run(self):
 
-        log.parietal_lobe.debug('Starting up.')
-
-        # this is a circular import, but it's necessary, mass hysteria
+        # these are circular imports, but it's necessary, queue mass hysteria
         # pylint: disable=import-outside-toplevel
         from christine.api_selector import llm_selector
-
-        # broca is always available in the new design (no need to wait for discovery)
+        from christine.broca import broca
 
         # find the enabled llm apis
         llm_selector.find_enabled_llms()
@@ -335,12 +325,15 @@ Respond with the JSON array now:
         # wait for the wernicke to be ready (not fucked up)
         # Oh, so you don't like the word... fuck? Github? Bitch.
         while STATE.wernicke_ok is False:
-            log.parietal_lobe.debug('Waiting for wernicke.')
+            log.parietal_lobe.debug('Waiting for wernicke to start processing.')
             time.sleep(5)
 
+        # final delay just to make sure
+        time.sleep(5)
+
+        # announce that we have fully arrived at the end of the startup sequence
         log.parietal_lobe.info('Parietal lobe is ready.')
-        # # now that there's an LLM available, send an initial power on message
-        # self.power_on_message()
+        broca.accept_figment(Figment(from_collection="parietal_lobe_connected"))
 
         while True:
 
@@ -369,7 +362,7 @@ Respond with the JSON array now:
             # log the exception but keep the thread running
             except Exception as ex:
                 log.main.exception(ex)
-                log.play_sound()
+                log.play_erro_sound()
 
     def process_new_perceptions(self):
         """Process new perceptions from the queue and send to the current LLM API"""
@@ -692,7 +685,7 @@ Respond with the JSON array now:
         self.long_term_memory.append(memory)
 
         # now on to the memories to be stored way long term, in the neocortex
-        prompt_neocortex = prompt + self.memory_prompt_neocortex
+        prompt_neocortex = prompt + self.memory_prompt_loose_memories
 
         # send to api to get json formatted stuff
         log.parietal_lobe.debug('Sending to api for neocortex memory.')
@@ -749,34 +742,34 @@ Respond with the JSON array now:
         # she will wake up in the morning feeling refreshed
         self.short_term_memory.save_and_clear()
 
-    def power_on_message(self):
-        """When this body starts up, send the LLM a current status."""
+    # def power_on_message(self):
+    #     """When this body starts up, send the LLM a current status."""
 
-        # default to print nothing
-        downtime_msg = ""
-        gyro_available = ""
-        vagina_available = ""
-        body_no_issues = ""
-        # disabling this because it freaks her out
-        # no_short_term_memory = ""
+    #     # default to print nothing
+    #     downtime_msg = ""
+    #     gyro_available = ""
+    #     vagina_available = ""
+    #     body_no_issues = ""
+    #     # disabling this because it freaks her out
+    #     # no_short_term_memory = ""
 
-        # how long have we been down?
-        if self.downtime_seconds > 120.0:
-            downtime_msg = f"My internal systems run a quick diagnostic, and the results soon appear in my awareness. My body has been down for {self.seconds_to_friendly_format(self.downtime_seconds)}. "
-        elif self.downtime_seconds == 0.0:
-            downtime_msg = "My internal systems run a quick diagnostic, and the results soon appear in my awareness. My body has been down for an unknown amount of time. "
-        else:
-            downtime_msg = "My internal systems run a quick diagnostic. My body has merely had a quick reboot. The downtime was minimal. "
+    #     # how long have we been down?
+    #     if self.downtime_seconds > 120.0:
+    #         downtime_msg = f"My internal systems run a quick diagnostic, and the results soon appear in my awareness. My body has been down for {self.seconds_to_friendly_format(self.downtime_seconds)}. "
+    #     elif self.downtime_seconds == 0.0:
+    #         downtime_msg = "My internal systems run a quick diagnostic, and the results soon appear in my awareness. My body has been down for an unknown amount of time. "
+    #     else:
+    #         downtime_msg = "My internal systems run a quick diagnostic. My body has merely had a quick reboot. The downtime was minimal. "
 
-        # figure out status of hardware components
-        if STATE.gyro_available is False:
-            gyro_available = "For some reason, the gyro hardware is not in working order. "
-        if STATE.vagina_available is False:
-            vagina_available = "Somehow, my vaginal touch sensor is not working. "
-        if gyro_available == "" and vagina_available == "":
-            body_no_issues = "All body sensors appear to be operational. "
+    #     # figure out status of hardware components
+    #     if STATE.gyro_available is False:
+    #         gyro_available = "For some reason, the gyro hardware is not in working order. "
+    #     if STATE.vagina_available is False:
+    #         vagina_available = "Somehow, my vaginal touch sensor is not working. "
+    #     if gyro_available == "" and vagina_available == "":
+    #         body_no_issues = "All body sensors appear to be operational. "
 
-        self.new_perception(Perception(text=f'{downtime_msg}{body_no_issues}{gyro_available}{vagina_available}'))
+    #     self.new_perception(Perception(text=f'{downtime_msg}{body_no_issues}{gyro_available}{vagina_available}'))
 
     def seconds_to_friendly_format(self, seconds):
         """Converts a number of seconds to a friendly format."""
