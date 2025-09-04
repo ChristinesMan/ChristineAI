@@ -8,6 +8,7 @@ RUN apt-get clean
 RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/g' /etc/ssh/sshd_config && echo 'root:Christine@3' | chpasswd
 RUN sed -i 's/#Port 22/Port 2222/g' /etc/ssh/sshd_config
 COPY /.ssh /root/.ssh
+COPY /.bashrc /root/.bashrc
 RUN chown -R root:root /root/.ssh && chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys
 
 RUN pip install --no-cache-dir wheel gnureadline requests
