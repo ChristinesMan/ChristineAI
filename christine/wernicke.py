@@ -32,16 +32,31 @@ class Wernicke(threading.Thread):
     def __init__(self):
         super().__init__(daemon=True)
 
+        # Direct broca-wernicke coordination via shared memory (set later by main)
+        self.audio_coordination = None
+
         # setup the separate process with pipes for communication
         # So... Data, Riker, and Tasha beam down for closer analysis of an alien probe.
         # A tragic transporter accident occurs and Tasha gets... dollified.
+        # Note: Process creation moved to run() method to allow shared memory injection
+        self.to_away_team = None
+        self.to_enterprise = None
+        self.to_away_team_audio = None
+        self.to_enterprise_audio = None
+        self.away_team_process = None
+
+    def run(self):
+
+        # Create subprocess communication after shared memory is injected
         self.to_away_team, self.to_enterprise = Pipe()
         self.to_away_team_audio, self.to_enterprise_audio = Pipe()
         self.away_team_process = Process(
-            target=self.away_team, args=(self.to_enterprise, self.to_enterprise_audio)
+            target=self.away_team, args=(self.to_enterprise, self.to_enterprise_audio, self.audio_coordination)
         )
-
-    def run(self):
+        
+        # Start the subprocess first thing to save memory
+        log.wernicke.info("Thread started - starting away team subprocess")
+        self.away_team_process.start()
 
         # pylint: disable=import-outside-toplevel
         # importing here to avoid circular imports
@@ -169,11 +184,9 @@ class Wernicke(threading.Thread):
         log.wernicke.info("Stop eagle enrollment")
         self.to_away_team.send({"msg": "stop_eagle_enroll"})
 
-    def away_team(self, to_enterprise, to_enterprise_audio):
+    def away_team(self, to_enterprise, to_enterprise_audio, audio_coordination):
         """
-        Runs in a subprocess for performance reasons
-        All the audio/sensor collection and analysis happens in here
-        Messages are sent back to the main process
+        This subprocess captures sound from a microphone
         """
 
         # capture any errors
@@ -342,7 +355,9 @@ class Wernicke(threading.Thread):
                         hey_honey({"class": "wernicke_ok"})
 
                     # if we're currently processing, put audio data onto the queue, otherwise it gets thrown away
-                    if processing_state is True and self.pause_processing <= 0:
+                    # DIRECT BROCA COORDINATION: Check shared memory flag for immediate pause
+                    broca_audio_playing = audio_coordination.value if audio_coordination else 0
+                    if processing_state is True and self.pause_processing <= 0 and broca_audio_playing == 0:
                         try:
 
                             # the audio data will be after the sensor data
@@ -381,6 +396,7 @@ class Wernicke(threading.Thread):
                 nonlocal recording_state
                 nonlocal processing_state
                 nonlocal shutdown
+                nonlocal buffer_queue
 
                 while True:
                     # Check for safety timeout - auto-resume if stopped too long
@@ -402,9 +418,29 @@ class Wernicke(threading.Thread):
                         elif comm["msg"] == "start_processing":
                             processing_state = True
                             self.last_processing_stop_time = None
+                            # CRITICAL: Flush buffer queue when starting to prevent processing 
+                            # any stale audio that was captured while paused
+                            # Clear the queue by draining all items
+                            queue_size = buffer_queue.qsize()
+                            for _ in range(queue_size):
+                                try:
+                                    buffer_queue.get_nowait()
+                                except queue.Empty:
+                                    break
+                            log.wernicke.debug("Buffer queue flushed (%d items) on processing start", queue_size)
                         elif comm["msg"] == "stop_processing":
                             processing_state = False
                             self.last_processing_stop_time = time.time()
+                            # CRITICAL: Flush the buffer queue to prevent processing old audio
+                            # when wernicke resumes after audio playback
+                            # Clear the queue by draining all items
+                            queue_size = buffer_queue.qsize()
+                            for _ in range(queue_size):
+                                try:
+                                    buffer_queue.get_nowait()
+                                except queue.Empty:
+                                    break
+                            log.wernicke.debug("Buffer queue flushed (%d items) on processing stop", queue_size)
                         elif comm["msg"] == "pause_processing":
                             head_mic.pause_processing = comm["num_of_blocks"]
                         elif comm["msg"] == "shutdown":
@@ -720,5 +756,4 @@ class Wernicke(threading.Thread):
 # Instantiate
 wernicke = Wernicke()
 
-# start the subprocess first thing to save memory
-wernicke.away_team_process.start()
+# Note: Subprocess will be started in run() method after shared memory injection

@@ -11,7 +11,6 @@ import threading
 import queue
 import re
 from multiprocessing import Process, Pipe
-from math import ceil
 
 from christine import log
 from christine.status import STATE
@@ -29,6 +28,9 @@ class Broca(threading.Thread):
 
     def __init__(self):
         super().__init__(daemon=True)
+
+        # Direct broca-wernicke coordination via shared memory (set later by main)
+        self.audio_coordination = None
 
         # queue up figments to feed into broca one at a time
         self.figment_queue = queue.Queue()
@@ -61,18 +63,22 @@ class Broca(threading.Thread):
         # The enterprise sent out a shuttlecraft with Data at the helm.
         # The shuttlecraft is a subprocess.
         # This was done because sound got really choppy due to probably python bottlenecking
-        self.to_shuttlecraft, self.to_starship = Pipe()
-        self.shuttlecraft_process = Process(
-            target=self.shuttlecraft, args=(self.to_starship,)
-        )
+        # Note: Process creation moved to run() method to allow shared memory injection
+        self.to_shuttlecraft = None
+        self.to_starship = None
+        self.shuttlecraft_process = None
 
     def run(self):
 
-        # pylint: disable=import-outside-toplevel
-        from christine.wernicke import wernicke
-
-        # announce that at least the brain is running
-        self.accept_figment(Figment(from_collection="brain_online"))
+        # Create subprocess communication after shared memory is injected
+        self.to_shuttlecraft, self.to_starship = Pipe()
+        self.shuttlecraft_process = Process(
+            target=self.shuttlecraft, args=(self.to_starship, self.audio_coordination)
+        )
+        
+        # Start the shuttlecraft subprocess
+        log.broca_main.info("Thread started - starting shuttlecraft subprocess")
+        self.shuttlecraft_process.start()
 
         while True:
 
@@ -85,35 +91,25 @@ class Broca(threading.Thread):
                     break
 
                 # the shuttlecraft takes one item at a time
-                # This recv will block here until the shuttlecraft sends something
-                msg = self.to_shuttlecraft.recv()
-                log.broca_main.debug("Received: %s", msg)
+                # DIRECT COORDINATION: No more signal-based wernicke coordination needed!
+                # Audio coordination now happens directly via shared memory between subprocesses
+                if self.to_shuttlecraft.poll(0.1):  # 100ms timeout
+                    msg = self.to_shuttlecraft.recv()
+                    log.broca_main.debug("Received: %s", msg)
 
-                if msg['action'] == 'pause_wernicke_start':
-                    # Signal from shuttlecraft that audio is about to start - pause wernicke immediately
-                    wernicke.audio_processing_stop()
-                    self.wernicke_paused_by_broca = True
-                    log.broca_main.info("Wernicke paused - audio starting")
+                    if msg['action'] == 'idle':
 
-                elif msg['action'] == 'pause_wernicke_end':
-                    # Signal from shuttlecraft that audio has ended - resume wernicke immediately
-                    wernicke.audio_processing_start()
-                    self.wernicke_paused_by_broca = False
-                    log.broca_main.info("Wernicke resumed - audio ended")
+                        # if we're here, it means there's no sound actively playing, not even a breath
+                        # this user_is_speaking flag is set by the wernicke when it's time to shut up
+                        if STATE.user_is_speaking is False:
 
-                elif msg['action'] == 'pause_wernicke':
-                    # Legacy support for old pause_wernicke message format
-                    wernicke.audio_processing_pause(msg['pause_wernicke'])
-
-                elif msg['action'] == 'idle':
-
-                    # if we're here, it means there's no sound actively playing, not even a breath
-                    # this user_is_speaking flag is set by the wernicke when it's time to shut up
-                    if STATE.user_is_speaking is False:
-
-                        # if there's something in the queue, play it
-                        if self.figment_queue.qsize() > 0:
-                            self.play_next_figment()
+                            # if there's something in the queue, play it
+                            if self.figment_queue.qsize() > 0:
+                                self.play_next_figment()
+                else:
+                    # No message available within timeout - continue processing to prevent backup
+                    # This prevents the main thread from getting stuck waiting for shuttlecraft
+                    pass
 
             # log the exception but keep the thread running
             except Exception as ex:
@@ -228,6 +224,7 @@ class Broca(threading.Thread):
                     # this is because the file is generated in a separate thread
                     # the tts call should time out in 60s, so shouldn't get stuck
                     # wait for the wav file to be ready and also wait until it is ok to speak
+                    # DIRECT COORDINATION: No need to check for wernicke signals here anymore! BOO-YA!
                     while figment.wav_file is None or STATE.user_is_speaking is True:
                         time.sleep(0.2)
 
@@ -319,18 +316,14 @@ class Broca(threading.Thread):
         # import here to avoid circular import
         # pylint: disable=import-outside-toplevel
         from christine.parietal_lobe import parietal_lobe
-        from christine.wernicke import wernicke
+        # Direct coordination via shared memory - no need for wernicke import! YAY!
 
         # CRITICAL: Tell shuttlecraft to stop any ongoing audio immediately
         # This prevents audio from playing after interruption
         self.to_shuttlecraft.send({"action": "stop_audio"})
 
-        # When flushing, we need to ensure wernicke gets restarted ONLY if we paused it
-        # This prevents conflicts with the signal-based system
-        if self.wernicke_paused_by_broca:
-            wernicke.audio_processing_start()
-            self.wernicke_paused_by_broca = False
-            log.broca_main.info("Wernicke resumed due to interruption")
+        # When flushing, wernicke coordination is now handled directly via shared memory
+        # No need for manual wernicke restart - the shuttlecraft will clear the flag
 
         # keeps track of whether speaking was actually interrupted
         interrupted = False
@@ -358,7 +351,7 @@ class Broca(threading.Thread):
         if interrupted is True:
             parietal_lobe.broca_speech_interrupted()
 
-    def shuttlecraft(self, to_starship):
+    def shuttlecraft(self, to_starship, audio_coordination):
         """
         Runs in a separate process for performance reasons.
         Sounds got crappy and this solved it.
@@ -473,13 +466,13 @@ class Broca(threading.Thread):
                         os.system(f'amixer -q cset numid=1 {comms["vol"]}%')
                         last_volume = comms["vol"]
 
-                    # SIGNAL-BASED WERNICKE COORDINATION
-                    # if we need to pause wernicke, send start signal now
+                    # DIRECT WERNICKE COORDINATION - SHARED MEMORY
+                    # if we need to pause wernicke, set shared memory flag now
                     if comms["pause_wernicke"]:
-                        log.broca_shuttlecraft.info("Sending pause_wernicke_start signal")
-                        to_starship.send({"action": "pause_wernicke_start"})
-                        # small delay to ensure wernicke gets the message before we start playing
-                        time.sleep(0.1)
+                        if audio_coordination is not None:
+                            audio_coordination.value = 1  # Pause wernicke immediately
+                        # small delay to ensure wernicke sees the flag before we start playing
+                        time.sleep(0.01)  # Much shorter delay - just 10ms
 
                     # stop stream, open new wav file, and start the stream back up
                     log.broca_shuttlecraft.info("Play %s", comms["wavfile"])
@@ -491,13 +484,11 @@ class Broca(threading.Thread):
                     while pya_stream.is_active():
                         time.sleep(0.2)
 
-                    log.broca_shuttlecraft.debug("Play %s END", comms["wavfile"])
-
-                    # SIGNAL-BASED WERNICKE COORDINATION
-                    # if we paused wernicke, send end signal now
+                    # DIRECT WERNICKE COORDINATION - SHARED MEMORY
+                    # if we paused wernicke, clear shared memory flag now
                     if comms["pause_wernicke"]:
-                        log.broca_shuttlecraft.info("Sending pause_wernicke_end signal")
-                        to_starship.send({"action": "pause_wernicke_end"})
+                        if audio_coordination is not None:
+                            audio_coordination.value = 0  # Resume wernicke immediately
 
                     # reset this counter
                     seconds_idle = 0.0
@@ -545,6 +536,4 @@ class Broca(threading.Thread):
 # Instantiate
 broca = Broca()
 
-# start the shuttlecraft subprocess first to save memory
-log.broca_main.info("Thread started.")
-broca.shuttlecraft_process.start()
+# Note: Subprocess will be started in run() method after shared memory injection
