@@ -65,7 +65,6 @@ class Wernicke(threading.Thread):
         from christine.parietal_lobe import parietal_lobe
 
         log.wernicke.debug("Thread started.")
-        log.imhere.info("")
 
         # The subprocess starts off just spinning it's wheels, chucking away any audio data it gets
         # Because it seemed like having everything happen all at once caused high cpu, then it would have to catch up
@@ -277,11 +276,6 @@ class Wernicke(threading.Thread):
                 while True:
 
                     loop_run += 1
-
-                    # A cron job will check this log to ensure this is still running
-                    # this is also a good way to see if the thread is still running
-                    if loop_run % 3200 == 0:
-                        log.imhere.info("")
 
                     # attempt to shutdown normally
                     if shutdown:

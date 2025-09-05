@@ -55,7 +55,6 @@ vagina = setup_logger("vagina")
 parietal_lobe = setup_logger("parietal_lobe", level=logging.DEBUG)
 llm_stream = setup_logger("llm_stream", level=logging.DEBUG)
 neocortex = setup_logger("neocortex", level=logging.DEBUG)
-imhere = setup_logger("imhere", level=logging.INFO, msg_format="%(module)s.%(funcName)s.%(created)d")
 
 def play_erro_sound():
     """Function to play an exception sound"""
