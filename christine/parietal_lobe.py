@@ -971,21 +971,6 @@ Horniness: {horniness_text}.
             'There was a lull, but I am getting fucked again!',
         ])))
 
-    def horny_ask_for_sex(self):
-        """This is called by horny module when it is time."""
-
-        # I need to give this more thought. For now, disabling it.
-        # somehow she actually seems way horny enough without this
-
-        # magnitude = STATE.horny
-        # log.parietal_lobe.info("Asking for sex. (%.2f)", magnitude)
-
-        # # send an approapriate alert to LLM
-        # for level in self.horny_levels:
-        #     if magnitude >= level['magnitude']:
-        #         self.new_perception(Perception(text=level['text']))
-        #         break
-
     def light_sudden_bright(self):
         """This is called by the light module when sensors have detected sudden brightness."""
 
