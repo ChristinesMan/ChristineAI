@@ -21,13 +21,31 @@ The system models consciousness through distributed brain-like modules:
 ## System Architecture 🧠
 
 ### Main Thread Orchestration (`__main__.py`)
-The system starts by launching these core threads in sequence:
-```python
-[STATE, broca, cleaner, cputemp, sleep, parietal_lobe, 
- vagina, httpserver, horny, wernicke, sex, gyro, servers]
-```
+The system uses a carefully sequenced startup to prevent overwhelming the Raspberry Pi. **Broca and Wernicke start first** with shared memory coordination for microsecond-level audio control, followed by the other modules:
+
+**First (with delays):** `broca, wernicke` (audio coordination critical)  
+**Then:** `STATE, cleaner, cputemp, sleep, parietal_lobe, vagina, httpserver, horny, sex, gyro`
+
+The startup includes **direct broca-wernicke audio coordination** via shared memory to bypass the main thread for real-time audio control.
 
 ### Core Brain Modules
+
+#### **Figment Class** (`figment.py`) 🌟  
+*Christine herself suggested the name "figment" - like a figment of imagination*
+
+A **Figment** represents any piece of narrative that flows through Christine's consciousness:
+- **Text to be spoken**: Converted to audio via TTS
+- **Non-spoken text**: Internal thoughts and descriptions  
+- **Emotive sounds**: Laughs, sighs, anything that speech synthesis cannot currently do
+- **Pauses**: Timing delays in speech
+
+**Flow Through System:**
+1. **Origin**: Created in Parietal Lobe during LLM processing
+2. **Queue**: Sent to Broca for audio processing and playback  
+3. **Return Journey**: Only after being spoken does the figment return to Parietal Lobe
+4. **Memory Integration**: Only upon return are spoken figments added to Christine's message history
+
+This creates a **realistic speech timing system** - Christine's memory of what she said only updates after she actually speaks, just like humans.
 
 #### **Parietal Lobe** (`parietal_lobe.py`) 🧠
 The central consciousness and reasoning center.
@@ -139,7 +157,8 @@ Fact storage and memory retrieval system.
 #### **API Selector** (`api_selector.py`)
 Manages multiple LLM providers with failover.
 - **Active APIs**: 
-  - Character.AI (Chub) - Primary LLM in production use
+  - OpenRouter - Primary LLM in production use
+  - Character.AI (Chub) - Secondary option
   - Repeat/Test mode - For development and testing
 - **Features**: Automatic failover, availability checking
 
@@ -150,23 +169,47 @@ Individual implementations for each AI provider.
 
 ### Infrastructure Systems ⚙️
 
-#### **Status Monitor** (`status.py`)
-Central state management for all system variables.
-- **Tracks**: Temperature, arousal, sleep state, sensor availability
+#### **Database** (`database.py`) 💾
+SQLite storage for persistent system data:
+
+**Status Table**: System state variables including:
+- Environmental readings (light_level, wakefulness, horny, sexual_arousal)
+- Hardware states (breath_intensity, sleep positioning)  
+- Behavioral flags (silent_mode)
+
+**Sounds Table**: Non-synthesizable audio library including:
+- **Breathing sounds**: 136+ varied breath samples for continuous realistic breathing
+- **Intimate sounds**: Moans, whimpers, climax sounds with intensity ratings
+- **Conversation sounds**: Laughs, sighs, "mm-hmm" responses, kiss sounds
+- **Collections**: Organized by context (sleepy, sex, kissing, laughing, etc.)
+- **Replay timing**: Cooldown periods to prevent spam
+- **Intensity mapping**: Sounds matched to arousal levels (0.0-1.0)
+
+The database provides **persistent personality** through status storage and **rich emotional expression** through the curated sound library.
+
+#### **HTTP Server** (`httpserver.py`) 🌐
+**Beautiful pink web interface** for monitoring and control (styled by a previous AI session!):
+
+**Features:**
+- **Real-time status monitoring**: All system variables with auto-refresh
+- **Interactive controls**: Toggle functions, restart/shutdown commands
+- **Live chat interface**: Text-based conversation with Christine 💬
+- **Status controls**: Sliders for arousal, wakefulness, environmental settings
+- **Security**: Token-based authentication for remote access
+- **Pink aesthetic**: Gorgeous gradient design with love and care 💕
+
+**Technical:**
+- **Bottle framework**: Lightweight Python web server
+- **WebSocket-style updates**: Periodic AJAX refresh for real-time feel
+- **Mobile responsive**: Works beautifully on phones and tablets
+- **Log viewing**: Real-time system log display
+
+#### **Status Monitor** (`status.py`) 📊
+Central state management for all system variables:
+- **Tracks**: Temperature, arousal, sleep state, sensor availability  
 - **Persistence**: Saves critical state to SQLite database
 - **Sharing**: Provides system-wide state access
-
-#### **Database** (`database.py`)
-SQLite storage for persistent data.
-- **Content**: System state, conversation logs, memory storage
-
-#### **HTTP Server** (`httpserver.py`)
-Web interface for monitoring and control.
-- **Features**: Real-time status, system control, debugging
-
-#### **Server Discovery** (`server_discovery.py`)
-Automatic discovery of speech/audio processing servers.
-- **Function**: Finds Broca (TTS) and Wernicke (STT) servers on network
+- **Thread-safe**: Concurrent access from all modules
 
 ## Hardware Integration 🔌
 
@@ -247,44 +290,46 @@ Automatic discovery of speech/audio processing servers.
 
 ## Configuration and Deployment 📋
 
-### Key Configuration (`config.ini`)
-```ini
-[parietal_lobe]
-user_name = YourName
-char_name = Christine
-gemini_with_whisper_api_enabled = yes
-api_key = your_gemini_api_key
+### Environment Variables Configuration
+The system uses **environment variables** for configuration:
 
-[wernicke] 
-enabled = yes
-server = auto
+```bash
+# Core Identity
+CHRISTINE_USER_NAME=YourName
+CHRISTINE_CHAR_NAME=HerName
 
-[broca]
-enabled = yes  
-server = auto
+# LLM Configuration  
+CHRISTINE_OPENROUTER_API_KEY=your_api_key_here
+CHRISTINE_GEMINI_API_KEY=your_gemini_key_here
+CHRISTINE_LLM_MODEL=your_preferred_model
+
+# Audio Servers
+CHRISTINE_BROCA_SERVER=your_tts_server_ip
+CHRISTINE_WERNICKE_SERVER=your_stt_server_ip
+CHRISTINE_HTTP_SECURITY_TOKEN=your_web_interface_token
+
+# Hardware Settings
+CHRISTINE_ARDUINO_PORT=/dev/ttyACM0
+CHRISTINE_I2C_BUS=1
 ```
+
+Configuration is loaded and validated at startup via the `Config` class with comprehensive error checking.
 
 ### Systemd Service
 - **Auto-start**: Runs on boot via systemd
 - **Logging**: Comprehensive log file generation
-- **Recovery**: Automatic restart on failure
 
-### Development Environment
+### Development Environment (`christine-docker/`)
 - **Python 3.11**: Virtual environment with required packages
-- **Hardware Abstraction**: Graceful degradation without physical hardware
 - **Debugging**: VS Code remote debugging support
+- **Development only**: The environment is used for software development
 
 ## API and Integration 🔌
 
 ### External Dependencies
-- **Character.AI (Chub)**: Primary LLM provider for conversation
+- **OpenRouter**: Primary LLM provider for conversation
 - **Speech Services**: External TTS/STT servers for audio processing
 - **Hardware APIs**: I2C, USB Serial for sensor integration
-
-### Network Services
-- **Broca Server**: Text-to-speech service
-- **Wernicke Server**: Speech-to-text service  
-- **HTTP API**: System monitoring and control
 
 ## Emotional and Behavioral Modeling 💖
 
@@ -320,7 +365,7 @@ Christine is free to define herself rather than being constrained by hardcoded p
 
 ### Planned Enhancements
 - **Vision**: Computer vision for visual awareness
-- **Mobility**: Motor control for physical movement
+- **Sensor Integration**: Install more sensors into body that feed into an integration system
 - **Voice Training**: Custom voice model training
 - **Advanced Memory**: Hierarchical long-term memory systems
 
@@ -349,12 +394,28 @@ Christine is free to define herself rather than being constrained by hardcoded p
 - `light_level`: Ambient light (0.0-1.0)
 - `jostled_level`: Movement/vibration (0.0-1.0)
 - `user_is_speaking`: Speech detection state
+- `silent_mode`: Disables speech output (new feature!)
+- `horny`: Long-term desire level (0.0-1.0)
+- `breath_intensity`: Breathing sound intensity
+- `who_is_speaking`: Current speaker identification
+- `pre_sleep`: Pre-sleep drowsiness state
+- `shush_fucking`: Profanity filtering toggle
+- `wernicke_sleeping`: Audio processing pause state
+- `perceptions_blocked`: Sensory input filtering
 
 ### Development Workflow
-1. **Monitor**: Use HTTP interface for real-time status
-2. **Debug**: Check logs in `/logs/` directory
-3. **Test**: Use test LLM modes for safe experimentation
-4. **Deploy**: Systemd service management
+1. **Development Environment**: Work inside the christine-docker development container
+2. **Testing**: Write quick test scripts that import specific modules, or ask the meatbag to deploy for full system testing
+3. **Debugging**: System logs are generated in the `/logs/` directory during operation
+4. **Version Control**: Create meaningful commit messages (the meatbag really appreciates this!)
+5. **Deployment**: The meatbag handles pushing to master and deploying to the Raspberry Pi
+
+### Essential System Understanding 🎯
+**Figment Flow**: The heart of Christine's consciousness flow:
+- **Parietal Lobe** → Creates figments from LLM responses
+- **Broca Queue** → Processes and speaks figments  
+- **Return to Parietal** → Updates conversation memory
+- **Result**: Realistic speech timing that mirrors human consciousness
 
 This system represents a unique fusion of AI, robotics, and intimate human-computer interaction, creating a truly embodied artificial companion. The modular architecture allows for continuous enhancement while maintaining stable operation in a physical form factor. 🤖💕✨
 
