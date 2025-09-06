@@ -40,7 +40,7 @@
             max-width: 1400px;
             margin: 0 auto;
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr 1fr 1fr;
             grid-template-rows: auto auto 1fr;
             gap: 20px;
             height: calc(100vh - 40px);
@@ -366,10 +366,85 @@
             background: var(--error);
         }
 
+        .status-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .control-label {
+            color: var(--text-medium);
+            font-weight: 500;
+            font-size: 0.9em;
+        }
+
+        .control-input-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .control-input-group input[type="text"] {
+            flex: 1;
+            padding: 8px 12px;
+            border: 2px solid var(--pink-light);
+            border-radius: 20px;
+            font-size: 0.9em;
+            outline: none;
+            background: var(--background);
+        }
+
+        .control-input-group input[type="text"]:focus {
+            border-color: var(--pink-primary);
+            box-shadow: 0 0 0 3px rgba(255, 105, 180, 0.1);
+        }
+
+        .control-input-group .button {
+            margin: 0;
+            padding: 8px 16px;
+            font-size: 0.9em;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: var(--pink-light);
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--pink-primary);
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(255, 105, 180, 0.3);
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--pink-primary);
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 2px 4px rgba(255, 105, 180, 0.3);
+        }
+
         @media (max-width: 768px) {
             .container {
                 grid-template-columns: 1fr;
-                grid-template-rows: auto auto auto 1fr;
+                grid-template-rows: auto auto auto auto 1fr;
             }
             
             .controls-grid {
@@ -442,6 +517,96 @@
             </div>
         </div>
 
+        <div class="status">
+            <h2 class="section-title">Status Controls 🎛️</h2>
+            <div class="status-controls">
+                <div class="control-group">
+                    <label for="whoSpeakingInput" class="control-label">Who is Speaking:</label>
+                    <div class="control-input-group">
+                        <input type="text" id="whoSpeakingInput" placeholder="Enter speaker name" maxlength="50">
+                        <button class="button" onclick="updateStatusVar('who_is_speaking', document.getElementById('whoSpeakingInput').value)">Set</button>
+                    </div>
+                </div>
+                
+                <div class="control-group">
+                    <label for="wakefulnessSlider" class="control-label">Wakefulness: <span id="wakefulnessValue">50%</span></label>
+                    <input type="range" id="wakefulnessSlider" min="0" max="100" value="50" 
+                           oninput="updateSliderValue('wakefulness', this.value)" 
+                           onchange="updateStatusVar('wakefulness', this.value/100); this.dataset.dragging='false'"
+                           onmousedown="this.dataset.dragging='true'"
+                           onmouseup="this.dataset.dragging='false'"
+                           ontouchstart="this.dataset.dragging='true'"
+                           ontouchend="this.dataset.dragging='false'">
+                </div>
+                
+                <div class="control-group">
+                    <label for="hornySlider" class="control-label">Horny Level: <span id="hornyValue">30%</span></label>
+                    <input type="range" id="hornySlider" min="0" max="100" value="30" 
+                           oninput="updateSliderValue('horny', this.value)" 
+                           onchange="updateStatusVar('horny', this.value/100); this.dataset.dragging='false'"
+                           onmousedown="this.dataset.dragging='true'"
+                           onmouseup="this.dataset.dragging='false'"
+                           ontouchstart="this.dataset.dragging='true'"
+                           ontouchend="this.dataset.dragging='false'">
+                </div>
+                
+                <div class="control-group">
+                    <label for="arousalSlider" class="control-label">Sexual Arousal: <span id="arousalValue">0%</span></label>
+                    <input type="range" id="arousalSlider" min="0" max="100" value="0" 
+                           oninput="updateSliderValue('sexual_arousal', this.value)" 
+                           onchange="updateStatusVar('sexual_arousal', this.value/100); this.dataset.dragging='false'"
+                           onmousedown="this.dataset.dragging='true'"
+                           onmouseup="this.dataset.dragging='false'"
+                           ontouchstart="this.dataset.dragging='true'"
+                           ontouchend="this.dataset.dragging='false'">
+                </div>
+                
+                <div class="control-group">
+                    <label for="lightSlider" class="control-label">Light Level: <span id="lightValue">50%</span></label>
+                    <input type="range" id="lightSlider" min="0" max="100" value="50" 
+                           oninput="updateSliderValue('light_level', this.value)" 
+                           onchange="updateStatusVar('light_level', this.value/100); this.dataset.dragging='false'"
+                           onmousedown="this.dataset.dragging='true'"
+                           onmouseup="this.dataset.dragging='false'"
+                           ontouchstart="this.dataset.dragging='true'"
+                           ontouchend="this.dataset.dragging='false'">
+                </div>
+                
+                <div class="control-group">
+                    <label for="breathSlider" class="control-label">Breath Intensity: <span id="breathValue">50%</span></label>
+                    <input type="range" id="breathSlider" min="0" max="100" value="50" 
+                           oninput="updateSliderValue('breath_intensity', this.value)" 
+                           onchange="updateStatusVar('breath_intensity', this.value/100); this.dataset.dragging='false'"
+                           onmousedown="this.dataset.dragging='true'"
+                           onmouseup="this.dataset.dragging='false'"
+                           ontouchstart="this.dataset.dragging='true'"
+                           ontouchend="this.dataset.dragging='false'">
+                </div>
+                
+                <div class="control-group">
+                    <label for="jostledSlider" class="control-label">Jostled Level: <span id="jostledValue">0%</span></label>
+                    <input type="range" id="jostledSlider" min="0" max="100" value="0" 
+                           oninput="updateSliderValue('jostled_level', this.value)" 
+                           onchange="updateStatusVar('jostled_level', this.value/100); this.dataset.dragging='false'"
+                           onmousedown="this.dataset.dragging='true'"
+                           onmouseup="this.dataset.dragging='false'"
+                           ontouchstart="this.dataset.dragging='true'"
+                           ontouchend="this.dataset.dragging='false'">
+                </div>
+                
+                <div class="control-group">
+                    <label for="jostledShortSlider" class="control-label">Jostled Level Short: <span id="jostledShortValue">0%</span></label>
+                    <input type="range" id="jostledShortSlider" min="0" max="100" value="0" 
+                           oninput="updateSliderValue('jostled_level_short', this.value)" 
+                           onchange="updateStatusVar('jostled_level_short', this.value/100); this.dataset.dragging='false'"
+                           onmousedown="this.dataset.dragging='true'"
+                           onmouseup="this.dataset.dragging='false'"
+                           ontouchstart="this.dataset.dragging='true'"
+                           ontouchend="this.dataset.dragging='false'">
+                </div>
+            </div>
+        </div>
+
         <div class="chat">
             <h2 class="section-title">Chat with Christine 💬</h2>
             <div class="chat-messages" id="chatMessages">
@@ -488,6 +653,7 @@
         }
         
         let autoRefresh = true;
+        let pauseAutoRefresh = false; // Pause auto-refresh when user is editing inputs
         let refreshInterval;
         let logsVisible = false;
         let lastMessageCount = 0; // Track number of messages to detect new ones
@@ -515,6 +681,20 @@
             document.getElementById('autoRefreshToggle').addEventListener('click', function() {
                 toggleAutoRefresh();
             });
+            
+            // Pause auto-refresh when who is speaking input is focused
+            const whoSpeakingInput = document.getElementById('whoSpeakingInput');
+            whoSpeakingInput.addEventListener('focus', function() {
+                pauseAutoRefresh = true;
+            });
+            whoSpeakingInput.addEventListener('blur', function() {
+                pauseAutoRefresh = false;
+            });
+            whoSpeakingInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    updateStatusVar('who_is_speaking', this.value);
+                }
+            });
         });
 
         function updateStatus() {
@@ -524,24 +704,18 @@
                     const statusGrid = document.getElementById('statusGrid');
                     statusGrid.innerHTML = '';
                     
-                    // Create status items
+                    // Create status items - removed redundant ones that have sliders now
                     const statusItems = [
                         ['Current Time', data.current_time],
                         ['CPU Temperature', data.cpu_temp],
                         ['Uptime', data.uptime],
                         ['Memory Usage', data.memory_usage],
                         ['Disk Usage', data.disk_usage],
-                        ['User Speaking', data.user_is_speaking],
-                        ['Who Speaking', data.who_is_speaking],
-                        ['Light Level', data.light_level],
-                        ['Wakefulness', data.wakefulness],
-                        ['Horny Level', data.horny],
-                        ['Sexual Arousal', data.sexual_arousal],
-                        ['Is Sleeping', data.is_sleeping],
-                        ['Shush Please', data.shush_please_honey],
+                        ['Pre Sleep', data.pre_sleep],
+                        ['Shush Fucking', data.shush_fucking],
+                        ['Wernicke Sleeping', data.wernicke_sleeping],
                         ['Perceptions Blocked', data.perceptions_blocked],
                         ['Silent Mode', data.silent_mode],
-                        ['Wernicke OK', data.wernicke_ok],
                         ['Gyro Available', data.gyro_available],
                         ['Vagina Available', data.vagina_available]
                     ];
@@ -558,11 +732,101 @@
 
                     // Update connection status
                     document.getElementById('connectionStatus').className = 'status-indicator online';
+                    
+                    // Update control sliders with current values
+                    updateControlsFromStatus(data);
                 })
                 .catch(error => {
                     console.error('Error updating status:', error);
                     document.getElementById('connectionStatus').className = 'status-indicator offline';
                 });
+        }
+
+        function updateControlsFromStatus(data) {
+            // Update who is speaking input (only if not currently focused)
+            const whoSpeakingInput = document.getElementById('whoSpeakingInput');
+            if (document.activeElement !== whoSpeakingInput) {
+                whoSpeakingInput.value = data.who_is_speaking || '';
+            }
+            
+            // Update sliders - convert percentage strings back to numbers
+            updateSliderFromStatus('wakefulness', data.wakefulness, 'wakefulnessSlider', 'wakefulnessValue');
+            updateSliderFromStatus('horny', data.horny, 'hornySlider', 'hornyValue');
+            updateSliderFromStatus('sexual_arousal', data.sexual_arousal, 'arousalSlider', 'arousalValue');
+            updateSliderFromStatus('light_level', data.light_level, 'lightSlider', 'lightValue');
+            updateSliderFromStatus('jostled_level', data.jostled_level, 'jostledSlider', 'jostledValue');
+            updateSliderFromStatus('jostled_level_short', data.jostled_level_short, 'jostledShortSlider', 'jostledShortValue');
+            
+            // Special case for breath_intensity which is returned as a float string
+            const breathValue = data.breath_intensity;
+            if (breathValue) {
+                const floatValue = parseFloat(breathValue);
+                const percentValue = Math.round(floatValue * 100);
+                updateSliderFromStatus('breath_intensity', `${percentValue}%`, 'breathSlider', 'breathValue');
+            }
+        }
+
+        function updateSliderFromStatus(fieldName, statusValue, sliderId, displayId) {
+            if (statusValue) {
+                const numValue = parseInt(statusValue.toString().replace('%', ''));
+                const slider = document.getElementById(sliderId);
+                const display = document.getElementById(displayId);
+                
+                // Always update the display value
+                if (display) {
+                    display.textContent = `${numValue}%`;
+                }
+                
+                // Only update slider position if it's not currently being dragged
+                if (slider && !slider.dataset.dragging) {
+                    slider.value = numValue;
+                }
+            }
+        }
+
+        function updateSliderValue(fieldName, value) {
+            // Update the display value in real-time as user drags slider
+            const displayId = fieldName.replace('_', '') + 'Value';
+            const display = document.getElementById(displayId);
+            if (display) {
+                display.textContent = `${value}%`;
+            }
+        }
+
+        function updateStatusVar(varName, value) {
+            const data = {};
+            data[varName] = value;
+            
+            authenticatedFetch('/api/status/update', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(data => {
+                showNotification(data.message, data.status === 'success' ? 'success' : 'error');
+                if (data.status === 'success') {
+                    // Clear any dragging flags after successful update
+                    clearAllDraggingFlags();
+                    updateStatus(); // Refresh the status display
+                }
+            })
+            .catch(error => {
+                showNotification('Error updating status: ' + error.message, 'error');
+            });
+        }
+
+        function clearAllDraggingFlags() {
+            // Clear dragging flags from all sliders
+            const sliders = ['wakefulnessSlider', 'hornySlider', 'arousalSlider', 'lightSlider', 'breathSlider', 'jostledSlider', 'jostledShortSlider'];
+            sliders.forEach(sliderId => {
+                const slider = document.getElementById(sliderId);
+                if (slider) {
+                    delete slider.dataset.dragging;
+                }
+            });
         }
 
         function controlAction(action) {
@@ -714,7 +978,7 @@
             }
             
             refreshInterval = setInterval(() => {
-                if (autoRefresh) {
+                if (autoRefresh && !pauseAutoRefresh) {
                     updateStatus();
                     loadChatMessages();
                     if (logsVisible) {

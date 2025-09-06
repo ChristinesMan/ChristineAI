@@ -130,6 +130,89 @@ def api_control(action):
         log.main.error("Error in control action %s: %s", action, str(e))
         return json.dumps({"status": "error", "message": str(e)})
 
+@route("/api/status/update", method="POST")
+def api_status_update():
+    """Update status variables"""
+    response.content_type = 'application/json'
+    
+    try:
+        data = request.json
+        if data is None or not isinstance(data, dict):
+            return json.dumps({"status": "error", "message": "No data provided"})
+        
+        updated_vars = []
+        
+        # Define which variables are safe to update via web interface
+        # Including the most useful ones for manual control
+        updatable_vars = {
+            "who_is_speaking": str,
+            "light_level": float,
+            "wakefulness": float,
+            "horny": float,
+            "sexual_arousal": float,
+            "breath_intensity": float,
+            "jostled_level": float,
+            "jostled_level_short": float,
+            "pause_question": float,
+            "pause_period": float,
+            "pause_comma": float,
+            "additional_perception_wait_seconds": float,
+            "user_interrupt_char_threshold": int,
+            "memory_folding_min_narratives": int,
+            "memory_folding_delay_threshold": int,
+            "memory_days": int,
+            "shush_please_honey": bool,
+            "perceptions_blocked": bool,
+            "silent_mode": bool
+        }
+        
+        for var_name, value in data.items():
+            # Skip the authentication token
+            if var_name == 'token':
+                continue
+                
+            if var_name in updatable_vars:
+                var_type = updatable_vars[var_name]
+                
+                try:
+                    # Convert value to appropriate type
+                    if var_type == bool:
+                        if isinstance(value, str):
+                            converted_value = value.lower() in ('true', '1', 'yes', 'on')
+                        else:
+                            converted_value = bool(value)
+                    elif var_type == float:
+                        converted_value = float(value)
+                        # Clamp percentage values between 0.0 and 1.0
+                        if var_name in ['light_level', 'wakefulness', 'horny', 'sexual_arousal', 'breath_intensity', 'jostled_level', 'jostled_level_short']:
+                            converted_value = max(0.0, min(1.0, converted_value))
+                    elif var_type == int:
+                        converted_value = int(float(value))  # Allow float input for int fields
+                        # Ensure positive values for certain fields
+                        if var_name in ['user_interrupt_char_threshold', 'memory_folding_min_narratives', 'memory_folding_delay_threshold', 'memory_days']:
+                            converted_value = max(1, converted_value)
+                    else:  # str
+                        converted_value = str(value).strip()
+                    
+                    # Set the attribute
+                    setattr(STATE, var_name, converted_value)
+                    updated_vars.append(f"{var_name} = {converted_value}")
+                    log.main.info("Status variable updated via web interface: %s = %s", var_name, converted_value)
+                    
+                except (ValueError, TypeError) as e:
+                    return json.dumps({"status": "error", "message": f"Invalid value for {var_name}: {str(e)}"})
+            else:
+                return json.dumps({"status": "error", "message": f"Variable '{var_name}' is not updatable"})
+        
+        if updated_vars:
+            return json.dumps({"status": "success", "message": f"Updated: {', '.join(updated_vars)}"})
+        else:
+            return json.dumps({"status": "error", "message": "No valid variables to update"})
+            
+    except Exception as e:
+        log.main.error("Error updating status variables: %s", str(e))
+        return json.dumps({"status": "error", "message": str(e)})
+
 @route("/api/chat", method="GET")
 def api_chat_get():
     """Get chat messages"""
