@@ -207,6 +207,25 @@ class Broca(threading.Thread):
 
                 if figment.should_speak is True:
 
+                    # Check if this figment should be processed silently (silent mode)
+                    if hasattr(figment, 'silent_mode_processing') and figment.silent_mode_processing:
+                        log.broca_main.debug("Silent mode: Processing spoken figment silently: %s", figment.text)
+                        
+                        # Send to web chat immediately in silent mode since no audio will play
+                        try:
+                            # pylint: disable=import-outside-toplevel
+                            from christine.httpserver import add_christine_response
+                            # Clean up the text - remove quotes from both ends and extra whitespace
+                            clean_text = figment.text.strip().strip('"').strip()
+                            if clean_text:
+                                add_christine_response(clean_text)
+                        except Exception as e:
+                            log.broca_main.debug("Could not send to web chat: %s", str(e))
+                        
+                        # Notify parietal lobe that figment was processed for message history
+                        parietal_lobe.broca_figment_was_processed(figment)
+                        return
+
                     # # # calculate what volume this should play at adjusting for proximity
                     # # # this was really hard math to figure out for some reason
                     # # # I was very close to giving up and writing a bunch of rediculous if statements
@@ -271,44 +290,26 @@ class Broca(threading.Thread):
                 log.broca_main.warning("Empty string spoken figment.")
                 return
 
-            # Check if we're in silent mode - if so, don't queue audio but send to web chat immediately
+            # In silent mode, mark the figment as silent but still queue it to preserve order
             if STATE.silent_mode:
-                log.broca_main.debug("Silent mode: Skipping audio for spoken figment: %s", figment.text)
-                
-                # Send to web chat immediately in silent mode since no audio will play
-                try:
-                    # pylint: disable=import-outside-toplevel
-                    from christine.httpserver import add_christine_response
-                    # Clean up the text - remove quotes from both ends and extra whitespace
-                    clean_text = figment.text.strip().strip('"').strip()
-                    if clean_text:
-                        add_christine_response(clean_text)
-                except Exception as e:
-                    log.broca_main.debug("Could not send to web chat: %s", str(e))
-                
-                # CRITICAL: Notify parietal lobe that figment was processed for message history
-                try:
-                    # pylint: disable=import-outside-toplevel
-                    from christine.parietal_lobe import parietal_lobe
-                    parietal_lobe.broca_figment_was_processed(figment)
-                except Exception as e:
-                    log.broca_main.debug("Could not notify parietal lobe: %s", str(e))
-                
-                return
+                log.broca_main.debug("Silent mode: Marking spoken figment as silent: %s", figment.text)
+                # Add a special flag to indicate this should be processed silently
+                figment.silent_mode_processing = True
+                # Don't add inhalation sounds in silent mode
+            else:
+                # start the thread asap to get the api call for synthesized speech going
+                figment.start()
 
-            # start the thread asap to get the api call for synthesized speech going
-            figment.start()
-
-            # add a figment for an inhalation sound that will precede this spoken figment
-            self.figment_queue.put_nowait(Figment(from_collection='inhalation'))
-            log.broca_main.debug("Queued: Inhalation")
+                # add a figment for an inhalation sound that will precede this spoken figment
+                self.figment_queue.put_nowait(Figment(from_collection='inhalation'))
+                log.broca_main.debug("Queued: Inhalation")
 
         # put the figment on the queue
         self.figment_queue.put_nowait(figment)
         log.broca_main.debug("Queued: %s", figment)
 
         # if the text is spoken and ends with certain punctuation, a pause is inserted after to allow time for interruption.
-        if figment.should_speak is True:
+        if figment.should_speak is True and not STATE.silent_mode:
 
             if self.re_question.search(figment.text):
                 self.figment_queue.put_nowait(Figment(pause_duration=STATE.pause_question))
