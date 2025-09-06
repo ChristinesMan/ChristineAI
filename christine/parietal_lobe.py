@@ -374,6 +374,7 @@ Respond with the JSON array now:
 
             # keep track of the audio data length of all processed perceptions
             total_transcription_length = 0
+            has_system_messages = False
 
             # list for holding new messages
             new_messages = []
@@ -394,7 +395,7 @@ Respond with the JSON array now:
                 if perception.text is not None:
 
                     new_messages.append({'speaker': None, 'text': perception.text})
-                    # total_transcription_length += len(perception.text)
+                    has_system_messages = True
 
                 else:
 
@@ -430,14 +431,16 @@ Respond with the JSON array now:
             # if there are any figments in the queue, it becomes a fight to the death
             if broca.figment_queue.qsize() > 0:
 
-                # if the total audio data byte length is greater than the threshold, stop char from speaking
-                if total_transcription_length != 0 and total_transcription_length > STATE.user_interrupt_char_threshold:
+                # Only apply interruption logic to user audio input, not system messages
+                if has_system_messages:
+                    # System messages (like "I am awake") should always be processed
+                    log.parietal_lobe.info('System messages present - processing regardless of figment queue')
+                elif total_transcription_length > 0 and total_transcription_length > STATE.user_interrupt_char_threshold:
+                    # User spoke enough to interrupt Christine
                     log.parietal_lobe.info('User interrupts char with a text length of %s!', total_transcription_length)
                     broca.flush_figments()
-
-                # otherwise, the broca wins, destroy the user's transcriptions
-                # because all he said was something like hmm or some shit
                 else:
+                    # User didn't speak enough to warrant interruption
                     log.parietal_lobe.info('User\'s text was only %s bytes and got destroyed!', total_transcription_length)
                     new_messages = []
 
