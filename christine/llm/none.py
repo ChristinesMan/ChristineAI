@@ -13,11 +13,7 @@ class Nothing(LLMAPI):
         # the initial state is that nothing is available
         return False
 
-    def process_audio(self, audio_data: bytes) -> list:
-        """This function defenistrates incoming audio data."""
 
-        # nothing to do here, just return an empty list
-        return []
 
     def call_api(self, prompt, stop_sequences=None, max_tokens=600, temperature=0.4, top_p=1.0, expects_json=False):
         """This function throws the prompt in the trash and returns nothing useful."""

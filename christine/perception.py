@@ -27,10 +27,13 @@ class Perception(threading.Thread):
         # if audio_data is not None, then we have audio to process
         if self.audio_data is not None:
 
-            # pass the audio to whatever is the current LLM
+            # pass the audio to whatever is the current STT
             # should block here while audio is processed
-            # and if the LLM is not available, audio_data is just discarded
-            self.audio_result = STATE.current_llm.process_audio(self.audio_data)
+            # and if the STT is not available, audio_data is just discarded
+            if STATE.current_stt is not None:
+                self.audio_result = STATE.current_stt.process_audio(self.audio_data)
+            else:
+                self.audio_result = None
 
             # if audio_result is None, then something or another fucked up
             # so we should just discard the audio_data so it won't get stuck

@@ -211,6 +211,9 @@ Respond with the JSON array now:
         # note, it will be necessary to download en_core_web_sm
         # python -m spacy download en_core_web_sm
         self.nlp = spacy.load("en_core_web_sm")
+        
+        # initialization timeout for wernicke (in seconds) - from centralized config
+        self.wernicke_timeout = CONFIG.wernicke_timeout
 
         # I want to avoid sending a bunch of tiny messages, so I'm going to queue them
         # and only send once new messages have stopped coming in for a while.
@@ -311,35 +314,22 @@ Respond with the JSON array now:
 
         # these are circular imports, but it's necessary, queue mass hysteria
         # pylint: disable=import-outside-toplevel
-        from christine.api_selector import llm_selector
+        from christine.api_selector import api_selector
         from christine.broca import broca
 
-        # Connect Neocortex
-        # If it fails, cannot continue
-        log.parietal_lobe.debug("Connecting to Neocortex...")
-        if not self.neocortex.connect():
-            log.parietal_lobe.exception("Failed to connect to Neocortex")
+        # Initialize all core systems
+        if not self._initialize_core_systems(api_selector):
+            log.parietal_lobe.error("Critical initialization failure - shutting down")
             return
 
-        # find the enabled llm apis
-        llm_selector.find_enabled_llms()
+        # Wait for wernicke to be ready (handles audio processing)
+        if not self._wait_for_wernicke():
+            log.parietal_lobe.error("Wernicke failed to initialize - shutting down")
+            return
 
-        # periodically poke at the llm selector until it's ready
-        while llm_selector.find_available_llm() is False:
-            log.parietal_lobe.debug('Waiting for LLM.')
-            time.sleep(5)
-
-        # wait for the wernicke to be ready (not fucked up)
-        # Oh, so you don't like the word... fuck? Github? Bitch.
-        while STATE.wernicke_ok is False:
-            log.parietal_lobe.debug('Waiting for wernicke to start processing.')
-            time.sleep(5)
-
-        # final delay just to make sure
-        time.sleep(5)
-
-        # announce that we have fully arrived at the end of the startup sequence
-        log.parietal_lobe.info('Parietal lobe is ready.')
+        # System is ready - announce startup completion
+        log.parietal_lobe.info('🚀 Parietal lobe fully initialized and ready!')
+        self._log_system_status()
         broca.accept_figment(Figment(from_collection="parietal_lobe_connected"))
 
         while True:
@@ -370,6 +360,79 @@ Respond with the JSON array now:
             except Exception as ex:
                 log.main.exception(ex)
                 log.play_erro_sound()
+
+    def _initialize_core_systems(self, api_selector):
+        """Initialize Neocortex and all API systems. Returns True if successful."""
+        
+        log.parietal_lobe.info("🧠 Initializing core systems...")
+        
+        # Connect Neocortex - critical system, must succeed
+        log.parietal_lobe.debug("Connecting to Neocortex...")
+        if not self.neocortex.connect():
+            log.parietal_lobe.error("❌ Failed to connect to Neocortex - cannot continue")
+            return False
+        log.parietal_lobe.info("✅ Neocortex connected")
+        
+        # Discover all available APIs
+        log.parietal_lobe.debug("Discovering available APIs...")
+        api_selector.find_enabled_llms()
+        api_selector.find_enabled_stts()
+        api_selector.find_enabled_ttss()
+        
+        # Try to initialize LLM (critical for operation)
+        if api_selector.find_available_llm():
+            log.parietal_lobe.info("✅ LLM ready: %s", STATE.current_llm.name)
+        else:
+            log.parietal_lobe.error("❌ No LLM available - cannot continue")
+            return False
+        
+        # Try to initialize STT and TTS (non-blocking, optional systems)
+        if api_selector.find_available_stt():
+            log.parietal_lobe.info("✅ STT ready: %s", STATE.current_stt.name)
+        else:
+            log.parietal_lobe.warning("⚠️  STT not available - audio input disabled")
+            
+        if api_selector.find_available_tts():
+            log.parietal_lobe.info("✅ TTS ready: %s", STATE.current_tts.name)
+        else:
+            log.parietal_lobe.warning("⚠️  TTS not available - speech synthesis disabled")
+        
+        return True
+    
+
+    
+    def _wait_for_wernicke(self):
+        """Wait for wernicke to be ready with timeout. Returns True if successful."""
+        
+        log.parietal_lobe.debug("🎤 Waiting for Wernicke audio processing system...")
+        start_time = time.time()
+        
+        while time.time() - start_time < self.wernicke_timeout:
+            if STATE.wernicke_ok:
+                log.parietal_lobe.info("✅ Wernicke audio system ready")
+                return True
+            
+            log.parietal_lobe.debug("Wernicke not ready yet, retrying in 2 seconds...")
+            time.sleep(2)
+        
+        log.parietal_lobe.error("❌ Wernicke failed to initialize within %s seconds", self.wernicke_timeout)
+        return False
+    
+    def _log_system_status(self):
+        """Log the final status of all initialized systems."""
+        
+        log.parietal_lobe.info("📊 System Status Summary:")
+        
+        llm_status = STATE.current_llm.name if STATE.current_llm else '❌ None'
+        stt_status = STATE.current_stt.name if STATE.current_stt else '⚠️  None'
+        tts_status = STATE.current_tts.name if STATE.current_tts else '⚠️  None'
+        wernicke_status = '✅ Ready' if STATE.wernicke_ok else '❌ Failed'
+        
+        log.parietal_lobe.info("  🧠 LLM: %s", llm_status)
+        log.parietal_lobe.info("  🎤 STT: %s", stt_status)
+        log.parietal_lobe.info("  🔊 TTS: %s", tts_status)
+        log.parietal_lobe.info("  🎵 Wernicke: %s", wernicke_status)
+        log.parietal_lobe.info("  🧬 Neocortex: ✅ Connected")
 
     def process_new_perceptions(self):
         """Process new perceptions from the queue and send to the current LLM API"""

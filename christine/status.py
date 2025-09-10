@@ -7,6 +7,8 @@ import threading
 from christine.database import database
 
 from christine.llm_class import LLMAPI
+from christine.stt_class import STTAPI
+from christine.tts_class import TTSAPI
 from christine.llm.none import Nothing
 
 class Status(threading.Thread):
@@ -89,8 +91,16 @@ class Status(threading.Thread):
         self.vagina_available = False
 
         # this is the currently selected and available llm api
-        # set to None until the llm selector figures it out
+        # set to None until the api selector figures it out
         self.current_llm: LLMAPI = Nothing()
+        
+        # this is the currently selected and available stt api
+        # set to None until the api selector figures it out  
+        self.current_stt: STTAPI = None
+        
+        # this is the currently selected and available tts api
+        # set to None until the api selector figures it out
+        self.current_tts: TTSAPI = None
 
         # settings for how many seconds to pause for various punctuation
         # if the utterance ends with question or a ..., pause a lot

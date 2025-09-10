@@ -65,37 +65,6 @@ class TestingLLM(LLMAPI):
         """Testing LLM is always available"""
         return True
 
-    def process_audio(self, audio_data: bytes) -> str:
-        """
-        Mock audio processing - returns predefined responses based on audio length
-        In real testing, this would connect to actual STT services
-        """
-        # Simulate processing time
-        time.sleep(0.1)
-        
-        # Generate response based on audio length (simulating different speech lengths)
-        audio_length = len(audio_data)
-        
-        if audio_length < 5000:
-            responses = ["Hi", "Hello", "Hey there", "Christine"]
-        elif audio_length < 15000:
-            responses = [
-                "How are you doing?", 
-                "I love you", 
-                "Tell me about your day",
-                "You look beautiful today"
-            ]
-        else:
-            responses = [
-                "I wanted to talk to you about something important today",
-                "Let me tell you about this interesting thing that happened",
-                "I was thinking about our relationship and how much you mean to me"
-            ]
-        
-        # Add some deterministic variety based on current state
-        response_index = (self.conversation_state['response_count'] + audio_length) % len(responses)
-        return responses[response_index]
-
     def call_api(self, prompt: str, stop_sequences=None, max_tokens=600, temperature=0.4, top_p=1.0, expects_json=False) -> str:
         """
         Generate deterministic responses based on prompt content and current state

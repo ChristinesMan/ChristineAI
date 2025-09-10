@@ -2,12 +2,8 @@
 
 import os
 import threading
-import re
-import wave
-from requests import post, Timeout, HTTPError
 
 from christine import log
-from christine.config import CONFIG
 
 # create the directory if necessary where we will cache synthesized sounds
 os.makedirs("./sounds/synth/", exist_ok=True)
@@ -62,51 +58,17 @@ class Figment(threading.Thread):
                 self.wav_file = 'sounds/erro.wav'
 
     def do_tts(self):
-        """This function calls an api to convert text to speech. The api accepts a json string with the text to convert and returns binary audio data."""
-
-        # standardize the text to just the words, no spaces, for the file path
-        text_stripped = re.sub("[^a-zA-Z0-9 ]", "", self.text).lower().strip().replace(' ', '_')[0:100]
-        file_path = f"sounds/synth/{text_stripped}.wav"
-
-        # if there's already a cached synthesized sound, use the same cached stuff and return it
-        if os.path.isfile(file_path):
-            log.broca_main.debug("Using cached wav file: %s", file_path)
-            self.wav_file = file_path
+        """This function calls the current TTS API to convert text to speech."""
+        
+        from christine.status import STATE
+        
+        # Check if we have a current TTS available
+        if STATE.current_tts is None:
+            log.broca_main.error("No TTS available. Text: %s", self.text)
             return
-
-        # No cache, so send it to the api to be generated
-        else:
-
-            url = f'http://{CONFIG.broca_server}:3001/tts'
-            headers = {'Content-Type': 'application/json'}
-            data = {'text': self.text}
-
-            try:
-
-                response = post(url, headers=headers, json=data, timeout=60)
-
-                if response.status_code == 200:
-
-                    # write the binary audio data to a wav file
-                    wav_file = wave.open(file_path, "wb")
-                    wav_file.setnchannels(1)
-                    wav_file.setsampwidth(2)
-                    wav_file.setframerate(44100)
-                    wav_file.writeframes(response.content)
-                    wav_file.close()
-
-                    log.broca_main.debug("Created wav file: %s", file_path)
-                    self.wav_file = file_path
-
-                else:
-
-                    log.broca_main.error("Broca server returned bad code. Text: %s  Status: %s  Response: %s", self.text, response.status_code, response.text)
-                    raise HTTPError("Failed to convert text to speech")
-
-            except (ConnectionError, Timeout, HTTPError) as ex:
-
-                # if the connection failed, log the error
-                log.broca_main.error("Broca server not reachable. Text: %s  Error: %s", self.text, ex)
+        
+        # Use the current TTS to synthesize speech
+        self.wav_file = STATE.current_tts.synthesize_speech(self.text)
 
     def __str__(self) -> str:
         if self.from_collection is not None:

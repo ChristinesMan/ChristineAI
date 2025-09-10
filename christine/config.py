@@ -62,6 +62,9 @@ class Config:
         self.ollama_model = os.getenv('CHRISTINE_OLLAMA_MODEL', 'llama3.2')
         self.ollama_whisper_model = os.getenv('CHRISTINE_OLLAMA_WHISPER_MODEL', 'whisper')
 
+        # Initialization timeout settings (in seconds)
+        self.wernicke_timeout = int(os.getenv('CHRISTINE_WERNICKE_TIMEOUT', '30'))
+
         self.http_security_token = os.getenv('CHRISTINE_HTTP_SECURITY_TOKEN', 'christine_lovely_2025')
 
     def _parse_llm_list(self, llm_string: str) -> List[str]:
@@ -102,6 +105,10 @@ class Config:
         # Validate VAD setting
         if self.wernicke_vad not in ['pvcobra', 'webrtcvad']:
             errors.append(f"CHRISTINE_WERNICKE_VAD must be 'pvcobra' or 'webrtcvad', got '{self.wernicke_vad}'")
+        
+        # Validate timeout values
+        if self.wernicke_timeout <= 0:
+            errors.append(f"CHRISTINE_WERNICKE_TIMEOUT must be positive, got {self.wernicke_timeout}")
         
         if errors:
             error_msg = "Configuration validation failed:\n" + "\n".join(f"  - {error}" for error in errors)

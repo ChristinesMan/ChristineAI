@@ -1,11 +1,9 @@
-"""This handles the API for Chub with whisper API for speech to text"""
-import os
+"""This handles the API for Chub"""
 import time
 import re
-import wave
 from ssl import SSLError
 from requests import post
-from openai import OpenAI, InternalServerError
+from requests import post
 
 from christine import log
 from christine.status import STATE
@@ -13,7 +11,7 @@ from christine.config import CONFIG
 from christine.llm_class import LLMAPI
 
 class Chub(LLMAPI):
-    """This handles the API for Chub with whisper API for speech to text"""
+    """This handles the API for Chub"""
 
     name = "Chub"
 
@@ -24,11 +22,6 @@ class Chub(LLMAPI):
         self.last_is_available_time = 0.0
         self.is_available_interval = 60.0
 
-        # the directory to save the wav files to
-        # I would have liked to not save any tmp wav files, but that doesn't seem possible
-        self.wav_save_dir = './sounds/wernicke/'
-        os.makedirs(self.wav_save_dir, exist_ok=True)
-
         # How to connect to the LLM api. The api key comes from config.ini file
         self.chub_url = 'https://inference.chub.ai/prompt'
         self.api_key = CONFIG.chub_api_key
@@ -37,52 +30,15 @@ class Chub(LLMAPI):
         if not re.match(r'^CHK-\S{46}$', self.api_key):
             self.api_key = None
 
-        # the api key for openai is used to access whisper
-        self.whisper_api_key = CONFIG.openai_api_key
-
-        # check the config for a valid looking api key, but I'm unsure about the format, whatever
-        if not re.match(r'^sk-proj-', self.whisper_api_key):
-            self.whisper_api_key = None
-
-        # openai whisper seems to have been trained using a lot of youtube videos that always say thanks for watching
-        # and for some reason it's also very knowledgeable about anime
-        # It also likes to bark, is very pissed, and likes to bead
-        self.re_garbage = re.compile(
-            r"thank.+(watching|god bless)|god bless|www\.mytrend|Satsang|Mooji|^ \.$|PissedConsumer\.com|Beadaholique\.com|^ you$|^ re$|^ GASP$|^ I'll see you in the next video\.$|thevenusproject|BOO oil in|Amen\. Amen\.|^\. \. \.", flags=re.IGNORECASE
-        )
-
-        # setup the client for whisper api
-        if self.whisper_api_key is not None:
-            self.whisper_api = OpenAI(api_key=self.whisper_api_key)
-        else:
-            self.whisper_api = None
-
     def is_available(self):
         """Returns True if the LLM API is available, False otherwise. Assumes that the API is available if the API key is set."""
 
-        # check that the llm and whisper are gtg
-        if self.api_key is None or self.whisper_api is None:
+        # check that the llm api key is available
+        if self.api_key is None:
             return False
 
         else:
             return True
-
-    def process_audio(self, audio_data: bytes) -> list:
-        """This function processes incoming audio data."""
-
-        try:
-            # first we will need to save the audio data to a wav file
-            # theoretically I could manually tack on a wav header and make a file like object but I don't really want to
-            wav_file_name = f"{self.wav_save_dir}{int(time.time()*100)}.wav"
-            wav_file = wave.open(wav_file_name, "wb")
-            wav_file.setnchannels(1)
-            wav_file.setsampwidth(2)
-            wav_file.setframerate(16000)
-            wav_file.writeframes(audio_data)
-            wav_file.close()
-        except OSError as ex:
-            log.parietal_lobe.error("OSError saving wav. %s", ex)
-            return None
 
         # send the audio file to the api and return the transcription
         try:
