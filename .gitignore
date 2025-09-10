@@ -10,7 +10,5 @@ messages.log
 christine.sqlite
 config.ini
 unit_testing.py
-christine-docker/.ssh
-christine-docker/.vscode-server
-christine-docker/.bashrc
+christine-docker/homedir
 mcp

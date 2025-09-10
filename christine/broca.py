@@ -14,6 +14,7 @@ from multiprocessing import Process, Pipe
 
 from christine import log
 from christine.status import STATE
+from christine.config import CONFIG
 from christine.sounds import sounds_db
 from christine.figment import Figment
 
@@ -403,7 +404,14 @@ class Broca(threading.Thread):
         # pylint: disable=import-outside-toplevel
         import wave
         import random
-        import pyaudio
+        
+        # Use mock hardware in testing mode
+        if CONFIG.testing_mode or CONFIG.mock_hardware:
+            from christine.mock_hardware import mock_hardware
+            pyaudio = mock_hardware['pyaudio']
+            log.broca_main.info("Using mock PyAudio for testing")
+        else:
+            import pyaudio
 
         # The current wav file buffer thing
         # The pump is primed using some default sound.

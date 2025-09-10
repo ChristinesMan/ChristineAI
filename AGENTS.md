@@ -158,6 +158,7 @@ Fact storage and memory retrieval system.
 Manages multiple LLM providers with failover.
 - **Active APIs**: 
   - OpenRouter - Primary LLM in production use
+  - Ollama - Local LLM for testing/development or high-end setups 🦙
   - Character.AI (Chub) - Secondary option
   - Repeat/Test mode - For development and testing
 - **Features**: Automatic failover, availability checking
@@ -166,6 +167,7 @@ Manages multiple LLM providers with failover.
 Individual implementations for each AI provider.
 - **Standard Interface**: Audio processing, text generation, memory folding
 - **Customization**: Provider-specific optimizations and workarounds
+- **Ollama Support**: Local inference with tiny models for cost-effective testing
 
 ### Infrastructure Systems ⚙️
 
@@ -299,9 +301,15 @@ CHRISTINE_USER_NAME=YourName
 CHRISTINE_CHAR_NAME=HerName
 
 # LLM Configuration  
+CHRISTINE_ENABLED_LLMS=openrouter,ollama
 CHRISTINE_OPENROUTER_API_KEY=your_api_key_here
 CHRISTINE_GEMINI_API_KEY=your_gemini_key_here
 CHRISTINE_LLM_MODEL=your_preferred_model
+
+# Ollama Configuration (Local LLM)
+CHRISTINE_OLLAMA_BASE_URL=http://dora.lan:11434
+CHRISTINE_OLLAMA_MODEL=llama3.2:1b
+CHRISTINE_OLLAMA_WHISPER_MODEL=whisper
 
 # Audio Servers
 CHRISTINE_BROCA_SERVER=your_tts_server_ip
@@ -405,10 +413,18 @@ Christine is free to define herself rather than being constrained by hardcoded p
 
 ### Development Workflow
 1. **Development Environment**: Work inside the christine-docker development container
-2. **Testing**: Write quick test scripts that import specific modules, or ask the meatbag to deploy for full system testing
-3. **Debugging**: System logs are generated in the `/logs/` directory during operation
-4. **Version Control**: Create meaningful commit messages (the meatbag really appreciates this!)
-5. **Deployment**: The meatbag handles pushing to master and deploying to the Raspberry Pi
+2. **Testing**: Use the comprehensive testing environment:
+   - **Quick Tests**: `python3 test_infrastructure.py` - Unit tests for testing components
+   - **Full System Tests**: `python3 test_christine.py` - Complete system with mock hardware
+   - **Custom Tests**: Write scripts that import specific modules
+3. **Testing Environment Features**:
+   - **TestingLLM**: Deterministic AI responses without API costs
+   - **Mock Hardware**: PyAudio and serial port simulation  
+   - **Web Interface**: Full testing via http://localhost:8080
+   - **Real-time Monitoring**: Watch system behavior during tests
+4. **Debugging**: System logs are generated in the `/logs/` directory during operation
+5. **Version Control**: Create meaningful commit messages (the meatbag really appreciates this!)
+6. **Deployment**: The meatbag handles pushing to master and deploying to the Raspberry Pi
 
 ### Essential System Understanding 🎯
 **Figment Flow**: The heart of Christine's consciousness flow:

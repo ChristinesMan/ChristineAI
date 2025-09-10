@@ -119,19 +119,25 @@ class Vagina(threading.Thread):
 
         # imports only needed in the subprocess
         # pylint: disable=import-outside-toplevel
-        import numpy as np
         # pylint: disable=no-member
-        from RPi import GPIO
+        import numpy as np
         import board
         import busio
         import adafruit_mpr121
 
-        # Initialize this thing. We're using weird numbers, not board
-        GPIO.setmode(GPIO.BCM)
-
         # Send message to the main process
         def honey_touched(msg):
             to_enterprise.send(msg)
+
+        # Initialize this thing. BTW we're using weird numbers, not board numbers
+        try:
+            from RPi import GPIO
+            GPIO.setmode(GPIO.BCM)
+        except RuntimeError:
+            honey_touched({"msg": "INIT_FAIL", "data": ""})
+            log.vagina.error("Vagina unavailable.")
+            log.main.error("Vagina unavailable.")
+            return
 
         # Keep track of when a sensor is touched, and when it is released so we can report how long.
         # I have found the sensor sends an event both when touched, and again when released.

@@ -25,7 +25,9 @@ class LLMSelector:
         class_mapping = {
             'llm_openrouter': 'OpenRouter',
             'llm_chub': 'Chub',
-            'llm_repeat_what_i_say': 'RepeatWhatISayWithWhisper'
+            'llm_ollama': 'Ollama',
+            'llm_repeat_what_i_say': 'RepeatWhatISayWithWhisper',
+            'llm_testing': 'TestingLLM'
         }
 
         # for each enabled LLM module, import it and instantiate the class

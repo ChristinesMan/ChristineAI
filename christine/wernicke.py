@@ -201,7 +201,15 @@ class Wernicke(threading.Thread):
         import signal
         import struct
         from pydub import AudioSegment
-        import serial
+        
+        # Use mock hardware in testing mode
+        if CONFIG.testing_mode or CONFIG.mock_hardware:
+            from christine.mock_hardware import mock_hardware
+            serial = mock_hardware['serial']
+            log.wernicke.info("Using mock serial port for testing")
+        else:
+            import serial
+            
         # import numpy as np
         import pvcobra
         import webrtcvad

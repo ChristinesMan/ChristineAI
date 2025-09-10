@@ -314,6 +314,13 @@ Respond with the JSON array now:
         from christine.api_selector import llm_selector
         from christine.broca import broca
 
+        # Connect Neocortex
+        # If it fails, cannot continue
+        log.parietal_lobe.debug("Connecting to Neocortex...")
+        if not self.neocortex.connect():
+            log.parietal_lobe.exception("Failed to connect to Neocortex")
+            return
+
         # find the enabled llm apis
         llm_selector.find_enabled_llms()
 
@@ -817,7 +824,7 @@ Respond with the JSON array now:
         
         try:
             # Look for Christine's self-description in the proper names collection
-            if hasattr(self, 'neocortex') and self.neocortex.enabled:
+            if hasattr(self, 'neocortex'):
                 response = self.neocortex.proper_names.query.near_text(
                     query=self.char_name,
                     limit=1,

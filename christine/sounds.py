@@ -40,6 +40,11 @@ class SoundsDB():
         self.collections = {}
         self.sounds = {}
 
+        # Handle empty database or None response
+        if rows is None:
+            log.main.warning("No sounds found in database or database query returned None")
+            return
+
         for row in rows:
             sound_id = row[db_field_names["id"]]
             file_path = row[db_field_names["file_path"]]

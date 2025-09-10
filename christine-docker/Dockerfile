@@ -8,7 +8,6 @@ RUN apt-get clean
 RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/g' /etc/ssh/sshd_config && echo 'root:Christine@3' | chpasswd
 RUN sed -i 's/#Port 22/Port 2222/g' /etc/ssh/sshd_config
 COPY /.ssh /root/.ssh
-COPY /.bashrc /root/.bashrc
 RUN chown -R root:root /root/.ssh && chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys
 
 RUN pip install --no-cache-dir wheel gnureadline requests
@@ -22,6 +21,14 @@ RUN python3 -m spacy download en_core_web_sm
 # This seems to fix the error:
 # Missing privilege separation directory: /run/sshd
 RUN service ssh start
+
+# Add later when time to rebuild
+# apt install sqlite (the cli command)
+
+# move up there when time to fully rebuild
+COPY /vcgencmd /usr/bin/vcgencmd
+RUN chmod 700 /usr/bin/vcgencmd
+COPY /.bashrc /root/.bashrc
 
 #EXPOSE 22
 CMD ["/usr/sbin/sshd","-D"]

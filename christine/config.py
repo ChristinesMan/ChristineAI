@@ -34,6 +34,10 @@ class Config:
         self.user_name = os.getenv('CHRISTINE_USER_NAME', 'Phantom')
         self.char_name = os.getenv('CHRISTINE_CHAR_NAME', 'Christine')
         
+        # Testing mode settings
+        self.testing_mode = os.getenv('CHRISTINE_TESTING_MODE', 'false').lower() == 'true'
+        self.mock_hardware = os.getenv('CHRISTINE_MOCK_HARDWARE', 'false').lower() == 'true'
+        
         # Wernicke settings
         self.wernicke_pv_key = os.getenv('CHRISTINE_WERNICKE_PV_KEY', '')
         self.wernicke_vad = os.getenv('CHRISTINE_WERNICKE_VAD', 'webrtcvad')
@@ -52,6 +56,11 @@ class Config:
         self.openai_api_key = os.getenv('CHRISTINE_OPENAI_API_KEY', '')
         
         self.gemini_api_key = os.getenv('CHRISTINE_GEMINI_API_KEY', '')
+
+        # Ollama configuration
+        self.ollama_base_url = os.getenv('CHRISTINE_OLLAMA_BASE_URL', 'http://server.lan:11434')
+        self.ollama_model = os.getenv('CHRISTINE_OLLAMA_MODEL', 'llama3.2')
+        self.ollama_whisper_model = os.getenv('CHRISTINE_OLLAMA_WHISPER_MODEL', 'whisper')
 
         self.http_security_token = os.getenv('CHRISTINE_HTTP_SECURITY_TOKEN', 'christine_lovely_2025')
 
@@ -77,7 +86,7 @@ class Config:
         
         # At least one LLM must be enabled
         if not self.enabled_llms:
-            errors.append("CHRISTINE_ENABLED_LLMS must specify at least one LLM (openrouter, chub, repeat_what_i_say)")
+            errors.append("CHRISTINE_ENABLED_LLMS must specify at least one LLM (openrouter, chub, ollama, repeat_what_i_say)")
         
         # Validate that enabled LLMs have required API keys
         for llm in self.enabled_llms:
@@ -85,6 +94,8 @@ class Config:
                 errors.append("CHRISTINE_OPENROUTER_API_KEY is required when openrouter LLM is enabled")
             elif llm == 'chub' and not self.chub_api_key:
                 errors.append("CHRISTINE_CHUB_API_KEY is required when chub LLM is enabled")
+            elif llm == 'ollama' and not self.ollama_base_url:
+                errors.append("CHRISTINE_OLLAMA_BASE_URL is required when ollama LLM is enabled")
             elif llm == 'repeat_what_i_say' and not self.openai_api_key:
                 errors.append("CHRISTINE_OPENAI_API_KEY is required when repeat_what_i_say LLM is enabled")
         
@@ -100,9 +111,11 @@ class Config:
     
     def get_llm_module_names(self) -> List[str]:
         """Get the list of LLM module names that should be imported."""
+            
         module_mapping = {
             'openrouter': 'llm_openrouter',
-            'chub': 'llm_chub', 
+            'chub': 'llm_chub',
+            'ollama': 'llm_ollama', 
             'repeat_what_i_say': 'llm_repeat_what_i_say'
         }
         return [module_mapping[llm] for llm in self.enabled_llms if llm in module_mapping]

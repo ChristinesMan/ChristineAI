@@ -29,14 +29,13 @@ from christine import log
 from christine.status import STATE
 from christine.config import CONFIG
 
+# Make sure the backups dir exists
+os.makedirs("./backups/", exist_ok=True)
+
 class Neocortex:
     """This class is responsible for storing and retrieving memories from the neocortex."""
 
     def __init__(self):
-
-        # check if this thing is even enabled
-        # neocortex is always enabled in the new design
-        self.enabled = True
 
         # this is a list of variations of "I remember proper name" that will be inserted when a memory is recalled
         self.i_remember = [
@@ -62,17 +61,26 @@ class Neocortex:
         # get the weaviate hostname from the config
         self.host = CONFIG.neocortex_server
 
-        # attempt to connect to the weaviate instance
-        try:
+        # this is a list of proper names that were already matched today and should not be matched again until midnight
+        # thinking now about maybe not using this, because each time a name is mentioned it would trigger a separate memory
+        # and maybe that's a good thing? Let's see how it goes first.
+        self.matched_proper_names = []
 
+        self.client = None
+        self.memories = None
+        self.questions = None
+        self.proper_names = None
+        self.proper_names_regex = None
+        
+    def connect(self):
+        """Connect to the Weaviate instance. Returns True if successful, False otherwise."""
+        try:
             log.neocortex.info('Connecting to weaviate at %s', self.host)
             self.client = weaviate.connect_to_local(host=self.host, additional_config=wvc.init.AdditionalConfig(timeout=(30, 900)))
 
         except WeaviateBaseError as ex:
-
             log.neocortex.exception(ex)
-            self.enabled = False
-            return
+            return False
 
         # get the collections
         self.get_collections()
@@ -80,10 +88,7 @@ class Neocortex:
         # initialize the regex used to find proper names
         self.build_proper_name_regex()
 
-        # this is a list of proper names that were already matched today and should not be matched again until midnight
-        # thinking now about maybe not using this, because each time a name is mentioned it would trigger a separate memory
-        # and maybe that's a good thing? Let's see how it goes first.
-        self.matched_proper_names = []
+        return True
 
     def attempt_json_repair(self, raw_text: str):
         """Try to extract and repair JSON from malformed responses."""
@@ -182,9 +187,6 @@ class Neocortex:
     def process_memories_json(self, memories_json: str):
         """Takes the json formatted response from the llm and stores it in the neocortex."""
 
-        if not self.enabled:
-            return
-
         # First attempt: direct JSON parsing
         try:
             memories = json_loads(memories_json)
@@ -231,9 +233,6 @@ class Neocortex:
     def process_questions_json(self, questions_json: str):
         """Takes the json formatted response from the llm and stores it in the neocortex."""
 
-        if not self.enabled:
-            return
-
         # First attempt: direct JSON parsing
         try:
             questions = json_loads(questions_json)
@@ -279,9 +278,6 @@ class Neocortex:
 
     def process_proper_names_json(self, proper_names_json: str):
         """Takes the json formatted response from the llm and stores it in the neocortex."""
-
-        if not self.enabled:
-            return
 
         # First attempt: direct JSON parsing
         try:
@@ -335,9 +331,6 @@ class Neocortex:
     def cleanup_duplicate_proper_names(self):
         """Scan for duplicate proper names and merge them using the current LLM API."""
         
-        if not self.enabled:
-            return
-            
         log.neocortex.info('Starting duplicate proper names cleanup')
         
         # get all proper names, grouped by name (case insensitive)
@@ -470,9 +463,6 @@ Consolidated memory:"""
     def recall(self, query_text: str):
         """This takes a string and searches the neocortex for similar memories. Updates the date_recalled property."""
 
-        if not self.enabled:
-            return None
-
         response = self.memories.query.near_text(
             query=query_text,
             limit=1,
@@ -494,9 +484,6 @@ Consolidated memory:"""
 
     def answer(self, query_text: str):
         """This takes a string and searches the neocortex for similar questions. Updates the date_recalled property."""
-
-        if not self.enabled:
-            return None
 
         response = self.questions.query.near_text(
             query=query_text,
@@ -521,9 +508,6 @@ Consolidated memory:"""
         """This takes a string, basically one or more sentences, searches for Proper Names, and searches the neocortex.
         Updates the date_recalled property.
         Returns a list of memories that are triggered by the proper names found in the text."""
-
-        if not self.enabled:
-            return None
 
         # pick all the matches and extract the names
         matches = self.proper_names_regex.findall(text)
@@ -617,9 +601,6 @@ Consolidated memory:"""
 
     def delete_collections(self):
         """This deletes the collections. This is used for setting up a transfer to this body."""
-
-        if not self.enabled:
-            return
 
         # delete the collections
         if self.client.collections.exists(name="Memories"):
@@ -762,9 +743,6 @@ Consolidated memory:"""
     def backup(self, collection: str = 'all'):
         """This saves the current state of the neocortex to a file. One collection or all."""
 
-        if not self.enabled:
-            return
-
         # Make sure the backups dir exists
         os.makedirs("./backups/", exist_ok=True)
 
@@ -812,9 +790,6 @@ Consolidated memory:"""
 
     def restore(self, memtype: str, collection_object):
         """This reads the json backup file and reinserts it into weaviate."""
-
-        if not self.enabled:
-            return
 
         # first, find the latest backup file
         latest_backup = None
