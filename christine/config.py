@@ -108,17 +108,6 @@ class Config:
             log.main.fatal(error_msg)
             print(f"FATAL: {error_msg}", file=sys.stderr)
             sys.exit(1)
-    
-    def get_llm_module_names(self) -> List[str]:
-        """Get the list of LLM module names that should be imported."""
-            
-        module_mapping = {
-            'openrouter': 'llm_openrouter',
-            'chub': 'llm_chub',
-            'ollama': 'llm_ollama', 
-            'repeat_what_i_say': 'llm_repeat_what_i_say'
-        }
-        return [module_mapping[llm] for llm in self.enabled_llms if llm in module_mapping]
 
 
 # Global configuration instance

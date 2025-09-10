@@ -1,6 +1,7 @@
 """Keeps track of what LLM APIs are available and which one is currently being used. Supports failover to another LLM API if the current one fails."""
 
 import importlib
+import inspect
 
 from christine import log
 from christine.status import STATE
@@ -18,34 +19,39 @@ class LLMSelector:
     def find_enabled_llms(self):
         """This is called once at startup to populate the list of enabled LLM APIs."""
 
-        # Get the list of enabled LLM module names from config
-        llm_modules = CONFIG.get_llm_module_names()
+        # Get the list of enabled LLMs from config (just service names like 'openrouter', 'chub')
+        enabled_llm_names = CONFIG.enabled_llms
         
-        # Map module names to class names
-        class_mapping = {
-            'llm_openrouter': 'OpenRouter',
-            'llm_chub': 'Chub',
-            'llm_ollama': 'Ollama',
-            'llm_repeat_what_i_say': 'RepeatWhatISayWithWhisper',
-            'llm_testing': 'TestingLLM'
-        }
-
-        # for each enabled LLM module, import it and instantiate the class
-        for module_name in llm_modules:
-            class_name = class_mapping.get(module_name)
-            if not class_name:
-                log.parietal_lobe.warning('Unknown LLM module: %s', module_name)
-                continue
-                
-            log.parietal_lobe.debug('Loading LLM module: %s', module_name)
+        # for each enabled LLM, try to import and instantiate it
+        for llm_name in enabled_llm_names:
+            log.parietal_lobe.debug('Loading LLM: %s', llm_name)
             try:
-                module = importlib.import_module(f"christine.{module_name}")
-                llm_class = getattr(module, class_name)
-                log.parietal_lobe.info('Instantiating %s', class_name)
-                # LLMs no longer need a reference to the parietal lobe
+                # Import the module from christine.llm package
+                module = importlib.import_module(f"christine.llm.{llm_name}")
+                
+                # Find the LLMAPI subclass in the module
+                llm_class = self._find_llm_class_in_module(module)
+                if llm_class is None:
+                    log.parietal_lobe.warning('No LLMAPI subclass found in module: %s', llm_name)
+                    continue
+                    
+                log.parietal_lobe.info('Instantiating %s from %s', llm_class.__name__, llm_name)
                 self.llm_enabled.append(llm_class())
+                
+            except ImportError as ex:
+                log.parietal_lobe.warning('Failed to import LLM module %s: %s', llm_name, ex)
             except Exception as ex:
-                log.parietal_lobe.exception('Failed to load LLM %s: %s', class_name, ex)
+                log.parietal_lobe.exception('Failed to load LLM %s: %s', llm_name, ex)
+
+    def _find_llm_class_in_module(self, module):
+        """Find the LLMAPI subclass in a module using introspection."""
+        for _, obj in inspect.getmembers(module, inspect.isclass):
+            # Check if it's a subclass of LLMAPI but not LLMAPI itself
+            if (issubclass(obj, LLMAPI) and 
+                obj is not LLMAPI and 
+                obj.__module__ == module.__name__):
+                return obj
+        return None
 
     def find_available_llm(self):
         """This is called once at startup and when the current LLM API is no longer available."""

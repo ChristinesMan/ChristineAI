@@ -7,7 +7,7 @@ import threading
 from christine.database import database
 
 from christine.llm_class import LLMAPI
-from christine.llm_none import Nothing
+from christine.llm.none import Nothing
 
 class Status(threading.Thread):
     """
