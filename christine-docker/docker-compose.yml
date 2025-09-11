@@ -67,4 +67,3 @@ services:
       CHRISTINE_WERNICKE_VAD: "webrtcvad"
       CHRISTINE_ENABLED_LLMS: "ollama"
       CHRISTINE_TESTING_MODE: "true"
-      CHRISTINE_MOCK_HARDWARE: "true"

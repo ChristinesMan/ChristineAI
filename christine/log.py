@@ -49,7 +49,7 @@ broca_shuttlecraft = setup_logger("broca_shuttlecraft", level=logging.DEBUG)
 wernicke = setup_logger("wernicke", level=logging.DEBUG)
 light = setup_logger("light", level=logging.DEBUG)
 touch = setup_logger("touch", level=logging.DEBUG)
-sex = setup_logger("sex", level=logging.DEBUG)
+sex = setup_logger("sex")
 horny = setup_logger("horny", level=logging.DEBUG)
 vagina = setup_logger("vagina", level=logging.DEBUG)
 parietal_lobe = setup_logger("parietal_lobe", level=logging.DEBUG)
@@ -57,9 +57,9 @@ llm_stream = setup_logger("llm_stream", level=logging.DEBUG)
 neocortex = setup_logger("neocortex", level=logging.DEBUG)
 
 # Conceptual/Feature-based loggers
-figment_lifecycle = setup_logger("figment_lifecycle", level=logging.INFO)
-conversation_flow = setup_logger("conversation_flow", level=logging.INFO)
-memory_operations = setup_logger("memory_operations", level=logging.INFO)
+figment_lifecycle = setup_logger("figment_lifecycle", level=logging.DEBUG)
+conversation_flow = setup_logger("conversation_flow", level=logging.DEBUG)
+memory_operations = setup_logger("memory_operations", level=logging.DEBUG)
 
 def log_exception(_, value, trace_back):
     """

@@ -405,12 +405,11 @@ class Broca(threading.Thread):
         import random
         
         # Use mock hardware in testing mode
-        if CONFIG.testing_mode or CONFIG.mock_hardware:
-            from christine.mock_hardware import mock_hardware
-            pyaudio = mock_hardware['pyaudio']
+        if CONFIG.testing_mode:
+            from christine.mock_hardware import PyAudio, paContinue
             log.broca_main.info("Using mock PyAudio for testing")
         else:
-            import pyaudio
+            from pyaudio import PyAudio, paContinue
 
         # The current wav file buffer thing
         # The pump is primed using some default sound.
@@ -429,12 +428,11 @@ class Broca(threading.Thread):
         # mixer = alsaaudio.Mixer(control="PCM")
 
         # Start up some pyaudio
-        pya = pyaudio.PyAudio()
+        pya = PyAudio()
 
         # This will feed new wav data into pyaudio
         def wav_data_feeder(in_data, frame_count, time_info, status): # pylint: disable=unused-argument
-            # print(f'frame_count: {frame_count}  status: {status}')
-            return (wav_data.readframes(frame_count), pyaudio.paContinue)
+            return (wav_data.readframes(frame_count), paContinue)
 
         # The pyaudio stream is instantiated
         pya_stream = pya.open(format=8, channels=1, rate=44100, output=True, stream_callback=wav_data_feeder)

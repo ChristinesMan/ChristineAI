@@ -36,7 +36,6 @@ class Config:
         
         # Testing mode settings
         self.testing_mode = os.getenv('CHRISTINE_TESTING_MODE', 'false').lower() == 'true'
-        self.mock_hardware = os.getenv('CHRISTINE_MOCK_HARDWARE', 'false').lower() == 'true'
         
         # Wernicke settings
         self.wernicke_pv_key = os.getenv('CHRISTINE_WERNICKE_PV_KEY', '')

@@ -203,12 +203,11 @@ class Wernicke(threading.Thread):
         from pydub import AudioSegment
         
         # Use mock hardware in testing mode
-        if CONFIG.testing_mode or CONFIG.mock_hardware:
-            from christine.mock_hardware import mock_hardware
-            serial = mock_hardware['serial']
+        if CONFIG.testing_mode:
+            from christine.mock_hardware import Serial
             log.wernicke.info("Using mock serial port for testing")
         else:
-            import serial
+            from serial import Serial
             
         # import numpy as np
         import pvcobra
@@ -272,7 +271,7 @@ class Wernicke(threading.Thread):
 
                 # open the serial port
                 log.wernicke.info("Opening serial port")
-                self.serial_port_from_head = serial.Serial(  # pylint: disable=no-member
+                self.serial_port_from_head = Serial(  # pylint: disable=no-member
                     "/dev/ttyACM0", baudrate=115200, exclusive=True
                 )
                 log.wernicke.info("Opened serial port")
@@ -339,7 +338,7 @@ class Wernicke(threading.Thread):
                             log.wernicke.info("No sensor data found. Ripping it out.")
                             self.serial_port_from_head.close()
                             time.sleep(15)
-                            self.serial_port_from_head = serial.Serial(  # pylint: disable=no-member
+                            self.serial_port_from_head = Serial(  # pylint: disable=no-member
                                 "/dev/ttyACM0", baudrate=115200, exclusive=True
                             )
                             log.wernicke.info("Shoved it back in.")

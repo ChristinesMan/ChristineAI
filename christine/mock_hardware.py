@@ -10,15 +10,17 @@ import queue
 import os
 
 from christine import log
-from christine.config import CONFIG
 
-class MockPyAudio:
-    """Mock PyAudio that simulates audio playback timing without actual audio output"""
+#pylint: disable=redefined-builtin
+#pylint: disable=unused-argument
+
+# PyAudio constants
+paFloat32 = 1
+paContinue = 0
+paComplete = 1
     
-    # PyAudio constants
-    paFloat32 = 1
-    paContinue = 0
-    paComplete = 1
+class PyAudio:
+    """Mock PyAudio that simulates audio playback timing without actual audio output"""
     
     def __init__(self):
         self.streams = []
@@ -51,18 +53,6 @@ class MockPyAudio:
         """Terminate PyAudio (mock)"""
         log.broca_main.debug("MockPyAudio terminated")
 
-
-class MockPyAudioModule:
-    """Mock pyaudio module that provides PyAudio class and constants"""
-    
-    # PyAudio constants
-    paFloat32 = 1
-    paContinue = 0
-    paComplete = 1
-    
-    def PyAudio(self):
-        """Return a MockPyAudio instance"""
-        return MockPyAudio()
 
 class MockAudioStream:
     """Mock audio stream that simulates playback timing"""
@@ -117,7 +107,7 @@ class MockAudioStream:
                 time_per_buffer = self.frames_per_buffer / self.rate
                 
                 # Call the callback to get audio data
-                audio_data, continue_flag = self.stream_callback(
+                _, continue_flag = self.stream_callback(
                     None, self.frames_per_buffer, None, None
                 )
                 
@@ -125,7 +115,7 @@ class MockAudioStream:
                 time.sleep(time_per_buffer)
                 
                 # Check if we should continue
-                if continue_flag != MockPyAudio.paContinue:
+                if continue_flag != paContinue:
                     break
                     
             except Exception as e:
@@ -134,7 +124,7 @@ class MockAudioStream:
                 
         self._is_active = False
 
-class MockSerialPort:
+class Serial:
     """Mock serial port that can provide test data for wernicke"""
     
     def __init__(self, port: str, baudrate: int = 115200, exclusive: bool = True):
@@ -234,23 +224,3 @@ class MockSerialPort:
         if self._data_thread:
             self._data_thread.join(timeout=1.0)
         log.wernicke.info("MockSerialPort closed")
-
-def get_mock_hardware():
-    """Get appropriate mock hardware based on configuration"""
-    mocks = {}
-    
-    if CONFIG.testing_mode or CONFIG.mock_hardware:
-        # Mock PyAudio for broca
-        mocks['pyaudio'] = MockPyAudioModule()
-        
-        # Mock serial for wernicke  
-        mocks['serial'] = type('MockSerial', (), {
-            'Serial': MockSerialPort
-        })()
-        
-        log.main.info("Mock hardware initialized for testing mode")
-    
-    return mocks
-
-# Make mock hardware available for import
-mock_hardware = get_mock_hardware()
