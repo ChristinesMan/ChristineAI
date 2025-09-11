@@ -34,8 +34,6 @@ class CPUTemp(threading.Thread):
 
     def run(self):
 
-        log.cputemp.debug("Thread started.")
-
         while True:
 
             try:
@@ -83,7 +81,6 @@ class CPUTemp(threading.Thread):
             # log the exception but keep the thread running
             except Exception as ex:
                 log.main.exception(ex)
-                log.play_erro_sound()
 
 
 # Instantiate

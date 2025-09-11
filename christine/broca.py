@@ -6,7 +6,6 @@ import sys
 import os
 import os.path
 import time
-# from ast import literal_eval
 import threading
 import queue
 import re
@@ -96,7 +95,6 @@ class Broca(threading.Thread):
                 # Audio coordination now happens directly via shared memory between subprocesses
                 if self.to_shuttlecraft.poll(0.1):  # 100ms timeout
                     msg = self.to_shuttlecraft.recv()
-                    log.broca_main.debug("Received: %s", msg)
 
                     if msg['action'] == 'idle':
 
@@ -115,13 +113,11 @@ class Broca(threading.Thread):
             # log the exception but keep the thread running
             except Exception as ex:
                 log.main.exception(ex)
-                log.play_erro_sound()
 
     def play_next_figment(self):
         """Get the next figment from the queue and process it."""
 
         # import here to avoid circular import
-        # pylint: disable=import-outside-toplevel
         from christine.parietal_lobe import parietal_lobe
 
         # wrapping this all in a try because interruptions shappen
@@ -129,9 +125,6 @@ class Broca(threading.Thread):
 
             # get the next figment from the queue
             figment: Figment = self.figment_queue.get_nowait()
-
-            # log it
-            log.broca_main.debug('Pulled figment from queue: %s', figment)
 
             # figure out the type of figment and do the things
             if figment.pause_duration is not None:
@@ -153,7 +146,7 @@ class Broca(threading.Thread):
                         next_figment: Figment = self.figment_queue.get_nowait()
                         log.broca_main.debug('In response to sex, pulled figment from queue: %s', next_figment)
                         if not "sex" in next_figment.from_collection:
-                            log.broca_main.debug('Putting it back in queue and getting out of here.')
+                            log.broca_main.debug('Putting it back in queue and getting the fuck out of here.')
                             self.figment_queue.put_nowait(next_figment)
                             return
 
@@ -200,7 +193,6 @@ class Broca(threading.Thread):
                 # if this sequence of letters has shown up anywhere in the past 5 responses, destroy it
                 if text_stripped in self.repetition_destroyer:
                     self.repetition_destroyer[text_stripped] = self.repetition_max_ttl
-                    log.parietal_lobe.info('Destroyed: %s', figment.text)
                     return
 
                 # remember this for later destruction
@@ -214,7 +206,6 @@ class Broca(threading.Thread):
                         
                         # Send to web chat immediately in silent mode since no audio will play
                         try:
-                            # pylint: disable=import-outside-toplevel
                             from christine.httpserver import add_christine_response
                             # Clean up the text - remove quotes from both ends and extra whitespace
                             clean_text = figment.text.strip().strip('"').strip()
@@ -248,10 +239,6 @@ class Broca(threading.Thread):
                     while figment.wav_file is None or STATE.user_is_speaking is True:
                         time.sleep(0.2)
 
-                    # let the ears know that the mouth is going to emit noises that are not breathing
-                    # send the message to the subprocess with signal-based coordination
-                    # the subprocess will handle timing the wernicke pause precisely
-
                     # send the message to the subprocess
                     self.to_shuttlecraft.send(
                         {
@@ -264,7 +251,6 @@ class Broca(threading.Thread):
 
                     # Send spoken text to web chat AFTER it has actually been spoken (normal mode)
                     try:
-                        # pylint: disable=import-outside-toplevel
                         from christine.httpserver import add_christine_response
                         # Clean up the text - remove quotes from both ends and extra whitespace
                         clean_text = figment.text.strip().strip('"').strip()
@@ -303,7 +289,6 @@ class Broca(threading.Thread):
 
                 # add a figment for an inhalation sound that will precede this spoken figment
                 self.figment_queue.put_nowait(Figment(from_collection='inhalation'))
-                log.broca_main.debug("Queued: Inhalation")
 
         # put the figment on the queue
         self.figment_queue.put_nowait(figment)
@@ -352,7 +337,6 @@ class Broca(threading.Thread):
         """Immediately stop speaking. Flush the queue."""
 
         # import here to avoid circular import
-        # pylint: disable=import-outside-toplevel
         from christine.parietal_lobe import parietal_lobe
         # Direct coordination via shared memory - no need for wernicke import! YAY!
 
@@ -401,7 +385,6 @@ class Broca(threading.Thread):
 
         # pyalsaaudio seems to have died after the recent drastic Raspbian and python upgrades
         # import alsaaudio
-        # pylint: disable=import-outside-toplevel
         import wave
         import random
         

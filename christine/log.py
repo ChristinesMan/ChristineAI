@@ -56,11 +56,6 @@ parietal_lobe = setup_logger("parietal_lobe", level=logging.DEBUG)
 llm_stream = setup_logger("llm_stream", level=logging.DEBUG)
 neocortex = setup_logger("neocortex", level=logging.DEBUG)
 
-def play_erro_sound():
-    """Function to play an exception sound"""
-
-    os.system('aplay ./sounds/erro.wav')
-
 def log_exception(_, value, trace_back):
     """
     Log exceptions to the main log

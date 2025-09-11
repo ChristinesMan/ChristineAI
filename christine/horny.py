@@ -50,7 +50,6 @@ class Horny(threading.Thread):
             # log the exception but keep the thread running
             except Exception as ex:
                 log.main.exception(ex)
-                log.play_erro_sound()
 
 # Instantiate
 horny = Horny()

@@ -1,8 +1,6 @@
 """This handles the API for Chub"""
 import time
 import re
-from ssl import SSLError
-from requests import post
 from requests import post
 
 from christine import log
@@ -39,35 +37,6 @@ class Chub(LLMAPI):
 
         else:
             return True
-
-        # send the audio file to the api and return the transcription
-        try:
-
-            audio_file = open(wav_file_name, "rb")
-            transcription = self.whisper_api.audio.transcriptions.create(
-                model='whisper-1',
-                language="en",
-                file=audio_file,
-                response_format="verbose_json",
-                timestamp_granularities=["segment"],
-            )
-            audio_file.close()
-
-            # iterate over the segments and get the text, filtering trash out
-            text = ''
-            for segment in transcription.segments:
-                if segment.no_speech_prob < 0.9 and self.re_garbage.search(segment.text) is None:
-                    text += segment.text
-                else:
-                    log.parietal_lobe.info("Filtered out: %s", segment.text)
-
-            return text.strip()
-
-        except (SSLError, TimeoutError, InternalServerError) as ex:
-
-            log.parietal_lobe.exception(ex)
-            # if the connection failed, return None to signal a failure
-            return None
 
     def call_api(self, prompt, stop_sequences = None, max_tokens = 600, temperature = 0.4, top_p = 1.0, expects_json = False):
         """This function will call the llm api and return the response."""
@@ -155,7 +124,7 @@ class Chub(LLMAPI):
 
             # if api related exceptions occur, sleep here a while and retry, longer with each fail
             except Exception as ex:
-                response_text = 'I try to say something, but nothing happens. Better let my husband know. "I\'m sorry, but I can\'t seem to speak right now, but I will try again later."'
+                response_text = 'I try to say something, but nothing happens.'
                 log.parietal_lobe.exception(ex)
                 if sleep_after_error > sleep_after_error_max:
                     STATE.perceptions_blocked = True

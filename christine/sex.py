@@ -85,7 +85,6 @@ class Sex(threading.Thread):
         self.time_of_last_lobe_message = time.time()
 
     def run(self):
-        log.sex.debug("Thread started.")
 
         while True:
 
@@ -172,7 +171,6 @@ class Sex(threading.Thread):
             # log the exception but keep the thread running
             except Exception as ex:
                 log.main.exception(ex)
-                log.play_erro_sound()
 
 
     def vagina_got_hit(self, sensor_data):

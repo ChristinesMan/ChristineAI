@@ -7,9 +7,7 @@ interfacing with physical devices.
 import time
 import threading
 import queue
-import wave
 import os
-from typing import Optional, Callable
 
 from christine import log
 from christine.config import CONFIG

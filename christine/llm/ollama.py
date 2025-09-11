@@ -1,9 +1,6 @@
 """This handles the API for Ollama"""
 import time
-import re
-from ssl import SSLError
 from requests import post, get
-from requests import post
 
 from christine import log
 from christine.status import STATE
@@ -136,7 +133,7 @@ class Ollama(LLMAPI):
 
             # if api related exceptions occur, sleep here a while and retry, longer with each fail
             except Exception as ex:
-                response_text = 'I try to say something, but nothing happens. Better let my husband know. "I\'m sorry, but I can\'t seem to speak right now, but I will try again later."'
+                response_text = 'I try to say something, but nothing happens.'
                 log.parietal_lobe.exception(ex)
                 if sleep_after_error > sleep_after_error_max:
                     STATE.perceptions_blocked = True

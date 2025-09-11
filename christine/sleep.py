@@ -91,10 +91,7 @@ class Sleep(threading.Thread):
 
     def run(self):
 
-        # pylint: disable=import-outside-toplevel
         from christine.wernicke import wernicke
-
-        log.sleep.debug("Thread started.")
 
         while True:
 
@@ -191,7 +188,6 @@ class Sleep(threading.Thread):
             # log the exception but keep the thread running
             except Exception as ex:
                 log.main.exception(ex)
-                log.play_erro_sound()
 
     def wake_up(self, value):
         """
@@ -218,7 +214,6 @@ class Sleep(threading.Thread):
         I also want to detect when sleeping starts
         """
 
-        # pylint: disable=import-outside-toplevel
         from christine.broca import broca
         from christine.parietal_lobe import parietal_lobe
 
@@ -325,7 +320,6 @@ class Sleep(threading.Thread):
         Actually start whining, but only actually whine if the lights are still on.
         """
 
-        # pylint: disable=import-outside-toplevel
         from christine.parietal_lobe import parietal_lobe
 
         if STATE.light_level > 0.05:
@@ -353,7 +347,6 @@ class Sleep(threading.Thread):
         Actually run the midnight process, but only if currently still sleeping.
         """
 
-        # pylint: disable=import-outside-toplevel
         from christine.parietal_lobe import parietal_lobe
 
         # Now that we're really asleep for a while, run the midnight task, only once per night

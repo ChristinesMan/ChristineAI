@@ -58,13 +58,10 @@ class Wernicke(threading.Thread):
         log.wernicke.info("Thread started - starting away team subprocess")
         self.away_team_process.start()
 
-        # pylint: disable=import-outside-toplevel
         # importing here to avoid circular imports
         from christine.touch import touch
         # from christine.light import light
         from christine.parietal_lobe import parietal_lobe
-
-        log.wernicke.debug("Thread started.")
 
         # The subprocess starts off just spinning it's wheels, chucking away any audio data it gets
         # Because it seemed like having everything happen all at once caused high cpu, then it would have to catch up
@@ -118,7 +115,7 @@ class Wernicke(threading.Thread):
 
                 # Words from the speech recognition server
                 elif comm["class"] == "utterance":
-                    log.wernicke.info("Received new utterance")
+                    log.wernicke.info("Received complete utterance. Processing...")
 
                     # receive the audio data from the subprocess via the pipe
                     audio_data = self.to_away_team_audio.recv_bytes()
@@ -136,7 +133,6 @@ class Wernicke(threading.Thread):
             # log the exception but keep the thread running
             except Exception as ex:
                 log.main.exception(ex)
-                log.play_erro_sound()
 
     def audio_recording_start(self, label):
         """
@@ -195,7 +191,6 @@ class Wernicke(threading.Thread):
         sys.stderr = open(f"./logs/subprocess_wernicke_{os.getpid()}.err", "w", buffering=1, encoding="utf-8", errors="ignore")
 
         # imports that only the subprocess needs
-        # pylint: disable=import-outside-toplevel
         from collections import deque
         import queue
         import signal
@@ -337,7 +332,6 @@ class Wernicke(threading.Thread):
                             # I don't even know where it's getting stuck at. It always gets here 4 times, and then nothing.
                             # It did, however, just auto-recover using this method, so let's just jack up the delay
                             log.wernicke.info("No sensor data found. Ripping it out.")
-                            log.play_erro_sound()
                             self.serial_port_from_head.close()
                             time.sleep(15)
                             self.serial_port_from_head = serial.Serial(  # pylint: disable=no-member
@@ -524,7 +518,6 @@ class Wernicke(threading.Thread):
 
                     # Sweep the leg.
                     block_prob = self.cobra.process(block_unpacked)
-                    # log.wernicke.debug("prob %.2f", block_prob)
 
                     # NOT triggered
                     # when not triggered, it means we're not currently collecting audio for processing
@@ -646,7 +639,6 @@ class Wernicke(threading.Thread):
                         is_speech = self.vad.is_speech(
                             block[:960], sample_rate=16000
                         )
-                        # log.wernicke.debug("is_speech %s", is_speech)
 
                     except Exception as ex:
                         log.wernicke.error("WebRTC VAD error: %s", ex)
@@ -659,7 +651,6 @@ class Wernicke(threading.Thread):
                     else:
                         # if this is not speech, then the probability is 0.0
                         block_prob = (block_prob * (block_prob_window - 1)) / block_prob_window
-                    # log.wernicke.debug("block_prob %.2f", block_prob)
 
                     # NOT triggered
                     # when not triggered, it means we're not currently collecting audio for processing

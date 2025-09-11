@@ -59,10 +59,8 @@ class Vagina(threading.Thread):
         )
 
     def run(self):
-        log.vagina.debug("Thread started.")
 
         # only import this at runtime to avoid memory waste
-        # pylint: disable=import-outside-toplevel
         from christine.sex import sex
         from christine.parietal_lobe import parietal_lobe
 
@@ -105,7 +103,6 @@ class Vagina(threading.Thread):
             # log the exception but keep the thread running
             except Exception as ex:
                 log.main.exception(ex)
-                log.play_erro_sound()
 
     def class_one_probe(self, to_enterprise):
         """
@@ -118,7 +115,6 @@ class Vagina(threading.Thread):
         sys.stderr = open(f"./logs/subprocess_vagina_{os.getpid()}.err", "w", buffering=1, encoding="utf-8", errors="ignore")
 
         # imports only needed in the subprocess
-        # pylint: disable=import-outside-toplevel
         # pylint: disable=no-member
         import numpy as np
         import board

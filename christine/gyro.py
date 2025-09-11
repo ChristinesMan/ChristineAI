@@ -62,7 +62,6 @@ class Gyro(threading.Thread):
         self.jostled_message_counter = 0
 
     def run(self):
-        log.gyro.debug("Thread started.")
 
         try:
             # setup that sensor

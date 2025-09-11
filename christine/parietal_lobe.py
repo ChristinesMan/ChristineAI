@@ -313,7 +313,6 @@ Respond with the JSON array now:
     def run(self):
 
         # these are circular imports, but it's necessary, queue mass hysteria
-        # pylint: disable=import-outside-toplevel
         from christine.api_selector import api_selector
         from christine.broca import broca
 
@@ -359,7 +358,6 @@ Respond with the JSON array now:
             # log the exception but keep the thread running
             except Exception as ex:
                 log.main.exception(ex)
-                log.play_erro_sound()
 
     def _initialize_core_systems(self, api_selector):
         """Initialize Neocortex and all API systems. Returns True if successful."""
@@ -439,7 +437,6 @@ Respond with the JSON array now:
 
         try:
             # Import here to avoid circular imports
-            # pylint: disable=import-outside-toplevel
             from christine.broca import broca
 
             # keep track of the audio data length of all processed perceptions
@@ -481,7 +478,6 @@ Respond with the JSON array now:
 
                         # Send user's spoken message to web chat
                         try:
-                            # pylint: disable=import-outside-toplevel
                             from christine.httpserver import add_user_message
                             add_user_message(perception.audio_result)
                         except Exception as e:
@@ -610,7 +606,6 @@ Respond with the JSON array now:
 
         except Exception as ex: # pylint: disable=broad-exception-caught
             # Import here to avoid circular imports
-            # pylint: disable=import-outside-toplevel
             from christine.broca import broca
             
             log.parietal_lobe.exception(ex)
@@ -622,7 +617,6 @@ Respond with the JSON array now:
         """Handles the llm response in a way where complete utterances are correctly segmented."""
 
         # Import here to avoid circular imports
-        # pylint: disable=import-outside-toplevel
         from christine.broca import broca
 
         # I want to collate sentence parts, so this var is used to accumulate

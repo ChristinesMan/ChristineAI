@@ -3,11 +3,10 @@ Testing LLM that provides deterministic responses without calling real AI APIs.
 This is used for testing the complete system without expensive API calls.
 """
 
-import os
 import json
 import time
 import random
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from christine import log
 from christine.status import STATE
