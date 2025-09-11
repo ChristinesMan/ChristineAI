@@ -23,16 +23,25 @@ class Perception(threading.Thread):
         self.audio_result = None
 
     def run(self):
+        from christine import log
 
         # if audio_data is not None, then we have audio to process
         if self.audio_data is not None:
+            log.conversation_flow.debug("PERCEPTION_PROCESSING: Processing audio data (%d bytes)", len(self.audio_data))
 
             # pass the audio to whatever is the current STT
             # should block here while audio is processed
             # and if the STT is not available, audio_data is just discarded
             if STATE.current_stt is not None:
+                log.conversation_flow.debug("STT_API_CALL: Using %s for speech recognition", STATE.current_stt.__class__.__name__)
                 self.audio_result = STATE.current_stt.process_audio(self.audio_data)
+                
+                if self.audio_result:
+                    log.conversation_flow.info("STT_SUCCESS: Speech recognized - '%s'", self.audio_result[:100] + ('...' if len(self.audio_result) > 100 else ''))
+                else:
+                    log.conversation_flow.warning("STT_EMPTY: Speech recognition returned empty result")
             else:
+                log.conversation_flow.error("STT_UNAVAILABLE: No STT service available - discarding audio")
                 self.audio_result = None
 
             # if audio_result is None, then something or another fucked up

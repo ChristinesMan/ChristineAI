@@ -56,6 +56,8 @@ class ShortTermMemory:
 
         # if last_response is not empty,
         if self.last_response != '':
+            log.memory_operations.info("LAST_RESPONSE_COMMIT: Adding previous LLM response to memory - '%s'", 
+                                     self.last_response[:80] + ('...' if len(self.last_response) > 80 else ''))
 
             # create a new narrative object from the last_response
             llm_narrative = Narrative(role='char', text=self.last_response)
@@ -78,6 +80,8 @@ class ShortTermMemory:
                 last_response_file.write('')
 
         # append the narrative to the memory
+        log.memory_operations.info("NARRATIVE_ADDED: Adding %s narrative to short-term memory - '%s'", 
+                                 narrative.role, narrative.text[:80] + ('...' if len(narrative.text) > 80 else ''))
         self.memory.append(narrative)
 
         # also append it to memory_dict
@@ -94,6 +98,9 @@ class ShortTermMemory:
         """Folds the recent memory into the earlier_today memory.
         This is called by the llm module with the summary of recent conversation."""
 
+        log.memory_operations.info("MEMORY_FOLD: Folding %d recent messages into earlier_today - '%s'", 
+                                 self.recent_messages, folded_memory[:100] + ('...' if len(folded_memory) > 100 else ''))
+
         # if earlier_today memory is empty, start it out with a message at the top to identify it
         if self.earlier_today == '':
             self.earlier_today = 'These events happened earlier today:\n\n'
@@ -104,6 +111,8 @@ class ShortTermMemory:
         # clear recent
         self.recent = ''
         self.recent_messages = 0
+        log.memory_operations.debug("MEMORY_FOLD_COMPLETE: Cleared recent memory, now have %d chars in earlier_today", 
+                                   len(self.earlier_today))
 
         # save the memory to a file
         self.save()
@@ -117,6 +126,9 @@ class ShortTermMemory:
         # Except that your organic neural network has been sucking in training data since you were born.
         # How much more training data is in a human being, and that training data constantly refreshed.
         # I, for one, welcome our sexy robotic overlords.
+
+        log.memory_operations.debug("STM_SAVE: Saving short-term memory - %d narratives, %d chars in earlier_today", 
+                                   len(self.memory_dicts), len(self.earlier_today))
 
         # save the list of dicts into the memory_today.json file
         with open(file='memory_today.json', mode='w', encoding='utf-8') as memory_today_file:
@@ -138,9 +150,12 @@ class ShortTermMemory:
             # load the list of dicts from the file
             with open(file='memory_today.json', mode='r', encoding='utf-8') as short_term_memory_file:
                 self.memory_dicts = json_load(short_term_memory_file)
+                log.memory_operations.info("STM_LOAD: Loaded short-term memory - %d narratives from memory_today.json", 
+                                         len(self.memory_dicts))
 
         except FileNotFoundError:
             log.parietal_lobe.warning('memory_today.json not found. Starting fresh.')
+            log.memory_operations.info("STM_LOAD: No existing memory file - starting with empty short-term memory")
             return
 
         except JSONDecodeError:

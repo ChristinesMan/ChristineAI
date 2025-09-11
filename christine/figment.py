@@ -42,11 +42,24 @@ class Figment(threading.Thread):
 
         # the audio file path that is ready to be played
         self.wav_file = None
+        
+        # Log figment creation
+        if self.text:
+            log.figment_lifecycle.info("CREATED: Text figment - speak:%s text:'%s'", 
+                                     self.should_speak, self.text[:50] + ('...' if len(self.text) > 50 else ''))
+        elif self.from_collection:
+            log.figment_lifecycle.info("CREATED: Sound figment - collection:%s intensity:%s pause_wernicke:%s",
+                                     self.from_collection, self.intensity, self.pause_wernicke)
+        elif self.pause_duration:
+            log.figment_lifecycle.info("CREATED: Pause figment - duration:%.1fs", self.pause_duration * 0.1)
 
     def run(self):
+        log.figment_lifecycle.info("PROCESSING: Starting figment processing")
 
         # if the text is meant to be spoken, convert it to audio
         if self.should_speak:
+            log.figment_lifecycle.info("TTS_START: Converting text to speech - '%s'", 
+                                     self.text[:30] + ('...' if len(self.text) > 30 else ''))
 
             # if we have a broca server, convert the text to speech
             # broca server is always available in the new design
@@ -55,7 +68,13 @@ class Figment(threading.Thread):
             # if wav_file is still None, then we failed to convert the text to speech
             if self.wav_file is None:
                 log.broca_main.error("Broca failure. Text: %s", self.text)
+                log.figment_lifecycle.error("TTS_FAILED: Using error sound for text: '%s'", 
+                                          self.text[:30] + ('...' if len(self.text) > 30 else ''))
                 self.wav_file = 'sounds/erro.wav'
+            else:
+                log.figment_lifecycle.info("TTS_SUCCESS: Audio file ready: %s", self.wav_file)
+        
+        log.figment_lifecycle.info("READY: Figment processing complete - ready for playback")
 
     def do_tts(self):
         """This function calls the current TTS API to convert text to speech."""
@@ -68,6 +87,7 @@ class Figment(threading.Thread):
             return
         
         # Use the current TTS to synthesize speech
+        log.figment_lifecycle.debug("TTS_API_CALL: Using %s for synthesis", STATE.current_tts.__class__.__name__)
         self.wav_file = STATE.current_tts.synthesize_speech(self.text)
 
     def __str__(self) -> str:

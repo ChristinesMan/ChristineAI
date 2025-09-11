@@ -90,6 +90,7 @@ class Wernicke(threading.Thread):
 
                 # This is just a message to let wife know that I am now speaking and to wait until I'm finished
                 if comm["class"] == "speaking_start":
+                    log.conversation_flow.info("USER_SPEECH_START: User began speaking - blocking Christine's speech")
 
                     if STATE.shush_fucking is False:
                         # set this to True so that broca waits until I'm done speaking
@@ -98,6 +99,7 @@ class Wernicke(threading.Thread):
 
                     # instantiate an empty perception object to hold it's place in the queue
                     new_perception = Perception(audio_data=b'Wait_for_it')
+                    log.conversation_flow.debug("PERCEPTION_CREATED: Placeholder perception object created")
 
                     # and send it over to the parietal lobe
                     # it is important to get the perception object in the queue as soon as possible
@@ -116,15 +118,18 @@ class Wernicke(threading.Thread):
                 # Words from the speech recognition server
                 elif comm["class"] == "utterance":
                     log.wernicke.info("Received complete utterance. Processing...")
+                    log.conversation_flow.info("USER_SPEECH_END: Complete utterance received - starting speech-to-text")
 
-                    # receive the audio data from the subprocess via the pipe
-                    audio_data = self.to_away_team_audio.recv_bytes()
+                    # get audio data from the subprocess
+                    audio_data = self.to_away_team_audio.recv()
+                    log.conversation_flow.debug("AUDIO_RECEIVED: Audio data size: %d bytes", len(audio_data))
 
                     # add the new audio data to the perception object created earlier
                     new_perception.audio_data = audio_data
 
                     # start the new perception's thread to get the speech-to-text going
                     new_perception.start()
+                    log.conversation_flow.info("STT_PROCESSING: Speech-to-text processing started")
 
                 # The wernicke is not fucked up, yay
                 elif comm["class"] == "wernicke_ok":

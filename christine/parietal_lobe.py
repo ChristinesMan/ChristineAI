@@ -349,6 +349,9 @@ Respond with the JSON array now:
 
                 # if it has been 5 minutes since the last perception, fold the recent memories
                 if self.last_message_time + STATE.memory_folding_delay_threshold < time.time() and self.short_term_memory.recent_messages > STATE.memory_folding_min_narratives:
+                    log.memory_operations.info("MEMORY_FOLD_TRIGGER: Folding %d recent messages after %d seconds of silence", 
+                                             self.short_term_memory.recent_messages, 
+                                             int(time.time() - self.last_message_time))
 
                     # handle memory folding ourselves now
                     self.fold_recent_memories()
@@ -447,20 +450,24 @@ Respond with the JSON array now:
             new_messages = []
 
             # get perceptions from the queue until queue is clear, put in this list
+            log.conversation_flow.info("PROCESSING_PERCEPTIONS: Processing %d perceptions from queue", self.perception_queue.qsize())
             while self.perception_queue.qsize() > 0:
 
                 # pop the perception off the queue
                 perception: Perception = self.perception_queue.get_nowait()
+                log.conversation_flow.debug("PERCEPTION_DEQUEUED: Processing perception")
 
                 # wait for the audio to finish getting recorded and transcribed
                 while perception.audio_data is not None and perception.audio_result is None:
                     log.broca_main.debug('Waiting for transcription.')
+                    log.conversation_flow.debug("WAITING_STT: Waiting for speech-to-text completion")
                     time.sleep(0.3)
                 log.broca_main.debug('Perception: %s', perception)
 
                 # if there's just text, add it to the new messages
                 if perception.text is not None:
-
+                    log.conversation_flow.debug("PERCEPTION_TEXT: Adding text perception to messages - '%s'", 
+                                              perception.text[:60] + ('...' if len(perception.text) > 60 else ''))
                     new_messages.append({'speaker': None, 'text': perception.text})
                     has_system_messages = True
 
@@ -469,11 +476,13 @@ Respond with the JSON array now:
                     # otherwise this is going to be a string, the transcription
                     # I wish I could use something to identify the speaker, but I can't afford pveagle
                     if perception.audio_result != "":
+                        log.conversation_flow.info("USER_MESSAGE: User said - '%s'", perception.audio_result)
                         new_messages.append({'speaker': STATE.who_is_speaking, 'text': perception.audio_result})
 
                         # VOICE-TRIGGERED SILENT MODE EXIT: If user speaks, automatically exit silent mode
                         if STATE.silent_mode:
                             log.parietal_lobe.info("User spoke - automatically exiting silent mode")
+                            log.conversation_flow.info("SILENT_MODE_EXIT: Exiting silent mode due to user speech")
                             STATE.silent_mode = False
 
                         # Send user's spoken message to web chat
@@ -592,6 +601,7 @@ Respond with the JSON array now:
 
             # send the completed prompt to the current LLM
             log.parietal_lobe.debug('Sending to api.')
+            log.conversation_flow.info("LLM_REQUEST: Sending prompt to %s (max_tokens=1000, temp=1.2)", STATE.current_llm.name)
             response = STATE.current_llm.call_api(
                 prompt=prompt,
                 stop_sequences=['\n\n'],
@@ -599,9 +609,11 @@ Respond with the JSON array now:
                 temperature=1.2,
             ).translate(self.unicode_fix).strip()
             log.parietal_lobe.debug('Sending to api complete.')
+            log.conversation_flow.info("LLM_RESPONSE: Received response - '%s'", response[:100] + ('...' if len(response) > 100 else ''))
 
             # the response gets sent to broca for speakage
             # the response does not get added to short term memory yet because that has to go through the process of being either spoken or interrupted
+            log.conversation_flow.info("RESPONSE_PROCESSING: Sending response to Broca for speech processing")
             self.process_llm_response(response)
 
         except Exception as ex: # pylint: disable=broad-exception-caught
@@ -701,16 +713,20 @@ Respond with the JSON array now:
 
         # process using the current LLM
         log.parietal_lobe.debug('Sending to api for memory folding.')
+        log.memory_operations.info("MEMORY_FOLD_REQUEST: Sending recent memories to %s for consolidation", STATE.current_llm.name)
         folded_memory = STATE.current_llm.call_api(prompt=prompt, max_tokens=5000, temperature=1.2)
         log.parietal_lobe.debug('Sending to api complete.')
 
         # fix chars
         folded_memory = folded_memory.translate(self.unicode_fix).replace('\n', ' ').strip()
+        log.memory_operations.info("MEMORY_FOLD_RESULT: Consolidated memory - '%s'", 
+                                 folded_memory[:120] + ('...' if len(folded_memory) > 120 else ''))
 
         # send the memory for folding
         self.short_term_memory.fold(folded_memory)
 
         # this is also a good time to see if the folded memory triggers anything from the neocortex
+        log.memory_operations.debug("NEOCORTEX_RECALL: Checking if folded memory triggers any stored memories")
         recalled_memory = self.neocortex.recall(folded_memory)
 
         # if the neocortex has a response, send it to the llm
@@ -1171,13 +1187,24 @@ Horniness: {horniness_text}.
 
         if STATE.is_sleeping is True:
             log.parietal_lobe.info('Blocked for sleep: %s', new_perception)
+            log.conversation_flow.debug("PERCEPTION_BLOCKED_SLEEP: Perception blocked due to sleep state")
             return
 
         if STATE.perceptions_blocked is True:
             log.parietal_lobe.info('Blocked for reasons: %s', new_perception)
+            log.conversation_flow.debug("PERCEPTION_BLOCKED_STATE: Perception blocked due to system state")
             return
 
         log.parietal_lobe.info("Perception: %s", new_perception)
+        
+        # Log what type of perception this is
+        if hasattr(new_perception, 'text') and new_perception.text:
+            log.conversation_flow.info("PERCEPTION_QUEUED: Text perception - '%s'", 
+                                     new_perception.text[:80] + ('...' if len(new_perception.text) > 80 else ''))
+        elif hasattr(new_perception, 'audio_data') and new_perception.audio_data:
+            log.conversation_flow.info("PERCEPTION_QUEUED: Audio perception - %d bytes", len(new_perception.audio_data))
+        else:
+            log.conversation_flow.info("PERCEPTION_QUEUED: Unknown perception type")
 
         # add the perception to the queue
         self.perception_queue.put_nowait(new_perception)

@@ -56,6 +56,11 @@ parietal_lobe = setup_logger("parietal_lobe", level=logging.DEBUG)
 llm_stream = setup_logger("llm_stream", level=logging.DEBUG)
 neocortex = setup_logger("neocortex", level=logging.DEBUG)
 
+# Conceptual/Feature-based loggers
+figment_lifecycle = setup_logger("figment_lifecycle", level=logging.INFO)
+conversation_flow = setup_logger("conversation_flow", level=logging.INFO)
+memory_operations = setup_logger("memory_operations", level=logging.INFO)
+
 def log_exception(_, value, trace_back):
     """
     Log exceptions to the main log

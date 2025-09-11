@@ -125,9 +125,11 @@ class Broca(threading.Thread):
 
             # get the next figment from the queue
             figment: Figment = self.figment_queue.get_nowait()
+            log.figment_lifecycle.info("PLAYBACK_START: Processing figment for playback")
 
             # figure out the type of figment and do the things
             if figment.pause_duration is not None:
+                log.figment_lifecycle.info("PAUSE_PLAYBACK: Playing %.1fs pause", figment.pause_duration * 0.1)
 
                 self.to_shuttlecraft.send(
                     {
@@ -168,6 +170,8 @@ class Broca(threading.Thread):
                 # the subprocess will handle timing the wernicke pause precisely
                 pause_wernicke = sound.pause_wernicke if sound.pause_wernicke is True else False
 
+                log.figment_lifecycle.info("SOUND_PLAYBACK: Playing sound from collection '%s' - %s (pause_wernicke=%s)", 
+                                         figment.from_collection, sound.file_path, pause_wernicke)
                 # send the message to the subprocess
                 self.to_shuttlecraft.send(
                     {
@@ -237,8 +241,13 @@ class Broca(threading.Thread):
                     # wait for the wav file to be ready and also wait until it is ok to speak
                     # DIRECT COORDINATION: No need to check for wernicke signals here anymore! BOO-YA!
                     while figment.wav_file is None or STATE.user_is_speaking is True:
+                        if figment.wav_file is None:
+                            log.figment_lifecycle.debug("WAITING_TTS: Waiting for TTS completion")
+                        if STATE.user_is_speaking:
+                            log.figment_lifecycle.debug("WAITING_USER: Waiting for user to finish speaking")
                         time.sleep(0.2)
 
+                    log.figment_lifecycle.info("SPEECH_PLAYBACK: Playing synthesized speech - %s", figment.wav_file)
                     # send the message to the subprocess
                     self.to_shuttlecraft.send(
                         {
@@ -269,12 +278,19 @@ class Broca(threading.Thread):
     def accept_figment(self, figment: Figment):
         """Accept a figment from the parietal lobe and queue it up for processing."""
 
+        # Log what type of figment is being accepted
+        if figment.should_speak and figment.text:
+            log.conversation_flow.info("RESPONSE_QUEUED: Christine's speech response queued - '%s'", 
+                                     figment.text[:80] + ('...' if len(figment.text) > 80 else ''))
+        elif figment.from_collection:
+            log.conversation_flow.debug("SOUND_QUEUED: Sound figment queued - collection:%s", figment.from_collection)
+
         # if the new figment is to be spoken,
         if figment.should_speak is True:
 
             # if a spoken figment gets through with no letters at all, drop it. Usually this is '" '
             if re.search(r'[a-zA-Z]', figment.text) is None:
-                log.broca_main.warning("Empty string spoken figment.")
+                log.conversation_flow.warning("EMPTY_RESPONSE: Dropping empty speech figment")
                 return
 
             # In silent mode, mark the figment as silent but still queue it to preserve order

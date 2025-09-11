@@ -22,12 +22,17 @@ class LongTermMemory:
     def append(self, text: str):
         """Accepts a new generated text block and appends it to the memory. Usually this is done when asleep."""
 
+        log.memory_operations.info("LTM_APPEND: Adding new memory block to long-term memory - '%s'", 
+                                 text[:100] + ('...' if len(text) > 100 else ''))
+
         # append the new text to the memory
         self.memory.append(text)
 
         # remove the oldest memory if full
         if len(self.memory) > STATE.memory_days:
-            self.memory.pop(0)
+            oldest = self.memory.pop(0)
+            log.memory_operations.info("LTM_PURGE: Removed oldest memory block - '%s'", 
+                                     oldest[:80] + ('...' if len(oldest) > 80 else ''))
 
         # generate the text block
         self.generate_text()
@@ -60,6 +65,8 @@ class LongTermMemory:
     def save(self):
         """Saves long term memory to a file."""
 
+        log.memory_operations.debug("LTM_SAVE: Saving long-term memory - %d memory blocks", len(self.memory))
+
         # save the list into the long_term_memory.json file
         with open(file='memory_long_term.json', mode='w', encoding='utf-8') as long_term_memory_file:
             json_dump(self.memory, long_term_memory_file, ensure_ascii=False, check_circular=False, indent=2)
@@ -73,11 +80,15 @@ class LongTermMemory:
             with open(file='memory_long_term.json', mode='r', encoding='utf-8') as long_term_memory_file:
                 self.memory = json_load(long_term_memory_file)
 
+            log.memory_operations.info("LTM_LOAD: Loaded long-term memory - %d memory blocks spanning %d days", 
+                                     len(self.memory), len(self.memory))
+
             # generate the text block
             self.generate_text()
 
         except FileNotFoundError:
             log.parietal_lobe.warning('memory_long_term.json not found. Starting fresh.')
+            log.memory_operations.info("LTM_LOAD: No existing memory file - starting with empty long-term memory")
 
         except JSONDecodeError:
             log.parietal_lobe.warning('memory_long_term.json is not a valid JSON file. Starting fresh.')
