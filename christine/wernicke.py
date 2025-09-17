@@ -121,7 +121,7 @@ class Wernicke(threading.Thread):
                     log.conversation_flow.info("USER_SPEECH_END: Complete utterance received - starting speech-to-text")
 
                     # get audio data from the subprocess
-                    audio_data = self.to_away_team_audio.recv()
+                    audio_data = self.to_away_team_audio.recv_bytes()
                     log.conversation_flow.debug("AUDIO_RECEIVED: Audio data size: %d bytes", len(audio_data))
 
                     # add the new audio data to the perception object created earlier
