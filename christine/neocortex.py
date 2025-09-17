@@ -509,6 +509,9 @@ Consolidated memory:"""
         Updates the date_recalled property.
         Returns a list of memories that are triggered by the proper names found in the text."""
 
+        if self.proper_names_regex is None:
+            return None
+
         # pick all the matches and extract the names
         matches = self.proper_names_regex.findall(text)
 
@@ -518,7 +521,7 @@ Consolidated memory:"""
         # eliminate any matches that have already been matched today
         matches = [match for match in matches if match not in self.matched_proper_names]
 
-        if len(matches) == 0:
+        if len(matches) == 0 or matches == ['']:
             return None
         log.neocortex.debug('Proper names found: %s', matches)
 
@@ -557,12 +560,31 @@ Consolidated memory:"""
         for proper_name in self.proper_names.iterator():
             if len(proper_name.properties["name"]) > 2:
                 names.append(proper_name.properties["name"])
+
+        # if there are no proper names, get out of here
+        if len(names) == 0:
+            self.proper_names_regex = None
+            log.neocortex.warning('No proper names found in the ProperNames collection.')
+            return
+
+        # eliminate duplicates (convert to set then back to list)
         names = list(set(names))
+
         # remove the character name (CONFIG.char_name) from the list
         if CONFIG.char_name in names:
             names.remove(CONFIG.char_name)
+
+        # sort by length, longest first, so that "New York" is matched before "York"
+        names.sort(key=len, reverse=True)
+
+        # escape the names and add word boundaries
         names = [rf'\b{re.escape(name)}\b' for name in names]
+
+        # compile the regex
         self.proper_names_regex = re.compile(rf"({'|'.join(names)})", re.IGNORECASE)
+        
+        # log it
+        log.neocortex.info('Built proper names regex with %d names.', len(names))
 
     def how_long_ago(self, date_happened: float):
         """This takes a date_happened and returns a fuzzy, nonexact description of how long ago it was,
