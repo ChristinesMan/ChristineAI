@@ -135,6 +135,8 @@ class Serial:
         self._data_queue = queue.Queue()
         self._data_thread = None
         self._shutdown = False
+        self._data_position = 0
+        self._test_data_exhausted = False
         
         # Load test data if available
         self._load_test_data()
@@ -142,48 +144,31 @@ class Serial:
         log.wernicke.info("MockSerialPort opened for %s", port)
     
     def _load_test_data(self):
-        """Load test data file if it exists, otherwise generate synthetic data"""
+        """Load test data file if it exists, otherwise use silence"""
         test_data_file = "dev/wernicke_test_data.bin"
         
         if os.path.exists(test_data_file):
-            log.wernicke.info("Loading test data from %s", test_data_file)
+            log.wernicke.info("Loading recorded test data from %s", test_data_file)
             with open(test_data_file, 'rb') as f:
                 self.test_data = f.read()
+            log.wernicke.info("Loaded %d bytes of recorded test data", len(self.test_data))
         else:
-            log.wernicke.info("Generating synthetic test data (run tests/generate_test_data.py to create real test data)")
-            self.test_data = self._generate_synthetic_data()
+            log.wernicke.info("No recorded test data found, using silence (create %s for real test data)", test_data_file)
+            self.test_data = None
             
         # Start the data generation thread
         self._data_thread = threading.Thread(target=self._generate_data_stream, daemon=True)
         self._data_thread.start()
     
-    def _generate_synthetic_data(self) -> bytes:
-        """Generate synthetic sensor + audio data"""
-        # Create a 2059-byte block (11 bytes sensor + 2048 bytes audio)
-        
-        # Sensor header and data
-        sensor_data = bytearray()
-        sensor_data.extend(b"@!#?@!")  # 6-byte header
-        
-        # 5 touch sensors (simulate occasional touches)
-        touch_states = [False, False, False, False, False]  # Usually no touch
-        sensor_data.extend([1 if state else 0 for state in touch_states])
-        
-        # 2048 bytes of synthetic audio data (silence with occasional noise)
-        audio_data = bytearray(2048)
-        
-        # Add some very low-level random noise to simulate microphone
-        import random
-        for i in range(2048):
-            audio_data[i] = random.randint(125, 130)  # Very quiet around center
-            
-        return bytes(sensor_data + audio_data)
-    
     def _generate_data_stream(self):
-        """Generate continuous stream of test data"""
+        """Generate continuous stream of test data or silence"""
         while not self._shutdown:
-            # Generate a block of data every ~100ms (simulating real-time audio)
-            data_block = self._generate_synthetic_data()
+            if self.test_data is not None and not self._test_data_exhausted:
+                # Use recorded test data until it runs out
+                data_block = self._get_next_test_data_block()
+            else:
+                # No test data available or test data exhausted, output silence
+                data_block = self._get_silence_block()
             
             try:
                 self._data_queue.put(data_block, timeout=0.1)
@@ -196,6 +181,38 @@ class Serial:
                     pass
                     
             time.sleep(0.1)  # ~10 blocks per second
+    
+    def _get_next_test_data_block(self) -> bytes:
+        """Get the next block of recorded test data, switching to silence when exhausted"""
+        block_size = 2059  # Expected size: 11 bytes sensor + 2048 bytes audio
+        
+        # Check if we've reached the end of the test data
+        if self._data_position + block_size > len(self.test_data):
+            log.wernicke.info("Test data exhausted after %d bytes, switching to silence to prevent infinite loops", self._data_position)
+            self._test_data_exhausted = True
+            return self._get_silence_block()
+            
+        # Extract the next block
+        data_block = self.test_data[self._data_position:self._data_position + block_size]
+        self._data_position += block_size
+        
+        # Pad with zeros if the block is shorter than expected
+        if len(data_block) < block_size:
+            data_block += b'\x00' * (block_size - len(data_block))
+            
+        return data_block
+    
+    def _get_silence_block(self) -> bytes:
+        """Generate a block of silence (sensor data + silent audio)"""
+        # Sensor header and data (11 bytes total)
+        sensor_data = bytearray()
+        sensor_data.extend(b"@!#?@!")  # 6-byte header
+        sensor_data.extend([0, 0, 0, 0, 0])  # 5 touch sensors, all off
+        
+        # 2048 bytes of silence (128 is center/silence for unsigned 8-bit audio)
+        audio_data = bytes([128] * 2048)
+        
+        return bytes(sensor_data + audio_data)
     
     def read(self, size: int) -> bytes:
         """Read data from the mock serial port"""
