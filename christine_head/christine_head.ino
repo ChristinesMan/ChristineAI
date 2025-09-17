@@ -25,10 +25,10 @@ uint8_t AudioData[512];
 // This head will have capacitive touch sensors, of the momentary digital on/off variety.
 // I have installed 5 sensors.
 uint8_t TouchPins[5] = {
-  0,  // Forehead
-  1,  // Right Cheek
-  18, // Mouth
-  19, // Left Cheek
+  16, // Mouth
+  17, // Left Cheek
+  18, // Forehead
+  19, // Right Cheek
   20  // Nose
 };
 
