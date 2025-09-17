@@ -23,10 +23,10 @@ class Touch:
 
         # labels for the 5 touch sensors
         self.channel_labels = [
-            "Forehead",
-            "Right Cheek",
             "Mouth",
             "Left Cheek",
+            "Forehead",
+            "Right Cheek",
             "Nose"
         ]
 
