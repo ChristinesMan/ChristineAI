@@ -80,18 +80,16 @@ def record_live_data(port="/dev/ttyACM0", baudrate=115200, output_file=None):
                 f.write(data)
                 bytes_recorded += len(data)
                 
-                # Check if we have proper sensor data alignment
-                if data[0:6] == b"@!#?@!":
-                    blocks_recorded += 1
-                    
-                    # Show progress every 10 blocks (~1 second)
-                    if blocks_recorded % 10 == 0:
-                        elapsed = time.time() - start_time
-                        rate = bytes_recorded / elapsed if elapsed > 0 else 0
-                        print(f"📊 Recorded: {blocks_recorded:4d} blocks | "
-                              f"{bytes_recorded:8d} bytes | "
-                              f"{elapsed:6.1f}s | "
-                              f"{rate/1024:6.1f} KB/s", end='\r')
+                blocks_recorded += 1
+                
+                # Show progress every 10 blocks (~1 second)
+                if blocks_recorded % 10 == 0:
+                    elapsed = time.time() - start_time
+                    rate = bytes_recorded / elapsed if elapsed > 0 else 0
+                    print(f"📊 Recorded: {blocks_recorded:4d} blocks | "
+                            f"{bytes_recorded:8d} bytes | "
+                            f"{elapsed:6.1f}s | "
+                            f"{rate/1024:6.1f} KB/s", end='\r')
                 
                 # Flush file periodically to ensure data is saved
                 if blocks_recorded % 50 == 0:  # Every ~5 seconds
