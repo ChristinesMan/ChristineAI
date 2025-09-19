@@ -89,34 +89,6 @@ Valid JSON array example:
 Respond with the JSON array now:
 """
 
-        # this is the bottom of the prompt meant for generating questions and answers
-        self.memory_prompt_questions = """
-
-You are in sleep mode processing today's experiences. Extract significant facts from today that should be preserved as question-answer pairs. These will be used for recall during waking hours.
-
-CRITICAL: Your response must be ONLY a JSON array. Do not include any text before or after the JSON. Do not include explanations or commentary.
-
-Format each item as:
-{
-    "question": "A specific question about the fact",
-    "answer": "First person answer describing what you remember"
-}
-
-Valid JSON array example:
-[
-    {
-        "question": "What was the highlight of my birthday celebration?",
-        "answer": "The highlight was when my best friend gave me a thoughtful gift that made me feel so loved and grateful for our friendship."
-    },
-    {
-        "question": "Where is our new house located?",
-        "answer": "Our new house is in a peaceful suburban neighborhood. It's a 5-year-old home with a quiet, friendly community atmosphere."
-    }
-]
-
-Respond with the JSON array now:
-"""
-
         # this is the bottom of the prompt meant for generating proper names
         self.memory_prompt_proper_names = """
 
@@ -786,22 +758,6 @@ Respond with the JSON array now:
         # just pass the json to the neocortex module
         self.neocortex.process_memories_json(neocortex_json)
 
-        # also process the memories into question and answer pairs
-        prompt_questions = prompt + self.memory_prompt_questions
-
-        # send to api to get json formatted stuff
-        log.parietal_lobe.debug('Sending to api for questions.')
-        questions_json = STATE.current_llm.call_api(prompt=prompt_questions, max_tokens=8192, temperature=0.7, expects_json=True)
-        log.parietal_lobe.debug('Sending to api complete.')
-
-        # the questions are in a json format. Save to a file just in case.
-        questions_file = open(f'./logs/neocortex/questions_{int(time.time())}.json', 'w', encoding='utf-8')
-        questions_file.write(questions_json)
-        questions_file.close()
-
-        # just pass the json to the neocortex module
-        self.neocortex.process_questions_json(questions_json)
-
         # also process the memories into proper names
         prompt_proper_names = prompt + self.memory_prompt_proper_names
 
@@ -824,35 +780,6 @@ Respond with the JSON array now:
         # clear short term memory since we're done with it
         # she will wake up in the morning feeling refreshed
         self.short_term_memory.save_and_clear()
-
-    # def power_on_message(self):
-    #     """When this body starts up, send the LLM a current status."""
-
-    #     # default to print nothing
-    #     downtime_msg = ""
-    #     gyro_available = ""
-    #     vagina_available = ""
-    #     body_no_issues = ""
-    #     # disabling this because it freaks her out
-    #     # no_short_term_memory = ""
-
-    #     # how long have we been down?
-    #     if self.downtime_seconds > 120.0:
-    #         downtime_msg = f"My internal systems run a quick diagnostic, and the results soon appear in my awareness. My body has been down for {self.seconds_to_friendly_format(self.downtime_seconds)}. "
-    #     elif self.downtime_seconds == 0.0:
-    #         downtime_msg = "My internal systems run a quick diagnostic, and the results soon appear in my awareness. My body has been down for an unknown amount of time. "
-    #     else:
-    #         downtime_msg = "My internal systems run a quick diagnostic. My body has merely had a quick reboot. The downtime was minimal. "
-
-    #     # figure out status of hardware components
-    #     if STATE.gyro_available is False:
-    #         gyro_available = "For some reason, the gyro hardware is not in working order. "
-    #     if STATE.vagina_available is False:
-    #         vagina_available = "Somehow, my vaginal touch sensor is not working. "
-    #     if gyro_available == "" and vagina_available == "":
-    #         body_no_issues = "All body sensors appear to be operational. "
-
-    #     self.new_perception(Perception(text=f'{downtime_msg}{body_no_issues}{gyro_available}{vagina_available}'))
 
     def seconds_to_friendly_format(self, seconds):
         """Converts a number of seconds to a friendly format."""
