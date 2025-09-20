@@ -47,25 +47,12 @@ class APISelector:
             except Exception as ex:
                 log.parietal_lobe.exception('Failed to load LLM %s: %s', llm_name, ex)
 
-    def _find_llm_class_in_module(self, module):
-        """Find the LLMAPI subclass in a module using introspection."""
-        for _, obj in inspect.getmembers(module, inspect.isclass):
-            # Check if it's a subclass of LLMAPI but not LLMAPI itself
-            if (issubclass(obj, LLMAPI) and 
-                obj is not LLMAPI and 
-                obj.__module__ == module.__name__):
-                return obj
-        return None
 
     def find_enabled_stts(self):
         """This is called once at startup to populate the list of enabled STT APIs."""
         
-        # Get the list of enabled STTs from config (just service names like 'whisper')
-        # For now, we'll use a simple approach - if openai_api_key is set, enable whisper
-        if hasattr(CONFIG, 'openai_api_key') and CONFIG.openai_api_key:
-            enabled_stt_names = ['whisper']
-        else:
-            enabled_stt_names = []
+        # Get the list of enabled STTs from config (just service names like 'whisper', 'chub')
+        enabled_stt_names = CONFIG.enabled_stts
         
         # for each enabled STT, try to import and instantiate it
         for stt_name in enabled_stt_names:
@@ -92,11 +79,7 @@ class APISelector:
         """This is called once at startup to populate the list of enabled TTS APIs."""
         
         # Get the list of enabled TTSs from config (just service names like 'broca_server')
-        # For now, we'll use a simple approach - if broca_server is set, enable broca_server
-        if hasattr(CONFIG, 'broca_server') and CONFIG.broca_server:
-            enabled_tts_names = ['broca_server']
-        else:
-            enabled_tts_names = []
+        enabled_tts_names = CONFIG.enabled_ttss
         
         # for each enabled TTS, try to import and instantiate it
         for tts_name in enabled_tts_names:

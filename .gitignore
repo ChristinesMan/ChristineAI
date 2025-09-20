@@ -12,3 +12,5 @@ config.ini
 unit_testing.py
 christine-docker/homedir
 mcp
+neocortex
+christine-docker/docker-compose.yml

@@ -42,7 +42,13 @@ class Config:
         self.wernicke_vad = os.getenv('CHRISTINE_WERNICKE_VAD', 'webrtcvad')
         
         # LLM configuration
-        self.enabled_llms = self._parse_llm_list(os.getenv('CHRISTINE_ENABLED_LLMS', ''))
+        self.enabled_llms = self._parse_service_list(os.getenv('CHRISTINE_ENABLED_LLMS', ''))
+        
+        # STT configuration
+        self.enabled_stts = self._parse_service_list(os.getenv('CHRISTINE_ENABLED_STTS', ''))
+        
+        # TTS configuration
+        self.enabled_ttss = self._parse_service_list(os.getenv('CHRISTINE_ENABLED_TTSS', ''))
         
         # LLM API keys and settings
         self.openrouter_api_key = os.getenv('CHRISTINE_OPENROUTER_API_KEY', '')
@@ -66,11 +72,11 @@ class Config:
 
         self.http_security_token = os.getenv('CHRISTINE_HTTP_SECURITY_TOKEN', 'christine_lovely_2025')
 
-    def _parse_llm_list(self, llm_string: str) -> List[str]:
-        """Parse comma-separated list of enabled LLMs."""
-        if not llm_string.strip():
+    def _parse_service_list(self, service_string: str) -> List[str]:
+        """Parse comma-separated list of enabled services (LLMs, STTs, TTSs)."""
+        if not service_string.strip():
             return []
-        return [llm.strip() for llm in llm_string.split(',') if llm.strip()]
+        return [service.strip() for service in service_string.split(',') if service.strip()]
     
     def _validate_config(self):
         """Validate that all required configuration is present and valid."""
@@ -88,7 +94,7 @@ class Config:
         
         # At least one LLM must be enabled
         if not self.enabled_llms:
-            errors.append("CHRISTINE_ENABLED_LLMS must specify at least one LLM (openrouter, chub, ollama, repeat_what_i_say)")
+            errors.append("CHRISTINE_ENABLED_LLMS must specify at least one LLM (openrouter, chub, ollama, repeat_what_i_say, testing)")
         
         # Validate that enabled LLMs have required API keys
         for llm in self.enabled_llms:
@@ -100,6 +106,18 @@ class Config:
                 errors.append("CHRISTINE_OLLAMA_BASE_URL is required when ollama LLM is enabled")
             elif llm == 'repeat_what_i_say' and not self.openai_api_key:
                 errors.append("CHRISTINE_OPENAI_API_KEY is required when repeat_what_i_say LLM is enabled")
+        
+        # Validate that enabled STTs have required API keys
+        for stt in self.enabled_stts:
+            if stt == 'whisper' and not self.openai_api_key:
+                errors.append("CHRISTINE_OPENAI_API_KEY is required when whisper STT is enabled")
+            elif stt == 'chub' and not self.chub_api_key:
+                errors.append("CHRISTINE_CHUB_API_KEY is required when chub STT is enabled")
+        
+        # Validate that enabled TTSs have required configuration
+        for tts in self.enabled_ttss:
+            if tts == 'broca_server' and not self.broca_server:
+                errors.append("CHRISTINE_BROCA_SERVER is required when broca_server TTS is enabled")
         
         # Validate VAD setting
         if self.wernicke_vad not in ['pvcobra', 'webrtcvad']:
