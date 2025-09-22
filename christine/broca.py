@@ -141,16 +141,28 @@ class Broca(threading.Thread):
 
             elif figment.from_collection is not None:
 
-                # sounds with a collection of "sex" tend to pile up quickly which causes sex noises long after the actions that caused them
-                # so if the figment is "sex", let's pull figments out of the queue until the queue is either empty or there's something other than "sex"
+                # smarter sex sound management: limit to one sex sound at a time
+                # instead of completely clearing the queue, just skip if there's already a sex sound playing
                 if "sex" in figment.from_collection:
+                    # check if there's already another sex sound in the queue ahead of this one
+                    sex_sounds_in_queue = 0
+                    temp_queue = []
+                    
+                    # count sex sounds currently in queue
                     while self.figment_queue.qsize() > 0:
                         next_figment: Figment = self.figment_queue.get_nowait()
-                        log.broca_main.debug('In response to sex, pulled figment from queue: %s', next_figment)
-                        if not "sex" in next_figment.from_collection:
-                            log.broca_main.debug('Putting it back in queue and getting the fuck out of here.')
-                            self.figment_queue.put_nowait(next_figment)
-                            return
+                        temp_queue.append(next_figment)
+                        if hasattr(next_figment, 'from_collection') and next_figment.from_collection and "sex" in next_figment.from_collection:
+                            sex_sounds_in_queue += 1
+                    
+                    # put everything back
+                    for temp_figment in temp_queue:
+                        self.figment_queue.put_nowait(temp_figment)
+                    
+                    # if there's already a sex sound queued, skip this one to prevent pileup
+                    if sex_sounds_in_queue > 0:
+                        log.broca_main.debug('Skipping sex sound - already %d sex sounds in queue', sex_sounds_in_queue)
+                        return
 
                 # get the sound from the collection
                 sound = sounds_db.get_random_sound(collection_name=figment.from_collection, intensity=figment.intensity)

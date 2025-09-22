@@ -36,7 +36,7 @@ class Status(threading.Thread):
 
         # This is a number between 0.0 and 1.0 where 0.0 is absolute darkness and 1.0 is lights on window open with sun shining and flashlight in your face.
         # This is a long running average, changes slowly
-        self.light_level = 0.5
+        self.light_level = 0.2
 
         # A measure of recent movement or vibrations measured by the gyro
         self.jostled_level = 0.0

@@ -142,11 +142,8 @@ Respond with the JSON array now:
         # we will be segmenting spoken parts, inserting short and long pauses
         # If a token matches any of these she will just pause
         # I used to pause at commas, but Google's TTS is better not pausing at commas. Also removed dashes.
-        # removed: "^\.{1,3} $|"
-        # also removed: "^! $|"
-        # and removed periods, too: "|^s\. $"
         self.re_pause_tokens = re.compile(
-            r"^: $|^\? $", flags=re.IGNORECASE
+            r"^: $|^\? $|^\.{1,3} $|^! $|^s\. $", flags=re.IGNORECASE
         )
 
         # # if any text in a stream part matches these patterns, they get replaced with another string
@@ -609,6 +606,9 @@ Respond with the JSON array now:
 
         # flag that keeps track of whether we're in the middle of a spoken area in quotes
         is_inside_quotes = False
+        
+        # track if we've already sent the first spoken figment during sex (shush_fucking mode)
+        first_spoken_figment_sent = False
 
         # zap newlines to spaces
         response = response.replace('\n', ' ').strip()
@@ -640,7 +640,16 @@ Respond with the JSON array now:
 
                     # often LLM uses "scare quotes" which are not meant to be spoken
                     if re_not_scare_quotes.search(token_collator):
-                        broca.accept_figment(Figment(text=token_collator, should_speak=True, pause_wernicke=True))
+                        # during sex (shush_fucking), only allow the first spoken figment to actually speak
+                        should_speak = True
+                        if STATE.shush_fucking and first_spoken_figment_sent:
+                            should_speak = False
+                            log.parietal_lobe.debug("Sex mode: suppressing additional speech - '%s'", token_collator[:50])
+                        elif STATE.shush_fucking:
+                            first_spoken_figment_sent = True
+                            log.parietal_lobe.debug("Sex mode: allowing first speech - '%s'", token_collator[:50])
+                        
+                        broca.accept_figment(Figment(text=token_collator, should_speak=should_speak, pause_wernicke=True))
                     else:
                         broca.accept_figment(Figment(text=token_collator, should_speak=False))
                     token_collator = ''
@@ -664,8 +673,17 @@ Respond with the JSON array now:
             # if it's not a speaking part, we don't care, glob it all together
             if is_inside_quotes is True and self.re_pause_tokens.search(token):
 
+                # during sex (shush_fucking), only allow the first spoken figment to actually speak
+                should_speak = True
+                if STATE.shush_fucking and first_spoken_figment_sent:
+                    should_speak = False
+                    log.parietal_lobe.debug("Sex mode: suppressing additional speech - '%s'", token_collator[:50])
+                elif STATE.shush_fucking:
+                    first_spoken_figment_sent = True
+                    log.parietal_lobe.debug("Sex mode: allowing first speech - '%s'", token_collator[:50])
+
                 # ship the spoken sentence we have so far to broca for speakage
-                broca.accept_figment(Figment(text=token_collator, should_speak=True, pause_wernicke=True))
+                broca.accept_figment(Figment(text=token_collator, should_speak=should_speak, pause_wernicke=True))
                 token_collator = ''
 
         # and if there's anything left after the stream is done, ship it

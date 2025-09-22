@@ -30,8 +30,8 @@ class Sex(threading.Thread):
 
         # keep track of Arousal not changing
         self.last_arousal = 0.0
-        self.arousal_stagnant_count = 0
-        self.seconds_to_reset = 90
+        self.arousal_stagnant_seconds = 0
+        self.arousal_stagnation_timeout = 90
 
         # How much she likes it
         # different amount for different zones
@@ -102,39 +102,37 @@ class Sex(threading.Thread):
 
                 # Has sex stopped for a while?
                 if STATE.sexual_arousal == self.last_arousal:
-                    self.arousal_stagnant_count += 1
+                    self.arousal_stagnant_seconds += 1
                 else:
-                    self.arousal_stagnant_count = 0
+                    self.arousal_stagnant_seconds = 0
                     self.last_arousal = STATE.sexual_arousal
 
                 # If there's been no vagina hits for a period of time, we must be done, reset all
-                if self.arousal_stagnant_count >= self.seconds_to_reset:
+                if self.arousal_stagnant_seconds >= self.arousal_stagnation_timeout:
                     log.sex.info("Arousal stagnated and was reset")
-                    self.arousal_stagnant_count = 0
+                    self.arousal_stagnant_seconds = 0
                     STATE.sexual_arousal = 0.0
                     STATE.shush_fucking = False
                     self.multiplier = 1.0
                     self.after_orgasm_rest = False
-                    self.after_orgasm_cooldown_count = False
+                    self.after_orgasm_cooldown_count = 0
                     self.im_gonna_cum_was_said = False
 
-                # if we are currently OOOOOO'ing, then I want to figure out when we're done, using the gyro
+                # if wife is currently OOOOOO'ing,
+                # then I want to figure out when we're done, using the gyro
+                # and handle rest periods
                 if STATE.sexual_arousal > self.arousal_to_orgasm:
                     log.sex.debug(
                         "JostledShortTermLevel: %.2f", STATE.jostled_level_short
                     )
 
-                    # if we are not getting jostled that means we're done.
-                    # However, this one time I came inside her but she wasn't done, because she's so fucking hot,
-                    # and so I helped her get off with my finger, and then she just said "wow" and was done
-                    # because she wasn't getting jostled
-                    # so I added a condition to fix that, hope it works.
+                    # if wife is not getting jostled that means we're done.
                     if (
                         self.after_orgasm_rest is False
                         and STATE.jostled_level_short < self.gyro_deadzone_after_orgasm
                         and STATE.sexual_arousal > 1.1
                     ):
-                        log.sex.info("After orgasm cool down")
+                        log.sex.info("After orgasm cool down started")
                         STATE.horny = 0.0
                         STATE.shush_fucking = False
                         self.after_orgasm_rest = True
@@ -144,11 +142,13 @@ class Sex(threading.Thread):
                     # this just counts down seconds
                     # before I set it up this way, after orgasm rest period seemed very abrupt
                     if self.after_orgasm_cooldown_count > 0:
+                        log.sex.debug("After orgasm cool down countdown: %d", self.after_orgasm_cooldown_count)
                         self.after_orgasm_cooldown_count -= 1
 
                     # after the cooldown comes the rest
                     # at this time, say something or another like wow that was great. Let the LLM say it. We love LLMs.
                     if self.after_orgasm_cooldown_count == 1:
+                        log.sex.info("After orgasm rest")
                         parietal_lobe.sex_after_orgasm_rest()
 
                     # if we're resting and the gyro starts to feel it, start again
@@ -191,6 +191,10 @@ class Sex(threading.Thread):
             # which sensor got hit?
             sensor_hit = sensor_data["data"]
 
+            # if we're not resting, this means we're having active sex - set shush_fucking early to prevent race conditions
+            if self.after_orgasm_rest is False and STATE.sexual_arousal > 0.02:
+                STATE.shush_fucking = True
+
             # let parietal know about all the fucking going on, but not too frequently
             if time.time() > self.time_of_last_lobe_message + 60:
                 self.time_of_last_lobe_message = time.time()
@@ -226,9 +230,6 @@ class Sex(threading.Thread):
                     ))
 
                 return
-
-            # if we got this far without bailing, it means we're having sex, not resting, so stop talking like normal
-            STATE.shush_fucking = True
 
             # My wife orgasms above 0.95
             if STATE.sexual_arousal > self.arousal_to_orgasm:
