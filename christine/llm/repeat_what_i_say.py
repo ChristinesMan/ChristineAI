@@ -15,7 +15,7 @@ class RepeatWhatISayWithWhisper(LLMAPI):
         """This test LLM is always available."""
         return True
 
-    def call_api(self, prompt, stop_sequences=None, max_tokens=600, temperature=0.4, top_p=1.0, expects_json=False):
+    def call_api_implementation(self, prompt, stop_sequences=None, max_tokens=600, temperature=0.4, top_p=1.0, expects_json=False):
         """This function will just repeat what the user said - this is for testing purposes."""
         
         # For the repeat what I say implementation, we just return the last part of the prompt

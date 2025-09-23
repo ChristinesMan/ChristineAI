@@ -57,7 +57,7 @@ class Ollama(LLMAPI):
             self.last_is_available_time = current_time
             return False
 
-    def call_api(self, prompt, stop_sequences=None, max_tokens=600, temperature=0.4, top_p=1.0, expects_json=False):
+    def call_api_implementation(self, prompt, stop_sequences=None, max_tokens=600, temperature=0.4, top_p=1.0, expects_json=False):
         """This function will call the Ollama API and return the response."""
 
         payload = {

@@ -15,7 +15,7 @@ class Nothing(LLMAPI):
 
 
 
-    def call_api(self, prompt, stop_sequences=None, max_tokens=600, temperature=0.4, top_p=1.0, expects_json=False):
+    def call_api_implementation(self, prompt, stop_sequences=None, max_tokens=600, temperature=0.4, top_p=1.0, expects_json=False):
         """This function throws the prompt in the trash and returns nothing useful."""
         
         # This is a placeholder LLM that does nothing

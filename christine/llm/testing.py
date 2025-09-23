@@ -64,7 +64,7 @@ class TestingLLM(LLMAPI):
         """Testing LLM is always available"""
         return True
 
-    def call_api(self, prompt: str, stop_sequences=None, max_tokens=600, temperature=0.4, top_p=1.0, expects_json=False) -> str:
+    def call_api_implementation(self, prompt: str, stop_sequences=None, max_tokens=600, temperature=0.4, top_p=1.0, expects_json=False) -> str:
         """
         Generate deterministic responses based on prompt content and current state
         """

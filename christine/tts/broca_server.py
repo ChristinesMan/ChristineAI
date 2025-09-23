@@ -25,7 +25,7 @@ class BrocaServerTTS(TTSAPI):
         # For now, assume it's available if we have a broca_server config
         return hasattr(CONFIG, 'broca_server') and CONFIG.broca_server is not None
 
-    def synthesize_speech(self, text: str) -> str:
+    def synthesize_speech_implementation(self, text: str) -> str:
         """Convert text to speech using Broca server. Returns path to generated audio file or None on failure."""
 
         # standardize the text to just the words, no spaces, for the file path

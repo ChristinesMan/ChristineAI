@@ -136,12 +136,23 @@ class Status(threading.Thread):
         # It's awkward.
         self.wernicke_ok = False
 
+        # Track when we last attempted to restore primary APIs
+        self.last_primary_restoration_attempt = 0.0
+        # How often to try restoring primary APIs (in seconds)
+        self.primary_restoration_interval = 300.0  # 5 minutes
+
     def run(self):
         self.load_state()
 
         while True:
             time.sleep(25)
             self.save_state()
+            
+            # Periodically try to restore primary APIs
+            current_time = time.time()
+            if current_time - self.last_primary_restoration_attempt > self.primary_restoration_interval:
+                self.last_primary_restoration_attempt = current_time
+                self.attempt_primary_api_restoration()
 
     def to_json(self):
         """
@@ -225,6 +236,17 @@ class Status(threading.Thread):
 
                 else:
                     setattr(self, row[0], eval(row[1])) # pylint: disable=eval-used
+
+    def attempt_primary_api_restoration(self):
+        """Try to restore primary APIs if they become available again."""
+        from christine.api_selector import api_selector
+        from christine import log
+        
+        try:
+            if api_selector.attempt_primary_restoration():
+                log.parietal_lobe.info("Successfully restored one or more primary APIs")
+        except Exception as ex:
+            log.parietal_lobe.error("Error during primary API restoration attempt: %s", ex)
 
 # Instantiate
 STATE = Status()

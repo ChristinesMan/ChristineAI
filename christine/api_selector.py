@@ -160,5 +160,107 @@ class APISelector:
         # if no TTS API is available, return False
         return False
 
+    def failover_to_next_llm(self):
+        """Switch to the next available LLM after the current one fails."""
+        current_llm = STATE.current_llm
+        current_index = -1
+        
+        # Find the index of the current LLM
+        for i, llm in enumerate(self.llm_enabled):
+            if llm is current_llm:
+                current_index = i
+                break
+        
+        # Try the next LLMs in the list
+        for i in range(current_index + 1, len(self.llm_enabled)):
+            llm = self.llm_enabled[i]
+            log.parietal_lobe.debug('Trying failover to LLM: %s', llm.name)
+            if llm.is_available():
+                log.parietal_lobe.info('Failover successful to LLM: %s', llm.name)
+                STATE.current_llm = llm
+                return True
+        
+        # If we get here, no backup LLM is available
+        log.parietal_lobe.error('No backup LLM available for failover')
+        return False
+
+    def failover_to_next_stt(self):
+        """Switch to the next available STT after the current one fails."""
+        current_stt = STATE.current_stt
+        current_index = -1
+        
+        # Find the index of the current STT
+        for i, stt in enumerate(self.stt_enabled):
+            if stt is current_stt:
+                current_index = i
+                break
+        
+        # Try the next STTs in the list
+        for i in range(current_index + 1, len(self.stt_enabled)):
+            stt = self.stt_enabled[i]
+            log.parietal_lobe.debug('Trying failover to STT: %s', stt.name)
+            if stt.is_available():
+                log.parietal_lobe.info('Failover successful to STT: %s', stt.name)
+                STATE.current_stt = stt
+                return True
+        
+        # If we get here, no backup STT is available
+        log.parietal_lobe.error('No backup STT available for failover')
+        return False
+
+    def failover_to_next_tts(self):
+        """Switch to the next available TTS after the current one fails."""
+        current_tts = STATE.current_tts
+        current_index = -1
+        
+        # Find the index of the current TTS
+        for i, tts in enumerate(self.tts_enabled):
+            if tts is current_tts:
+                current_index = i
+                break
+        
+        # Try the next TTSs in the list
+        for i in range(current_index + 1, len(self.tts_enabled)):
+            tts = self.tts_enabled[i]
+            log.parietal_lobe.debug('Trying failover to TTS: %s', tts.name)
+            if tts.is_available():
+                log.parietal_lobe.info('Failover successful to TTS: %s', tts.name)
+                STATE.current_tts = tts
+                return True
+        
+        # If we get here, no backup TTS is available
+        log.parietal_lobe.error('No backup TTS available for failover')
+        return False
+
+    def attempt_primary_restoration(self):
+        """Periodically try to restore primary APIs if they become available again."""
+        restored_any = False
+        
+        # Try to restore primary LLM (first in list)
+        if len(self.llm_enabled) > 0:
+            primary_llm = self.llm_enabled[0]
+            if primary_llm is not STATE.current_llm and primary_llm.is_available():
+                log.parietal_lobe.info('Primary LLM %s is available again, switching back', primary_llm.name)
+                STATE.current_llm = primary_llm
+                restored_any = True
+        
+        # Try to restore primary STT (first in list)
+        if len(self.stt_enabled) > 0:
+            primary_stt = self.stt_enabled[0]
+            if primary_stt is not STATE.current_stt and primary_stt.is_available():
+                log.parietal_lobe.info('Primary STT %s is available again, switching back', primary_stt.name)
+                STATE.current_stt = primary_stt
+                restored_any = True
+        
+        # Try to restore primary TTS (first in list)
+        if len(self.tts_enabled) > 0:
+            primary_tts = self.tts_enabled[0]
+            if primary_tts is not STATE.current_tts and primary_tts.is_available():
+                log.parietal_lobe.info('Primary TTS %s is available again, switching back', primary_tts.name)
+                STATE.current_tts = primary_tts
+                restored_any = True
+        
+        return restored_any
+
 # instantiate
 api_selector = APISelector()

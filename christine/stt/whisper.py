@@ -78,7 +78,7 @@ class WhisperSTT(STTAPI):
         
         return wav_buffer
 
-    def process_audio(self, audio_data: bytes) -> str:
+    def process_audio_implementation(self, audio_data: bytes) -> str:
         """This function processes incoming audio data using OpenAI Whisper."""
 
         try:
