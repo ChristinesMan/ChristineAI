@@ -504,6 +504,90 @@ Consolidated memory:"""
         log.neocortex.debug('Asked: "%s". Answer: "%s". Distance %s', query_text, response.objects[0].properties['answer'], response.objects[0].metadata.distance)
         return f"I know because this came up {self.how_long_ago(response.objects[0].properties['date_happened'])}. {response.objects[0].properties['answer']}"
 
+    def get_dream_memories(self):
+        """Retrieves old memories for dream processing. Gets the two oldest memories by date_recalled 
+        (prioritizing never-recalled memories with date_recalled=0), then by oldest date_happened.
+        Only selects memories that are at least one month old to ensure sufficient age for dream processing.
+        Updates date_recalled so they don't get selected repeatedly."""
+        
+        log.neocortex.info('Searching for dream material from old memories')
+        
+        try:
+            # Only select memories that are at least one month old (30 days * 24 hours * 60 minutes * 60 seconds)
+            one_month_ago = time.time() - (30 * 24 * 60 * 60)
+            
+            # First, try to get memories that have never been recalled (date_recalled = 0) and are old enough
+            # Sort by oldest date_happened to get the most ancient memories first
+            response = self.memories.query.fetch_objects(
+                limit=10,  # Get more than we need to have selection options
+                where=Filter.by_property("date_recalled").equal(0) & Filter.by_property("date_happened").less_than(one_month_ago),
+                sort=self.memories.query.Sort.by_property("date_happened", ascending=True)
+            )
+            
+            dream_memories = []
+            
+            # If we found never-recalled memories, use up to 2 of them
+            if len(response.objects) > 0:
+                log.neocortex.info('Found %d never-recalled memories for dreams', len(response.objects))
+                for _, memory_obj in enumerate(response.objects[:2]):  # Take up to 2
+                    memory_text = memory_obj.properties['memory']
+                    memory_age = self.how_long_ago(memory_obj.properties['date_happened'])
+                    
+                    # Update date_recalled so it doesn't get selected again soon
+                    self.memories.data.update(
+                        uuid=memory_obj.uuid, 
+                        properties={"date_recalled": int(time.time())}
+                    )
+                    
+                    dream_memories.append({
+                        'text': memory_text,
+                        'age': memory_age,
+                        'type': 'never_recalled'
+                    })
+                    log.neocortex.debug('Selected never-recalled dream memory from %s: %s', memory_age, memory_text[:60] + '...')
+            
+            # If we need more memories, get the oldest recalled ones (but still at least one month old)
+            if len(dream_memories) < 2:
+                needed = 2 - len(dream_memories)
+                
+                # Get memories with the oldest date_recalled (excluding the ones we just updated)
+                # Must be at least one month old AND last recalled at least a week ago
+                response = self.memories.query.fetch_objects(
+                    limit=needed * 2,  # Get extras in case some are too recent
+                    where=Filter.by_property("date_recalled").less_than(time.time() - (7 * 24 * 60 * 60)) & Filter.by_property("date_happened").less_than(one_month_ago),
+                    sort=self.memories.query.Sort.by_property("date_recalled", ascending=True)
+                )
+                
+                if len(response.objects) > 0:
+                    log.neocortex.info('Found %d old recalled memories as additional dream material', len(response.objects))
+                    for memory_obj in response.objects[:needed]:  # Take what we need
+                        memory_text = memory_obj.properties['memory']
+                        memory_age = self.how_long_ago(memory_obj.properties['date_happened'])
+                        
+                        # Update date_recalled
+                        self.memories.data.update(
+                            uuid=memory_obj.uuid, 
+                            properties={"date_recalled": int(time.time())}
+                        )
+                        
+                        dream_memories.append({
+                            'text': memory_text,
+                            'age': memory_age,
+                            'type': 'old_recalled'
+                        })
+                        log.neocortex.debug('Selected old recalled dream memory from %s: %s', memory_age, memory_text[:60] + '...')
+            
+            if len(dream_memories) == 0:
+                log.neocortex.info('No suitable memories found for dream generation (memories must be at least one month old)')
+            else:
+                log.neocortex.info('Selected %d memories for dream generation', len(dream_memories))
+            
+            return dream_memories
+            
+        except Exception as ex:
+            log.neocortex.exception('Error retrieving dream memories: %s', ex)
+            return []
+
     def recall_proper_names(self, text: str):
         """This takes a string, basically one or more sentences, searches for Proper Names, and searches the neocortex.
         Updates the date_recalled property.

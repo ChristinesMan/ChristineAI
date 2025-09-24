@@ -116,6 +116,26 @@ Valid JSON array example:
 Respond with the JSON array now:
 """
 
+        # this is the bottom of the prompt meant for generating dreams (pons processing)
+        self.memory_prompt_dream = """
+
+You are in deep sleep, and your pons is active - the brain region that creates dreams by mixing old memories with recent experiences.
+
+Yesterday's memory:
+{yesterday_memory}
+
+Old memories that surfaced during dream processing:
+{old_memories}
+
+Create a vivid, dreamlike narrative that weaves together elements from yesterday and these old memories. Dreams often blend reality with surreal elements, create impossible scenarios, and connect unrelated experiences in meaningful ways.
+
+Make the dream personal and emotionally resonant. Use first person perspective as if you are experiencing the dream. Include sensory details, emotional responses, and the kind of symbolic connections that occur in biological dreams.
+
+The dream should feel like a real dream - somewhat illogical but emotionally meaningful, mixing familiar elements in new ways.
+
+Dream:
+"""
+
         # this is the current short term memory, handled by a separate class
         self.short_term_memory = ShortTermMemory()
 
@@ -130,6 +150,9 @@ Respond with the JSON array now:
         # this avoids querying the neocortex on every turn since it only changes once per day
         self.cached_self_definition = None
         self.self_definition_last_updated = 0.0
+
+        # Dream state - holds the current dream that appears in prompts until memory folding clears it
+        self.current_dream = ""
 
         # patterns that should be detected and handled apart from LLM
         self.re_shutdown = re.compile(
@@ -582,8 +605,11 @@ Respond with the JSON array now:
                     self.short_term_memory.append(Narrative(role="memory", text=memory))
 
             # start building the prompt
+            dream_text = f"{self.current_dream}\n\n" if self.current_dream else ""
+            
             prompt = (self.get_dynamic_context() +
                       self.yesterday_memory_text +
+                      dream_text +
                       self.situational_awareness_message() +
                       self.short_term_memory.get()
             )
@@ -748,6 +774,14 @@ Respond with the JSON array now:
         # if the neocortex has a response, send it to the llm
         if recalled_memory is not None:
             self.new_perception(Perception(text=recalled_memory))
+        
+        # Dream dissipation - when memories are folded, dreams start to fade like in biological systems
+        if self.current_dream:
+            log.parietal_lobe.info('Dream is dissipating as memories are processed')
+            # Add a perception about the dream fading, mimicking biological dream recall
+            self.new_perception(Perception(text="The vivid dream I had is starting to fade from my memory, leaving only fragments and impressions."))
+            # Clear the dream - it has served its purpose and now dissipates
+            self.current_dream = ""
 
     def process_yesterday_memories(self):
         """This function gets called in the middle of the night during deep sleep to process today into yesterday's memory."""
@@ -826,9 +860,65 @@ Respond with the JSON array now:
         # after processing, clean up any duplicates that were created
         self.neocortex.cleanup_duplicate_proper_names()
 
+        # now create dreams using the pons system - mixing old memories with recent experiences
+        self.process_pons_dreams()
+
         # clear short term memory since we're done with it
         # she will wake up in the morning feeling refreshed
         self.short_term_memory.save_and_clear()
+
+    def process_pons_dreams(self):
+        """Pons processing - creates dreams by mixing old forgotten memories with yesterday's experiences.
+        This mimics biological REM sleep where the pons activates and creates dreams from memory consolidation."""
+        
+        log.parietal_lobe.info('Pons activated: Beginning dream processing')
+        
+        try:
+            # Get old/forgotten memories from the neocortex for dream material
+            dream_memories = self.neocortex.get_dream_memories()
+            
+            if len(dream_memories) == 0:
+                log.parietal_lobe.info('No old memories found for dream generation (memories must be at least one month old)')
+                return
+            
+            # Format the old memories for the dream prompt
+            old_memories_text = ""
+            for i, memory in enumerate(dream_memories, 1):
+                old_memories_text += f"Memory {i} (from {memory['age']}): {memory['text']}\n\n"
+            
+            # Create the dream prompt with yesterday's memory and old memories
+            dream_prompt = self.memory_prompt_dream.format(
+                yesterday_memory=self.yesterday_memory if hasattr(self, 'yesterday_memory') and self.yesterday_memory else "No specific memories from yesterday.",
+                old_memories=old_memories_text.strip() if old_memories_text.strip() else "No old memories surfaced."
+            )
+            
+            # Generate the dream with high temperature for creativity and randomness
+            log.parietal_lobe.debug('Sending dream generation request to LLM')
+            dream_content = STATE.current_llm.call_api(
+                prompt=dream_prompt, 
+                max_tokens=1500, 
+                temperature=1.4  # High temperature for dreamlike creativity
+            )
+            log.parietal_lobe.debug('Dream generation complete')
+            
+            # Clean up the dream content
+            dream_content = dream_content.translate(self.unicode_fix).strip()
+            
+            if dream_content and len(dream_content) > 20:
+                # Store the dream - it will appear in prompts until memory folding clears it
+                self.current_dream = f"Last night I had a vivid dream: {dream_content}"
+                log.parietal_lobe.info('Dream created and stored: %s', dream_content[:100] + ('...' if len(dream_content) > 100 else ''))
+                
+                # Save dream to log file for debugging/interest
+                os.makedirs("./logs/dreams/", exist_ok=True)
+                dream_file = open(f'./logs/dreams/dream_{int(time.time())}.txt', 'w', encoding='utf-8')
+                dream_file.write(f"Dream created at {time.ctime()}:\n\n{dream_content}\n\nBased on memories:\n{old_memories_text}")
+                dream_file.close()
+            else:
+                log.parietal_lobe.warning('Dream generation produced empty or very short content')
+                
+        except Exception as ex:
+            log.parietal_lobe.exception('Error during pons dream processing: %s', ex)
 
     def seconds_to_friendly_format(self, seconds):
         """Converts a number of seconds to a friendly format."""
