@@ -482,6 +482,43 @@ Consolidated memory:"""
         log.neocortex.debug('Recalled memory (distance %s): %s', response.objects[0].metadata.distance, response.objects[0].properties['memory'])
         return random.choice(self.idle_remember).format(self.how_long_ago(response.objects[0].properties['date_happened']), response.objects[0].properties['memory'])
 
+    def random_memory_recall(self, recent_messages: str):
+        """Randomly recall a memory based on recent conversation context.
+        This provides more spontaneous, less predictable memory recall."""
+        
+        try:
+            # Use the recent messages as context for semantic search
+            response = self.memories.query.near_text(
+                query=recent_messages,
+                limit=3,  # Get a few options to choose from
+                distance=0.7,  # Slightly looser matching for variety
+                return_metadata=['distance'],
+                filters=Filter.by_property("date_recalled").less_than(time.time() - STATE.neocortex_recall_interval),
+            )
+
+            if len(response.objects) == 0:
+                log.neocortex.debug('No memories found for random recall')
+                return None
+
+            # Randomly pick one of the available memories
+            selected_memory = random.choice(response.objects)
+            
+            # Update the date_recalled property
+            self.memories.data.update(uuid=selected_memory.uuid, properties={"date_recalled": int(time.time())})
+
+            log.neocortex.info('Random memory recall (distance %s): %s', 
+                             selected_memory.metadata.distance, selected_memory.properties['memory'][:100])
+            
+            # Use the idle_remember templates for natural insertion
+            return random.choice(self.idle_remember).format(
+                self.how_long_ago(selected_memory.properties['date_happened']), 
+                selected_memory.properties['memory']
+            )
+            
+        except Exception as ex:
+            log.neocortex.error('Error during random memory recall: %s', ex)
+            return None
+
     def answer(self, query_text: str):
         """This takes a string and searches the neocortex for similar questions. Updates the date_recalled property."""
 

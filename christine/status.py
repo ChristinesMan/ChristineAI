@@ -116,13 +116,20 @@ class Status(threading.Thread):
         # this is the threshold for how long user's spoken text should be before it is allowed to interrupt char
         self.user_interrupt_char_threshold = 20
 
-        # this is the minimum number of narratives before a bunch of old narratives can be shipped off to cerebral cortex for summarize
-        self.memory_folding_min_narratives = 10
-        # this is how many minutes * seconds delay between the last message before shipping off narratives
-        self.memory_folding_delay_threshold = 3 * 60
+        # this is the minimum number of narratives before a bunch of old narratives get folded
+        self.memory_folding_min_narratives = 25
+        # this is the base delay in seconds between the last message before shipping off narratives
+        # this will be dynamically adjusted based on message count
+        self.memory_folding_base_delay = 8 * 60  # 8 minutes base delay
+        # maximum delay before forced folding (regardless of message count)
+        self.memory_folding_max_delay = 20 * 60  # 20 minutes maximum
 
         # after a memory has emerged from the neocortex, it is not allowed to come up again for a while (10 days)
         self.neocortex_recall_interval = 10 * 24 * 60 * 60
+        
+        # random memory recall settings - more cowbell!
+        self.random_memory_recall_chance = 0.15  # 15% chance per perception cycle
+        self.random_memory_recall_min_messages = 3  # need at least 3 messages for context
 
         # there is an intermittent bug where the wernicke locks up at the very start
         # I don't want the LLM to be able to talk until the wernicke is ready
@@ -178,7 +185,10 @@ class Status(threading.Thread):
             "additional_perception_wait_seconds": str(self.additional_perception_wait_seconds),
             "user_interrupt_char_threshold": str(self.user_interrupt_char_threshold),
             "memory_folding_min_narratives": str(self.memory_folding_min_narratives),
-            "memory_folding_delay_threshold": str(self.memory_folding_delay_threshold),
+            "memory_folding_base_delay": str(self.memory_folding_base_delay),
+            "memory_folding_max_delay": str(self.memory_folding_max_delay),
+            "random_memory_recall_chance": f"{self.random_memory_recall_chance:.2f}",
+            "random_memory_recall_min_messages": str(self.random_memory_recall_min_messages),
             "wernicke_ok": str(self.wernicke_ok),
         }
 
@@ -228,6 +238,25 @@ class Status(threading.Thread):
 
                 else:
                     setattr(self, row[0], eval(row[1])) # pylint: disable=eval-used
+
+    def get_dynamic_memory_folding_delay(self, message_count: int) -> float:
+        """Calculate dynamic memory folding delay based on message count.
+        More messages = shorter delay. Less messages = longer delay."""
+        
+        if message_count <= self.memory_folding_min_narratives:
+            return self.memory_folding_max_delay
+        
+        # Calculate scaling factor: more messages = shorter delay
+        # At min_narratives (25), use max_delay (20 min)
+        # At double min_narratives (50), use base_delay (8 min)  
+        # Beyond that, delay continues to decrease
+        scaling_factor = max(0.3, self.memory_folding_min_narratives / message_count)
+        
+        # Calculate delay: starts at max_delay, scales down to base_delay, then lower
+        dynamic_delay = self.memory_folding_base_delay + ((self.memory_folding_max_delay - self.memory_folding_base_delay) * scaling_factor)
+        
+        # Ensure we don't go below 2 minutes for very high message counts
+        return max(120, dynamic_delay)
 
     def attempt_primary_api_restoration(self):
         """Try to restore primary APIs if they become available again."""

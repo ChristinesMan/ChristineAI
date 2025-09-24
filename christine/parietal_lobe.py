@@ -365,14 +365,19 @@ Dream:
                     # process the new perceptions ourselves now
                     self.process_new_perceptions()
 
-                # if it has been 5 minutes since the last perception, fold the recent memories
-                if self.last_message_time + STATE.memory_folding_delay_threshold < time.time() and self.short_term_memory.recent_messages > STATE.memory_folding_min_narratives:
-                    log.memory_operations.info("MEMORY_FOLD_TRIGGER: Folding %d recent messages after %d seconds of silence", 
-                                             self.short_term_memory.recent_messages, 
-                                             int(time.time() - self.last_message_time))
+                # dynamic memory folding based on message count - more messages = shorter delay
+                if self.short_term_memory.recent_messages > STATE.memory_folding_min_narratives:
+                    dynamic_delay = STATE.get_dynamic_memory_folding_delay(self.short_term_memory.recent_messages)
+                    time_since_last = time.time() - self.last_message_time
+                    
+                    if time_since_last > dynamic_delay:
+                        log.memory_operations.info("MEMORY_FOLD_TRIGGER: Folding %d recent messages after %d seconds (dynamic delay: %d seconds)", 
+                                                 self.short_term_memory.recent_messages, 
+                                                 int(time_since_last),
+                                                 int(dynamic_delay))
 
-                    # handle memory folding ourselves now
-                    self.fold_recent_memories()
+                        # handle memory folding ourselves now
+                        self.fold_recent_memories()
 
                 time.sleep(0.25)
 
@@ -604,6 +609,24 @@ Dream:
                 for memory in memories:
                     self.short_term_memory.append(Narrative(role="memory", text=memory))
 
+            # RANDOM MEMORY RECALL - More cowbell! 🔔
+            # Roll the dice to see if we should spontaneously recall a memory
+            if (self.short_term_memory.recent_messages >= STATE.random_memory_recall_min_messages and 
+                random.random() < STATE.random_memory_recall_chance):
+                
+                log.memory_operations.info("RANDOM_MEMORY_ROLL: Rolling for random memory recall (%.1f chance)", 
+                                         STATE.random_memory_recall_chance * 100)
+                
+                # Use recent conversation context for semantic memory search
+                recent_context = self.short_term_memory.recent[-500:]  # Last 500 chars for context
+                random_memory = self.neocortex.random_memory_recall(recent_context)
+                
+                if random_memory is not None:
+                    log.memory_operations.info("RANDOM_MEMORY_SUCCESS: Spontaneous memory recalled")
+                    self.short_term_memory.append(Narrative(role="memory", text=random_memory))
+                else:
+                    log.memory_operations.debug("RANDOM_MEMORY_NONE: No suitable memory found for random recall")
+
             # start building the prompt
             dream_text = f"{self.current_dream}\n\n" if self.current_dream else ""
             
@@ -766,14 +789,6 @@ Dream:
 
         # send the memory for folding
         self.short_term_memory.fold(folded_memory)
-
-        # this is also a good time to see if the folded memory triggers anything from the neocortex
-        log.memory_operations.debug("NEOCORTEX_RECALL: Checking if folded memory triggers any stored memories")
-        recalled_memory = self.neocortex.recall(folded_memory)
-
-        # if the neocortex has a response, send it to the llm
-        if recalled_memory is not None:
-            self.new_perception(Perception(text=recalled_memory))
         
         # Dream dissipation - when memories are folded, dreams start to fade like in biological systems
         if self.current_dream:

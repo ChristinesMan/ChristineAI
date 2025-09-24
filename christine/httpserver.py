@@ -159,7 +159,10 @@ def api_status_update():
             "additional_perception_wait_seconds": float,
             "user_interrupt_char_threshold": int,
             "memory_folding_min_narratives": int,
-            "memory_folding_delay_threshold": int,
+            "memory_folding_base_delay": int,
+            "memory_folding_max_delay": int,
+            "random_memory_recall_chance": float,
+            "random_memory_recall_min_messages": int,
             "memory_days": int,
             "shush_please_honey": bool,
             "perceptions_blocked": bool,
@@ -189,7 +192,7 @@ def api_status_update():
                     elif var_type == int:
                         converted_value = int(float(value))  # Allow float input for int fields
                         # Ensure positive values for certain fields
-                        if var_name in ['user_interrupt_char_threshold', 'memory_folding_min_narratives', 'memory_folding_delay_threshold', 'memory_days']:
+                        if var_name in ['user_interrupt_char_threshold', 'memory_folding_min_narratives', 'memory_folding_base_delay', 'memory_folding_max_delay', 'memory_days']:
                             converted_value = max(1, converted_value)
                     else:  # str
                         converted_value = str(value).strip()
