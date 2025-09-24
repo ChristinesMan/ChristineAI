@@ -5,7 +5,7 @@ backups
 logs
 dev
 short_term_memory.json
-long_term_memory.json
+memory_yesterday.txt
 messages.log
 christine.sqlite
 config.ini

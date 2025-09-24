@@ -37,7 +37,7 @@ def auth_middleware(callback):
                 json_data = request.json
                 if json_data is not None:
                     token = json_data.get('token')
-            except:
+            except: #pylint: disable=bare-except
                 pass
         
         # Check if token matches

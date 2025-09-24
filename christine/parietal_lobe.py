@@ -16,7 +16,6 @@ from christine.figment import Figment
 from christine.perception import Perception
 from christine.narrative import Narrative
 from christine.short_term_memory import ShortTermMemory
-from christine.long_term_memory import LongTermMemory
 from christine.neocortex import Neocortex
 
 class ParietalLobe(threading.Thread):
@@ -120,8 +119,9 @@ Respond with the JSON array now:
         # this is the current short term memory, handled by a separate class
         self.short_term_memory = ShortTermMemory()
 
-        # paragraphs that summarize the events of yesterday and older. Handled by a separate class
-        self.long_term_memory = LongTermMemory()
+        # yesterday's memory - a simple string that summarizes yesterday's events
+        self.yesterday_memory = ""
+        self.yesterday_memory_text = ""  # formatted for prompt inclusion
 
         # the neocortex is where the memories are stored and retrieved
         self.neocortex = Neocortex()
@@ -279,6 +279,32 @@ Respond with the JSON array now:
         except FileNotFoundError:
             self.downtime_seconds = 0.0
 
+        # load yesterday's memory on startup
+        self.load_yesterday_memory()
+
+    def load_yesterday_memory(self):
+        """Load yesterday's memory from file."""
+        try:
+            with open('memory_yesterday.txt', 'r', encoding='utf-8') as f:
+                self.yesterday_memory = f.read().strip()
+                if self.yesterday_memory:
+                    self.yesterday_memory_text = f'Yesterday\n{self.yesterday_memory}\n\n'
+                    log.memory_operations.info("YESTERDAY_LOAD: Loaded yesterday's memory - '%s'", 
+                                             self.yesterday_memory[:100] + ('...' if len(self.yesterday_memory) > 100 else ''))
+                else:
+                    self.yesterday_memory_text = ""
+        except FileNotFoundError:
+            log.parietal_lobe.debug("No yesterday memory file found. Starting fresh.")
+            self.yesterday_memory = ""
+            self.yesterday_memory_text = ""
+
+    def save_yesterday_memory(self):
+        """Save yesterday's memory to file."""
+        with open('memory_yesterday.txt', 'w', encoding='utf-8') as f:
+            f.write(self.yesterday_memory)
+        log.memory_operations.info("YESTERDAY_SAVE: Saved yesterday's memory - '%s'", 
+                                 self.yesterday_memory[:100] + ('...' if len(self.yesterday_memory) > 100 else ''))
+
     def run(self):
 
         # these are circular imports, but it's necessary, queue mass hysteria
@@ -307,7 +333,7 @@ Respond with the JSON array now:
                 # graceful shutdown
                 if STATE.please_shut_down:
                     self.short_term_memory.save()
-                    self.long_term_memory.save()
+                    self.save_yesterday_memory()
                     break
 
                 # this starts sending perceptions as soon as there's any queued
@@ -557,7 +583,7 @@ Respond with the JSON array now:
 
             # start building the prompt
             prompt = (self.get_dynamic_context() +
-                      self.long_term_memory.memory_text +
+                      self.yesterday_memory_text +
                       self.situational_awareness_message() +
                       self.short_term_memory.get()
             )
@@ -723,8 +749,8 @@ Respond with the JSON array now:
         if recalled_memory is not None:
             self.new_perception(Perception(text=recalled_memory))
 
-    def cycle_long_term_memory(self):
-        """This function gets called in the middle of the night during deep sleep."""
+    def process_yesterday_memories(self):
+        """This function gets called in the middle of the night during deep sleep to process today into yesterday's memory."""
 
         # start building the prompt to be sent over to the api, starting with the top of the special prompt for memory processing
         prompt = self.memory_prompt_top
@@ -747,15 +773,20 @@ Respond with the JSON array now:
         prompt_yesterday = prompt + self.memory_prompt_yesterday
 
         # process using the current LLM
-        log.parietal_lobe.debug('Sending to api for long term memory.')
+        log.parietal_lobe.debug('Sending to api for yesterday memory processing.')
         memory = STATE.current_llm.call_api(prompt=prompt_yesterday, max_tokens=5000, temperature=1.2)
         log.parietal_lobe.debug('Sending to api complete.')
 
-        # fix chars in the long term memory
+        # fix chars in the yesterday memory
         memory = memory.translate(self.unicode_fix).replace('\n', ' ').strip()
 
-        # save the memory
-        self.long_term_memory.append(memory)
+        # save yesterday's memory (replace any existing memory)
+        self.yesterday_memory = memory
+        if self.yesterday_memory:
+            self.yesterday_memory_text = f'Yesterday\n{self.yesterday_memory}\n\n'
+        else:
+            self.yesterday_memory_text = ""
+        self.save_yesterday_memory()
 
         # now on to the memories to be stored way long term, in the neocortex
         prompt_neocortex = prompt + self.memory_prompt_loose_memories
@@ -1109,9 +1140,9 @@ Horniness: {horniness_text}.
         ])))
 
     def sleep_midnight_task(self):
-        """This is called by the sleep module when the time comes to run the midnight task of moving the memories from the day into long term memory."""
+        """This is called by the sleep module when the time comes to run the midnight task of moving the memories from the day into yesterday's memory."""
 
-        self.cycle_long_term_memory()
+        self.process_yesterday_memories()
         
         # Refresh the cached self-definition since proper names may have been updated during memory processing
         log.parietal_lobe.info('Refreshing self-definition cache after midnight memory processing')

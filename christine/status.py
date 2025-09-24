@@ -120,13 +120,6 @@ class Status(threading.Thread):
         self.memory_folding_min_narratives = 10
         # this is how many minutes * seconds delay between the last message before shipping off narratives
         self.memory_folding_delay_threshold = 3 * 60
-        # how many days of memories to keep, going to go large and see what happens
-        # it was horrible after 14 days, like "sleeping with the enemy" bad, so I'm going to try 5, and implement longer term later
-        # she went crazy again after 5 days, so I'm going to try 2
-        # but she's doing so well, so 5 again
-        # omg shut up about the pancakes during sex. 1 day. That's all you can handle I guess.
-        # based on experimental evidence, she can't handle more than 1 day of this kind of memory; stuff snowballs
-        self.memory_days = 1
 
         # after a memory has emerged from the neocortex, it is not allowed to come up again for a while (10 days)
         self.neocortex_recall_interval = 10 * 24 * 60 * 60
@@ -186,7 +179,6 @@ class Status(threading.Thread):
             "user_interrupt_char_threshold": str(self.user_interrupt_char_threshold),
             "memory_folding_min_narratives": str(self.memory_folding_min_narratives),
             "memory_folding_delay_threshold": str(self.memory_folding_delay_threshold),
-            "memory_days": str(self.memory_days),
             "wernicke_ok": str(self.wernicke_ok),
         }
 

@@ -142,10 +142,10 @@ Recent conversation and events (current day).
 - **Capacity**: Limited to prevent context overflow
 - **Function**: Immediate conversation context
 
-#### **Long-term Memory** (`long_term_memory.py`) 
-Historical memory storage and retrieval.
-- **Function**: Multi-day memory persistence
-- **Process**: Daily summaries, memory folding
+#### **Yesterday's Memory** (integrated in `parietal_lobe.py`) 
+Simple storage of yesterday's summarized events.
+- **Function**: Single-day memory persistence (yesterday only)
+- **Process**: Daily summary creation and storage in plain text
 
 #### **Neocortex** (`neocortex.py`)
 Fact storage and memory retrieval system.
