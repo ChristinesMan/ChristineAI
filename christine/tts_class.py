@@ -34,4 +34,4 @@ class TTSAPI:
                 return STATE.current_tts.synthesize_speech_implementation(text)
             else:
                 log.parietal_lobe.error("No backup TTS available, failing speech synthesis")
-                return None
+                return None  # TTS can legitimately return None if no audio file generated

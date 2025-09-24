@@ -84,12 +84,9 @@ class ChubSTT(STTAPI):
                 'User-Agent': 'ChristineAI/1.0'
             }
             
-            # Reset buffer position before sending
-            wav_buffer.seek(0)
-            
             # Prepare multipart file upload
             files = {
-                'audio': ('audio.wav', wav_buffer, 'audio/wav')
+                'sample': ('audio.wav', wav_buffer, 'audio/wav')
             }
             
             # Send request to chub STT endpoint
@@ -122,16 +119,16 @@ class ChubSTT(STTAPI):
                         return ""  # Return empty string for silent/quiet audio (not an error)
                 except: # pylint: disable=bare-except
                     pass
-                log.parietal_lobe.error("Chub STT API error: %d - %s", response.status_code, response.text)
-                return None
+                # For other 400 errors, raise an exception to trigger failover
+                raise requests.HTTPError(f"Chub STT API error: {response.status_code} - {response.text}")
             
             else:
-                log.parietal_lobe.error("Chub STT API error: %d - %s", response.status_code, response.text)
-                return None
+                # For all other HTTP errors (including 500), raise an exception to trigger failover
+                raise requests.HTTPError(f"Chub STT API error: {response.status_code} - {response.text}")
 
         except (SSLError, TimeoutError, requests.RequestException) as ex:
-            log.parietal_lobe.exception("Chub STT connection error: %s", ex)
-            return None
+            # Re-raise network/connection errors to trigger failover
+            raise ex
         except Exception as ex:
-            log.parietal_lobe.error("Error processing audio with Chub STT: %s", ex)
-            return None
+            # Re-raise any other errors to trigger failover
+            raise RuntimeError(f"Error processing audio with Chub STT: {ex}") from ex

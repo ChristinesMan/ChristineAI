@@ -2,6 +2,7 @@
 import os
 import re
 import wave
+import requests
 from requests import post, Timeout, HTTPError
 
 from christine import log
@@ -62,12 +63,9 @@ class BrocaServerTTS(TTSAPI):
                     return file_path
 
                 else:
-
-                    log.broca_main.error("Broca server returned bad code. Text: %s  Status: %s  Response: %s", text, response.status_code, response.text)
-                    return None
+                    # Raise exception for HTTP errors to trigger failover
+                    raise requests.HTTPError(f"Broca server returned bad code. Text: {text}  Status: {response.status_code}  Response: {response.text}")
 
             except (ConnectionError, Timeout, HTTPError) as ex:
-
-                # if the connection failed, log the error
-                log.broca_main.error("Broca server not reachable. Text: %s  Error: %s", text, ex)
-                return None
+                # Re-raise connection errors to trigger failover
+                raise ex

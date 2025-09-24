@@ -34,4 +34,4 @@ class STTAPI:
                 return STATE.current_stt.process_audio_implementation(audio_data)
             else:
                 log.parietal_lobe.error("No backup STT available, failing audio processing")
-                return None
+                return ""  # Return empty string instead of None
