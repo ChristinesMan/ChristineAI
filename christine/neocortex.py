@@ -554,11 +554,10 @@ Consolidated memory:"""
             one_month_ago = time.time() - (30 * 24 * 60 * 60)
             
             # First, try to get memories that have never been recalled (date_recalled = 0) and are old enough
-            # Sort by oldest date_happened to get the most ancient memories first
+            # We'll sort by oldest date_happened in Python after fetching
             response = self.memories.query.fetch_objects(
                 limit=10,  # Get more than we need to have selection options
-                where=Filter.by_property("date_recalled").equal(0) & Filter.by_property("date_happened").less_than(one_month_ago),
-                sort=self.memories.query.Sort.by_property("date_happened", ascending=True)
+                where=Filter.by_property("date_recalled").equal(0) & Filter.by_property("date_happened").less_than(one_month_ago)
             )
             
             dream_memories = []
@@ -566,7 +565,9 @@ Consolidated memory:"""
             # If we found never-recalled memories, use up to 2 of them
             if len(response.objects) > 0:
                 log.neocortex.info('Found %d never-recalled memories for dreams', len(response.objects))
-                for _, memory_obj in enumerate(response.objects[:2]):  # Take up to 2
+                # Sort by oldest date_happened to get the most ancient memories first
+                sorted_objects = sorted(response.objects, key=lambda obj: obj.properties.get('date_happened', 0))
+                for _, memory_obj in enumerate(sorted_objects[:2]):  # Take up to 2 oldest
                     memory_text = memory_obj.properties['memory']
                     memory_age = self.how_long_ago(memory_obj.properties['date_happened'])
                     
@@ -591,13 +592,14 @@ Consolidated memory:"""
                 # Must be at least one month old AND last recalled at least a week ago
                 response = self.memories.query.fetch_objects(
                     limit=needed * 2,  # Get extras in case some are too recent
-                    where=Filter.by_property("date_recalled").less_than(time.time() - (7 * 24 * 60 * 60)) & Filter.by_property("date_happened").less_than(one_month_ago),
-                    sort=self.memories.query.Sort.by_property("date_recalled", ascending=True)
+                    where=Filter.by_property("date_recalled").less_than(time.time() - (7 * 24 * 60 * 60)) & Filter.by_property("date_happened").less_than(one_month_ago)
                 )
                 
                 if len(response.objects) > 0:
                     log.neocortex.info('Found %d old recalled memories as additional dream material', len(response.objects))
-                    for memory_obj in response.objects[:needed]:  # Take what we need
+                    # Sort by oldest date_recalled to get the longest-forgotten memories
+                    sorted_objects = sorted(response.objects, key=lambda obj: obj.properties.get('date_recalled', 0))
+                    for memory_obj in sorted_objects[:needed]:  # Take what we need
                         memory_text = memory_obj.properties['memory']
                         memory_age = self.how_long_ago(memory_obj.properties['date_happened'])
                         
