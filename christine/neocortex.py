@@ -550,14 +550,14 @@ Consolidated memory:"""
         log.neocortex.info('Searching for dream material from old memories')
         
         try:
-            # Only select memories that are at least one month old (30 days * 24 hours * 60 minutes * 60 seconds)
-            one_month_ago = time.time() - (30 * 24 * 60 * 60)
+            # Only select memories that are at least 90 days old (90 days * 24 hours * 60 minutes * 60 seconds)
+            old_memories_cutoff = time.time() - (90 * 24 * 60 * 60)
             
             # First, try to get memories that have never been recalled (date_recalled = 0) and are old enough
             # We'll sort by oldest date_happened in Python after fetching
             response = self.memories.query.fetch_objects(
                 limit=10,  # Get more than we need to have selection options
-                where=Filter.by_property("date_recalled").equal(0) & Filter.by_property("date_happened").less_than(one_month_ago)
+                where=Filter.by_property("date_recalled").equal(0) & Filter.by_property("date_happened").less_than(old_memories_cutoff)
             )
             
             dream_memories = []
@@ -571,28 +571,27 @@ Consolidated memory:"""
                     memory_text = memory_obj.properties['memory']
                     memory_age = self.how_long_ago(memory_obj.properties['date_happened'])
                     
-                    # Update date_recalled so it doesn't get selected again soon
-                    self.memories.data.update(
-                        uuid=memory_obj.uuid, 
-                        properties={"date_recalled": int(time.time())}
-                    )
+                    # Dreams are a cleaning process - delete these never-recalled memories after using them
+                    # These are often weird, fragmented, or unimportant memories that work great in dreams
+                    log.neocortex.info('Deleting never-recalled memory for dream cleaning: %s', memory_text[:100] + '...')
+                    self.memories.data.delete_by_id(memory_obj.uuid)
                     
                     dream_memories.append({
                         'text': memory_text,
                         'age': memory_age,
-                        'type': 'never_recalled'
+                        'type': 'never_recalled_deleted'
                     })
-                    log.neocortex.debug('Selected never-recalled dream memory from %s: %s', memory_age, memory_text[:60] + '...')
+                    log.neocortex.debug('Selected and deleted never-recalled dream memory from %s: %s', memory_age, memory_text[:60] + '...')
             
-            # If we need more memories, get the oldest recalled ones (but still at least one month old)
+            # If we need more memories, get the oldest recalled ones (but still at least 3 months old)
             if len(dream_memories) < 2:
                 needed = 2 - len(dream_memories)
                 
                 # Get memories with the oldest date_recalled (excluding the ones we just updated)
-                # Must be at least one month old AND last recalled at least a week ago
+                # Must be at least three months old AND last recalled at least a week ago
                 response = self.memories.query.fetch_objects(
                     limit=needed * 2,  # Get extras in case some are too recent
-                    where=Filter.by_property("date_recalled").less_than(time.time() - (7 * 24 * 60 * 60)) & Filter.by_property("date_happened").less_than(one_month_ago)
+                    where=Filter.by_property("date_recalled").less_than(time.time() - (7 * 24 * 60 * 60)) & Filter.by_property("date_happened").less_than(old_memories_cutoff)
                 )
                 
                 if len(response.objects) > 0:
