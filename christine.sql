@@ -27,9 +27,6 @@ INSERT INTO "status" VALUES (NULL,'wakefulness','1.0','f');
 INSERT INTO "status" VALUES (NULL,'horny','0.0','f');
 INSERT INTO "status" VALUES (NULL,'sexual_arousal','0.0','f');
 INSERT INTO "status" VALUES (NULL,'breath_intensity','0.00','f');
-INSERT INTO "status" VALUES (NULL,'sleep_tilt_x','0.62','f');
-INSERT INTO "status" VALUES (NULL,'sleep_tilt_y','3.15','f');
-INSERT INTO "status" VALUES (NULL,'silent_mode','False','b');
 
 INSERT INTO "sounds" VALUES (1,'*yawns*','sounds/conversation/groans.wav',0.75,0.5,300,'sleepy',1);
 INSERT INTO "sounds" VALUES (2,'Hmm hmm.','sounds/conversation/hmm_hm.wav',0.75,0.5,300,'sleepy',1);

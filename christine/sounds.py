@@ -32,29 +32,29 @@ class SoundsDB():
 
 
     def build_sound_collections(self):
-        """This is done at the beginning to build the sound collections."""
-
-        db_field_names = database.field_names_for_table("sounds")
-        rows = database.do_query("SELECT * FROM sounds")
+        """This is done at the beginning to build the sound collections using modern SQLAlchemy methods."""
 
         self.collections = {}
         self.sounds = {}
 
-        # Handle empty database or None response
-        if rows is None:
-            log.main.warning("No sounds found in database or database query returned None")
+        # Use the new type-safe method to get all sounds
+        sound_records = database.get_all_sounds()
+        
+        # Handle empty database
+        if not sound_records:
+            log.main.warning("No sounds found in database")
             return
 
-        for row in rows:
-            sound_id = row[db_field_names["id"]]
-            file_path = row[db_field_names["file_path"]]
-            collections = row[db_field_names["collections"]].split(',')
-            replay_wait = row[db_field_names["replay_wait"]]
-            intensity = row[db_field_names["intensity"]]
-            pause_wernicke = bool(row[db_field_names["pause_processing"]])
+        for record in sound_records:
+            sound_id = record["id"]
+            file_path = record["file_path"]
+            collections = record["collections"].split(',')
+            replay_wait = record["replay_wait"]
+            intensity = record["intensity"]
+            pause_wernicke = record["pause_processing"]
 
             if os.path.isfile(file_path) is False:
-                log.main.warning('This sound does not exist in the file system: %s', row)
+                log.main.warning('This sound does not exist in the file system: %s (ID: %s)', file_path, sound_id)
                 continue
 
             if replay_wait != 0:

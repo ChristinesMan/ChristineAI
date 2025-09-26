@@ -141,6 +141,25 @@ class Status(threading.Thread):
         # How often to try restoring primary APIs (in seconds)
         self.primary_restoration_interval = 300.0  # 5 minutes
 
+        # Define which status variables should be persisted to the database.
+        # This makes it explicit and easier to manage than database entries.
+        # Returns dict of {variable_name: type_code}
+        # Type codes:
+        # 'f' = float (0.0-1.0 ranges mostly)
+        # 'b' = boolean (True/False)  
+        # 'i' = integer
+        # 's' = string
+        self.persisted_vars = {
+
+            # Core environmental and state variables
+            'light_level': 'f',          # Ambient light level (0.0-1.0)
+            'wakefulness': 'f',          # How awake Christine is (0.0-1.0)
+            'horny': 'f',               # Long-term arousal level (0.0-1.0) 
+            'sexual_arousal': 'f',       # Short-term arousal (0.0-1.0)
+            'breath_intensity': 'f',     # Breathing sound intensity
+            
+        }
+
     def run(self):
         self.load_state()
 
@@ -194,50 +213,70 @@ class Status(threading.Thread):
 
     def save_state(self):
         """
-        Save the current state to the sqlite db
+        Save explicitly defined persisted variables to database using modern type-safe methods.
+        Only saves variables defined in get_persisted_variables().
         """
-
-        rows = database.do_query("SELECT id,name,type FROM status")
-        if rows is not None:
-            for row in rows:
-                if row[2] == "f":
-                    set_value = f"{getattr(self, row[1]):.2f}"
-                else:
-                    set_value = getattr(self, row[1])
-                database.do_query(
-                    f"UPDATE status SET value = '{set_value}' WHERE id = {row[0]}"
-                )
-
-            database.do_commit()
+        
+        for var_name, type_code in self.persisted_vars.items():
+            # Only save if the attribute exists on this object
+            if not hasattr(self, var_name):
+                from christine import log
+                log.main.warning("Persisted variable '%s' not found on Status object", var_name)
+                continue
+                
+            # Format the value based on type
+            if type_code == "f":
+                set_value = f"{getattr(self, var_name):.2f}"
+            else:
+                set_value = str(getattr(self, var_name))
+            
+            # Use the new type-safe update method (will create if doesn't exist)
+            success = database.update_status(var_name, set_value)
+            
+            # If update failed, try adding the status variable
+            if not success:
+                database.add_status(var_name, set_value, type_code)
 
     def load_state(self):
         """
-        Grabs status variables from db on startup.
-        Not all state vars are saved to the db.
+        Load explicitly defined persisted variables from database using modern type-safe methods.
+        Only loads variables defined in get_persisted_variables().
         """
-
-        rows = database.do_query("SELECT name,value,type FROM status")
-        if rows is not None:
-
-            for row in rows:
-
-                if row[2] == "f":
-                    setattr(self, row[0], float(row[1]))
-
-                elif row[2] == "b":
-                    if row[1] == "True":
-                        setattr(self, row[0], True)
-                    else:
-                        setattr(self, row[0], False)
-
-                elif row[2] == "i":
-                    setattr(self, row[0], int(row[1]))
-
-                elif row[2] == "s":
-                    setattr(self, row[0], str(row[1]))
-
+        
+        for var_name, expected_type in self.persisted_vars.items():
+            # Get the specific status record
+            record = database.get_status_by_name(var_name)
+            
+            if record is None:
+                from christine import log
+                log.main.debug("Status variable '%s' not found in database, using default value", var_name)
+                continue
+                
+            value = record["value"]
+            type_code = record["type"]
+            
+            # Verify type matches what we expect
+            if type_code != expected_type:
+                from christine import log
+                log.main.warning("Type mismatch for '%s': expected '%s', got '%s'", 
+                               var_name, expected_type, type_code)
+            
+            try:
+                if expected_type == "f":
+                    setattr(self, var_name, float(value))
+                elif expected_type == "b":
+                    setattr(self, var_name, value == "True")
+                elif expected_type == "i":
+                    setattr(self, var_name, int(value))
+                elif expected_type == "s":
+                    setattr(self, var_name, str(value))
                 else:
-                    setattr(self, row[0], eval(row[1])) # pylint: disable=eval-used
+                    from christine import log
+                    log.main.warning("Unknown type code '%s' for variable '%s'", expected_type, var_name)
+                    
+            except (ValueError, TypeError) as e:
+                from christine import log
+                log.main.warning("Error loading status '%s' with value '%s': %s", var_name, value, e)
 
     def get_dynamic_memory_folding_delay(self, message_count: int) -> float:
         """Calculate dynamic memory folding delay based on message count.
