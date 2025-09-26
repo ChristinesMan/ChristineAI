@@ -68,7 +68,6 @@ class Neocortex:
 
         self.client = None
         self.memories = None
-        self.questions = None
         self.proper_names = None
         self.proper_names_regex = None
         
@@ -157,9 +156,6 @@ class Neocortex:
                     elif 'propernames' in file_path:
                         self.process_proper_names_json(repaired_json)
                         log.neocortex.info("Successfully recovered proper names from %s", file_path)
-                    elif 'questions' in file_path:
-                        self.process_questions_json(repaired_json)
-                        log.neocortex.info("Successfully recovered questions from %s", file_path)
                     else:
                         log.neocortex.warning("Unknown borked file type: %s", file_path)
                         failed_count += 1
@@ -229,52 +225,6 @@ class Neocortex:
 
         # run a backup
         self.backup('memories')
-
-    def process_questions_json(self, questions_json: str):
-        """Takes the json formatted response from the llm and stores it in the neocortex."""
-
-        # First attempt: direct JSON parsing
-        try:
-            questions = json_loads(questions_json)
-        except JSONDecodeError:
-            log.neocortex.warning("JSON decode failed, attempting repair")
-            
-            # Second attempt: JSON repair
-            repaired_json = self.attempt_json_repair(questions_json)
-            
-            if repaired_json:
-                try:
-                    questions = json_loads(repaired_json)
-                    log.neocortex.info("Successfully repaired JSON for questions")
-                except JSONDecodeError:
-                    repaired_json = None
-            
-            # Final fallback: save as borked
-            if not repaired_json:
-                log.neocortex.error("All repair attempts failed for questions")
-                borked_file = f'./borked_questions_{int(time.time())}.json'
-                with open(file=borked_file, mode='w', encoding='utf-8') as backup_file:
-                    backup_file.write(questions_json)
-                log.neocortex.error("Borked questions saved to %s", borked_file)
-                return
-
-        # iterate over the list
-        for question in questions:
-
-            # check if the item is a dict
-            if isinstance(question, dict):
-
-                # check if the dict has 'question' and 'answer' keys
-                if 'question' in question and 'answer' in question:
-
-                    # store the question
-                    log.neocortex.debug("Storing question: %s", question['question'])
-                    question['date_happened'] = int(time.time())
-                    question['date_recalled'] = 0
-                    self.questions.data.insert(question)
-
-        # run a backup
-        self.backup('questions')
 
     def process_proper_names_json(self, proper_names_json: str):
         """Takes the json formatted response from the llm and stores it in the neocortex."""
@@ -519,32 +469,10 @@ Consolidated memory:"""
             log.neocortex.error('Error during random memory recall: %s', ex)
             return None
 
-    def answer(self, query_text: str):
-        """This takes a string and searches the neocortex for similar questions. Updates the date_recalled property."""
-
-        response = self.questions.query.near_text(
-            query=query_text,
-            limit=1,
-            distance=0.5,
-            return_metadata=['distance'],
-            filters=Filter.by_property("date_recalled").less_than(time.time() - STATE.neocortex_recall_interval),
-        )
-
-        # the response will be empty if there's no clear match
-        if len(response.objects) == 0:
-            log.neocortex.debug('No answers found.')
-            return None
-
-        # update the date_recalled property so that we don't trigger this over and over
-        self.questions.data.update(uuid=response.objects[0].uuid, properties={"date_recalled": int(time.time())})
-
-        log.neocortex.debug('Asked: "%s". Answer: "%s". Distance %s', query_text, response.objects[0].properties['answer'], response.objects[0].metadata.distance)
-        return f"I know because this came up {self.how_long_ago(response.objects[0].properties['date_happened'])}. {response.objects[0].properties['answer']}"
-
     def get_dream_memories(self):
         """Retrieves old memories for dream processing. Gets the two oldest memories by date_recalled 
         (prioritizing never-recalled memories with date_recalled=0), then by oldest date_happened.
-        Only selects memories that are at least one month old to ensure sufficient age for dream processing.
+        Only selects memories that are at least 3 months old to ensure sufficient age for dream processing.
         Updates date_recalled so they don't get selected repeatedly."""
         
         log.neocortex.info('Searching for dream material from old memories')
@@ -751,10 +679,6 @@ Consolidated memory:"""
             log.neocortex.info('Deleting Memories collection.')
             self.client.collections.delete(name="Memories")
 
-        if self.client.collections.exists(name="Questions"):
-            log.neocortex.info('Deleting Questions collection.')
-            self.client.collections.delete(name="Questions")
-
         if self.client.collections.exists(name="ProperNames"):
             log.neocortex.info('Deleting ProperNames collection.')
             self.client.collections.delete(name="ProperNames")
@@ -801,47 +725,6 @@ Consolidated memory:"""
 
             # restore the memories from the backup since we just had to create it new
             self.restore('memories', self.memories)
-
-
-        # check if the Questions collection exists
-        if self.client.collections.exists(name="Questions"):
-
-            log.neocortex.info('Questions collection exists.')
-            self.questions = self.client.collections.get(name="Questions")
-
-        else:
-
-            log.neocortex.info('Questions collection does not exist. Creating.')
-            self.questions = self.client.collections.create(
-                name="Questions",
-                properties=[
-                    Property(
-                        name="date_happened",
-                        data_type=DataType.NUMBER,
-                        description="When the answer was recorded",
-                        skip_vectorization=True),
-                    Property(
-                        name="date_recalled",
-                        data_type=DataType.NUMBER,
-                        description="When the question was last answered",
-                        skip_vectorization=True,
-                        index_range_filters=True),
-                    Property(
-                        name="question",
-                        data_type=DataType.TEXT,
-                        description="The question that should evoke this answer",
-                        vectorize_property_name=False),
-                    Property(
-                        name="answer",
-                        data_type=DataType.TEXT,
-                        description="The answer to the question that will be inserted into the prompt",
-                        skip_vectorization=True),
-                ],
-                vectorizer_config=vectorizer_config
-            )
-
-            # restore the questions from the backup since we just had to create it new
-            self.restore('questions', self.questions)
 
 
         # check if the ProperNames collection exists
@@ -903,20 +786,6 @@ Consolidated memory:"""
 
             # before going on with the next collection, clean up to save memory in case this accumulates out of control
             memories = None
-
-        if collection == 'questions' or collection == 'all':
-
-            # do the same for the other collection, Questions
-            questions = []
-            for question in self.questions.iterator(): # pylint: disable=not-an-iterable
-                questions.append(question.properties)
-            log.neocortex.info('Backing up %d questions.', len(questions))
-            backup_filename = f'./backups/neocortex_questions_{int(time.time())}.json'
-            with open(file=backup_filename, mode='w', encoding='utf-8') as backup_file:
-                json_dump(questions, backup_file, ensure_ascii=False, check_circular=False, indent=2)
-
-            # clean up
-            questions = None
 
         if collection == 'proper_names' or collection == 'all':
 
@@ -980,7 +849,7 @@ if __name__ == "__main__":
                         help='Recover memories from borked_*.json files (requires full Christine setup)')
     parser.add_argument('--cleanup-duplicates', action='store_true',
                         help='Clean up duplicate proper names (requires full Christine setup)')
-    parser.add_argument('--backup', choices=['all', 'memories', 'questions', 'proper_names'],
+    parser.add_argument('--backup', choices=['all', 'memories', 'proper_names'],
                         default=None, help='Create backup of specified collection(s) (requires full Christine setup)')
     
     args = parser.parse_args()
