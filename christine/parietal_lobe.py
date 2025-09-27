@@ -893,7 +893,7 @@ Dream:
             dream_memories = self.neocortex.get_dream_memories()
             
             if len(dream_memories) == 0:
-                log.parietal_lobe.info('No old memories found for dream generation (memories must be at least one month old)')
+                log.parietal_lobe.info('No old memories found for dream generation')
                 return
             
             # Format the old memories for the dream prompt

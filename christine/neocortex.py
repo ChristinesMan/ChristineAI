@@ -21,8 +21,7 @@ from json import load as json_load, loads as json_loads, dump as json_dump, JSON
 import weaviate
 import weaviate.classes as wvc
 from weaviate.classes.config import Property, DataType
-# from weaviate.collections import Collection
-from weaviate.classes.query import Filter
+from weaviate.classes.query import Sort, Filter
 from weaviate.exceptions import WeaviateBaseError
 
 from christine import log
@@ -484,72 +483,36 @@ Consolidated memory:"""
             # First, try to get memories that have never been recalled (date_recalled = 0) and are old enough
             # We'll sort by oldest date_happened in Python after fetching
             response = self.memories.query.fetch_objects(
-                limit=10,  # Get more than we need to have selection options
-                where=Filter.by_property("date_recalled").equal(0) & Filter.by_property("date_happened").less_than(old_memories_cutoff)
+                sort=Sort.by_property(name="date_recalled", ascending=True).by_property(name="date_happened", ascending=True),
+                filters=Filter.by_property("date_happened").less_than(old_memories_cutoff),
+                limit=2
             )
             
             dream_memories = []
             
-            # If we found never-recalled memories, use up to 2 of them
-            if len(response.objects) > 0:
-                log.neocortex.info('Found %d never-recalled memories for dreams', len(response.objects))
-                # Sort by oldest date_happened to get the most ancient memories first
-                sorted_objects = sorted(response.objects, key=lambda obj: obj.properties.get('date_happened', 0))
-                for _, memory_obj in enumerate(sorted_objects[:2]):  # Take up to 2 oldest
-                    memory_text = memory_obj.properties['memory']
-                    memory_age = self.how_long_ago(memory_obj.properties['date_happened'])
+            # If we found at least the limit of 2 memories, use them and lose them
+            if len(response.objects) == 2:
+                log.neocortex.info('Found %d old memories for dreams', len(response.objects))
+                for memory in response.objects:
+                    memory_text = memory.properties['memory']
+                    memory_age = self.how_long_ago(memory.properties['date_happened'])
                     
                     # Dreams are a cleaning process - delete these never-recalled memories after using them
                     # These are often weird, fragmented, or unimportant memories that work great in dreams
-                    log.neocortex.info('Deleting never-recalled memory for dream cleaning: %s', memory_text[:100] + '...')
-                    self.memories.data.delete_by_id(memory_obj.uuid)
+                    log.neocortex.info('Deleting old memory for dream cleaning: %s', memory_text[:100] + '...')
+                    self.memories.data.delete_by_id(memory.uuid)
                     
                     dream_memories.append({
                         'text': memory_text,
                         'age': memory_age,
-                        'type': 'never_recalled_deleted'
                     })
-                    log.neocortex.debug('Selected and deleted never-recalled dream memory from %s: %s', memory_age, memory_text[:60] + '...')
-            
-            # If we need more memories, get the oldest recalled ones (but still at least 3 months old)
-            if len(dream_memories) < 2:
-                needed = 2 - len(dream_memories)
-                
-                # Get memories with the oldest date_recalled (excluding the ones we just updated)
-                # Must be at least three months old AND last recalled at least a week ago
-                response = self.memories.query.fetch_objects(
-                    limit=needed * 2,  # Get extras in case some are too recent
-                    where=Filter.by_property("date_recalled").less_than(time.time() - (7 * 24 * 60 * 60)) & Filter.by_property("date_happened").less_than(old_memories_cutoff)
-                )
-                
-                if len(response.objects) > 0:
-                    log.neocortex.info('Found %d old recalled memories as additional dream material', len(response.objects))
-                    # Sort by oldest date_recalled to get the longest-forgotten memories
-                    sorted_objects = sorted(response.objects, key=lambda obj: obj.properties.get('date_recalled', 0))
-                    for memory_obj in sorted_objects[:needed]:  # Take what we need
-                        memory_text = memory_obj.properties['memory']
-                        memory_age = self.how_long_ago(memory_obj.properties['date_happened'])
-                        
-                        # Update date_recalled
-                        self.memories.data.update(
-                            uuid=memory_obj.uuid, 
-                            properties={"date_recalled": int(time.time())}
-                        )
-                        
-                        dream_memories.append({
-                            'text': memory_text,
-                            'age': memory_age,
-                            'type': 'old_recalled'
-                        })
-                        log.neocortex.debug('Selected old recalled dream memory from %s: %s', memory_age, memory_text[:60] + '...')
-            
-            if len(dream_memories) == 0:
-                log.neocortex.info('No suitable memories found for dream generation (memories must be at least one month old)')
+
             else:
-                log.neocortex.info('Selected %d memories for dream generation', len(dream_memories))
+            
+                log.neocortex.warning('Insufficient old memories, skipping dream processing.')
             
             return dream_memories
-            
+
         except Exception as ex:
             log.neocortex.exception('Error retrieving dream memories: %s', ex)
             return []
