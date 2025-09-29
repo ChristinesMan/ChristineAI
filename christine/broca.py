@@ -58,6 +58,9 @@ class Broca(threading.Thread):
         self.repetition_destroyer = {}
         self.repetition_max_ttl = 5
 
+        # initialize the last sex sound time used to prevent rapid-fire sex sounds
+        self.last_sex_sound_time = 0
+                    
         # setup the separate process with pipe that we're going to be fucking
         # lol I put the most insane things in code omg, but this will help keep it straight!
         # The enterprise sent out a shuttlecraft with Data at the helm.
@@ -141,28 +144,18 @@ class Broca(threading.Thread):
 
             elif figment.from_collection is not None:
 
-                # smarter sex sound management: limit to one sex sound at a time
-                # instead of completely clearing the queue, just skip if there's already a sex sound playing
+                # smarter sex sound management: prevent rapid-fire sex sounds by using timing
                 if "sex" in figment.from_collection:
-                    # check if there's already another sex sound in the queue ahead of this one
-                    sex_sounds_in_queue = 0
-                    temp_queue = []
+                    current_time = time.time()
                     
-                    # count sex sounds currently in queue
-                    while self.figment_queue.qsize() > 0:
-                        next_figment: Figment = self.figment_queue.get_nowait()
-                        temp_queue.append(next_figment)
-                        if hasattr(next_figment, 'from_collection') and next_figment.from_collection and "sex" in next_figment.from_collection:
-                            sex_sounds_in_queue += 1
-                    
-                    # put everything back
-                    for temp_figment in temp_queue:
-                        self.figment_queue.put_nowait(temp_figment)
-                    
-                    # if there's already a sex sound queued, skip this one to prevent pileup
-                    if sex_sounds_in_queue > 0:
-                        log.broca_main.debug('Skipping sex sound - already %d sex sounds in queue', sex_sounds_in_queue)
+                    # only allow one sex sound every 2 seconds to prevent pileup
+                    time_since_last = current_time - self.last_sex_sound_time
+                    if time_since_last < 2.0:
+                        log.broca_main.debug('Skipping sex sound - only %.1f seconds since last sex sound', time_since_last)
                         return
+                    
+                    # update the timestamp for next check
+                    self.last_sex_sound_time = current_time
 
                 # get the sound from the collection
                 sound = sounds_db.get_random_sound(collection_name=figment.from_collection, intensity=figment.intensity)
