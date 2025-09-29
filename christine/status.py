@@ -142,22 +142,89 @@ class Status(threading.Thread):
         self.primary_restoration_interval = 300.0  # 5 minutes
 
         # Define which status variables should be persisted to the database.
-        # This makes it explicit and easier to manage than database entries.
-        # Returns dict of {variable_name: type_code}
-        # Type codes:
-        # 'f' = float (0.0-1.0 ranges mostly)
-        # 'b' = boolean (True/False)  
-        # 'i' = integer
-        # 's' = string
+        # Auto-persisted vars are saved every 25 seconds automatically
+        # Type codes: 'f' = float, 'b' = boolean, 'i' = integer, 's' = string
         self.persisted_vars = {
-
-            # Core environmental and state variables
+            # Core environmental and state variables (auto-saved)
             'light_level': 'f',          # Ambient light level (0.0-1.0)
             'wakefulness': 'f',          # How awake Christine is (0.0-1.0)
             'horny': 'f',               # Long-term arousal level (0.0-1.0) 
             'sexual_arousal': 'f',       # Short-term arousal (0.0-1.0)
             'breath_intensity': 'f',     # Breathing sound intensity
+        }
+        
+        # Define user-configurable settings (only saved when user changes them)
+        # Each entry: 'variable_name': {'type': 'f/i/b/s', 'min': min_val, 'max': max_val, 'desc': 'description', 'help': 'detailed_explanation', 'default': default_value}
+        self.user_configurable_vars = {
+            # Speech timing settings
+            'pause_question': {
+                'type': 'f', 'min': 0.1, 'max': 10.0, 'default': 4.5,
+                'desc': 'Pause after questions (seconds)',
+                'help': 'How long Christine pauses after asking a question or saying something that ends with "?" or "...". This gives you time to process and respond. Longer pauses feel more natural but slower conversations. Shorter pauses make her seem more eager or impatient.'
+            },
+            'pause_period': {
+                'type': 'f', 'min': 0.1, 'max': 5.0, 'default': 1.5,
+                'desc': 'Pause after periods (seconds)',
+                'help': 'How long Christine pauses after making a statement that ends with a period. This creates natural breathing room in conversation. Too short makes her sound rushed, too long makes her sound hesitant or dramatic.'
+            },
+            'pause_comma': {
+                'type': 'f', 'min': 0.0, 'max': 2.0, 'default': 0.2,
+                'desc': 'Pause after commas (seconds)',
+                'help': 'Brief pause after commas within sentences. This creates natural speech rhythm and helps with comprehension. Very short pauses (0.1-0.3s) sound natural, longer ones can sound robotic or overly dramatic.'
+            },
             
+            # Perception and response timing
+            'additional_perception_wait_seconds': {
+                'type': 'f', 'min': 0.5, 'max': 10.0, 'default': 2.5,
+                'desc': 'Wait for additional perceptions (seconds)',
+                'help': 'After receiving input (touch, sound, etc.), Christine waits this long for additional input before responding. This prevents her from interrupting you mid-sentence or reacting to every small input. Longer waits make her more patient but less responsive.'
+            },
+            'user_interrupt_char_threshold': {
+                'type': 'i', 'min': 5, 'max': 100, 'default': 20,
+                'desc': 'Characters needed to interrupt Christine',
+                'help': 'Minimum number of characters you need to speak before your voice can interrupt Christine while she\'s talking. This prevents accidental interruptions from brief sounds while allowing meaningful interruptions. Lower values make her easier to interrupt.'
+            },
+            
+            # Memory system settings
+            'memory_folding_min_narratives': {
+                'type': 'i', 'min': 5, 'max': 100, 'default': 25,
+                'desc': 'Minimum messages before memory folding',
+                'help': 'Christine keeps recent conversations in short-term memory. When this many messages accumulate, older ones get "folded" into summaries to save space. Higher values keep more detailed recent history but use more memory and processing power.'
+            },
+            'memory_folding_base_delay': {
+                'type': 'i', 'min': 60, 'max': 3600, 'default': 480,
+                'desc': 'Base memory folding delay (seconds)',
+                'help': 'Base time to wait after conversation slows before folding memories. The actual delay adjusts based on conversation activity - more messages = shorter delay. This prevents folding during active conversations while ensuring memories get processed during quiet periods.'
+            },
+            'memory_folding_max_delay': {
+                'type': 'i', 'min': 300, 'max': 7200, 'default': 1200,
+                'desc': 'Maximum memory folding delay (seconds)',
+                'help': 'Maximum time to wait before forcing memory folding, regardless of activity level. This ensures memories never get too stale before processing. Prevents memory buildup during very long conversations or if the base delay calculation goes wrong.'
+            },
+            'neocortex_recall_interval': {
+                'type': 'i', 'min': 3600, 'max': 2592000, 'default': 864000,
+                'desc': 'Memory recall cooldown (seconds)',
+                'help': 'After Christine recalls a specific memory, she won\'t bring up that same memory again for this long. Prevents repetitive memory recall while allowing memories to resurface naturally over time. Shorter intervals = more repetitive memories, longer = more variety but less reinforcement.'
+            },
+            
+            # Random memory recall settings
+            'random_memory_recall_chance': {
+                'type': 'f', 'min': 0.0, 'max': 1.0, 'default': 0.15,
+                'desc': 'Chance of random memory recall (0.0-1.0)',
+                'help': 'Probability that Christine will spontaneously recall a relevant memory during conversation. Higher values make her more nostalgic and reference past conversations more often. 0.15 = 15% chance per perception cycle. Set to 0 to disable random recalls entirely.'
+            },
+            'random_memory_recall_min_messages': {
+                'type': 'i', 'min': 1, 'max': 20, 'default': 3,
+                'desc': 'Min messages for random recall',
+                'help': 'Minimum number of recent messages needed before Christine can randomly recall memories. This ensures there\'s enough context for relevant memory selection. Higher values make recalls more contextually appropriate but less frequent in short conversations.'
+            },
+            
+            # API restoration settings
+            'primary_restoration_interval': {
+                'type': 'f', 'min': 60.0, 'max': 3600.0, 'default': 300.0,
+                'desc': 'API restoration check interval (seconds)',
+                'help': 'How often Christine checks if her primary AI services (OpenRouter, etc.) have come back online after being unavailable. She automatically falls back to secondary services when primary ones fail, then periodically tries to restore the primary ones.'
+            },
         }
 
     def run(self):
@@ -209,6 +276,7 @@ class Status(threading.Thread):
             "random_memory_recall_chance": f"{self.random_memory_recall_chance:.2f}",
             "random_memory_recall_min_messages": str(self.random_memory_recall_min_messages),
             "wernicke_ok": str(self.wernicke_ok),
+            "user_settings_count": str(len(self.user_configurable_vars)),
         }
 
     def save_state(self):
@@ -239,10 +307,10 @@ class Status(threading.Thread):
 
     def load_state(self):
         """
-        Load explicitly defined persisted variables from database using modern type-safe methods.
-        Only loads variables defined in get_persisted_variables().
+        Load persisted variables and user-configurable settings from database.
         """
         
+        # Load auto-persisted status variables
         for var_name, expected_type in self.persisted_vars.items():
             # Get the specific status record
             record = database.get_status_by_name(var_name)
@@ -278,6 +346,128 @@ class Status(threading.Thread):
                 from christine import log
                 log.main.warning("Error loading status '%s' with value '%s': %s", var_name, value, e)
 
+        # Load user-configurable settings
+        for var_name, config in self.user_configurable_vars.items():
+            record = database.get_status_by_name(var_name)
+            
+            if record is None:
+                from christine import log
+                log.main.debug("User setting '%s' not found in database, using default value", var_name)
+                continue
+                
+            value = record["value"]
+            expected_type = config['type']
+            
+            try:
+                if expected_type == "f":
+                    setattr(self, var_name, float(value))
+                elif expected_type == "b":
+                    setattr(self, var_name, value == "True")
+                elif expected_type == "i":
+                    setattr(self, var_name, int(value))
+                elif expected_type == "s":
+                    setattr(self, var_name, str(value))
+                else:
+                    from christine import log
+                    log.main.warning("Unknown type code '%s' for user setting '%s'", expected_type, var_name)
+                    
+            except (ValueError, TypeError) as e:
+                from christine import log
+                log.main.warning("Error loading user setting '%s' with value '%s': %s", var_name, value, e)
+
+    def set_user_setting(self, name: str, value) -> bool:
+        """
+        Set a user-configurable setting with validation and immediate database persistence.
+        
+        Args:
+            name: The setting name (must be in user_configurable_vars)
+            value: The new value (will be validated and converted)
+            
+        Returns:
+            bool: True if successful, False if validation failed or setting doesn't exist
+        """
+        if name not in self.user_configurable_vars:
+            from christine import log
+            log.main.warning("Attempted to set unknown user setting: %s", name)
+            return False
+            
+        setting_config = self.user_configurable_vars[name]
+        old_value = getattr(self, name, None)
+        
+        try:
+            # Type validation and conversion
+            if setting_config['type'] == 'f':
+                validated_value = float(value)
+            elif setting_config['type'] == 'i':
+                validated_value = int(value)
+            elif setting_config['type'] == 'b':
+                validated_value = bool(value) if isinstance(value, bool) else str(value).lower() in ('true', '1', 'yes')
+            elif setting_config['type'] == 's':
+                validated_value = str(value)
+            else:
+                from christine import log
+                log.main.error("Unknown type for setting %s: %s", name, setting_config['type'])
+                return False
+                
+        except (ValueError, TypeError) as e:
+            from christine import log
+            log.main.warning("Invalid value for setting '%s': %s (%s)", name, value, e)
+            return False
+        
+        # Range validation for numeric types
+        if setting_config['type'] in ('f', 'i'):
+            if 'min' in setting_config and validated_value < setting_config['min']:
+                from christine import log
+                log.main.warning("Value %s for setting '%s' below minimum %s", validated_value, name, setting_config['min'])
+                return False
+            if 'max' in setting_config and validated_value > setting_config['max']:
+                from christine import log
+                log.main.warning("Value %s for setting '%s' above maximum %s", validated_value, name, setting_config['max'])
+                return False
+        
+        # Update in memory
+        setattr(self, name, validated_value)
+        
+        # Update in database immediately
+        success = database.update_status(name, str(validated_value))
+        
+        # If update failed, try adding the setting
+        if not success:
+            success = database.add_status(name, str(validated_value), setting_config['type'])
+        
+        if success:
+            from christine import log
+            log.main.info("User setting changed: %s = %s (was %s)", name, validated_value, old_value)
+        else:
+            from christine import log
+            log.main.error("Failed to persist user setting: %s = %s", name, validated_value)
+            # Revert the in-memory change if database update failed
+            if old_value is not None:
+                setattr(self, name, old_value)
+        
+        return success
+    
+    def get_user_settings(self) -> dict:
+        """
+        Get all user-configurable settings with their current values and metadata.
+        Perfect for web interface consumption.
+        
+        Returns:
+            dict: {setting_name: {'value': current_value, 'type': type, 'min': min, 'max': max, 'desc': description, 'help': help_text, 'default': default_value}}
+        """
+        settings = {}
+        for name, config in self.user_configurable_vars.items():
+            settings[name] = {
+                'value': getattr(self, name, None),
+                'type': config['type'],
+                'min': config.get('min'),
+                'max': config.get('max'),
+                'desc': config.get('desc', name),
+                'help': config.get('help', ''),
+                'default': config.get('default', 'N/A')
+            }
+        return settings
+        
     def get_dynamic_memory_folding_delay(self, message_count: int) -> float:
         """Calculate dynamic memory folding delay based on message count.
         More messages = shorter delay. Less messages = longer delay."""

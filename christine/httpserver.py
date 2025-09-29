@@ -216,6 +216,70 @@ def api_status_update():
         log.main.error("Error updating status variables: %s", str(e))
         return json.dumps({"status": "error", "message": str(e)})
 
+@route("/api/user-settings", method="GET")
+def api_get_user_settings():
+    """Get all user-configurable settings with metadata"""
+    response.content_type = 'application/json'
+    try:
+        settings = STATE.get_user_settings()
+        return json.dumps({"settings": settings})
+    except Exception as e:
+        log.main.error("Error getting user settings: %s", e)
+        response.status = 500
+        return json.dumps({"error": str(e)})
+
+@route("/api/user-settings/<setting_name>", method="POST")
+def api_set_user_setting(setting_name):
+    """Set a specific user setting"""
+    response.content_type = 'application/json'
+    try:
+        # Handle both JSON and form data
+        if request.content_type == 'application/json':
+            data = request.json
+        else:
+            data = dict(request.forms)
+            
+        if not data or 'value' not in data:
+            response.status = 400
+            return json.dumps({"error": "Missing 'value' in request"})
+            
+        success = STATE.set_user_setting(setting_name, data['value'])
+        
+        if success:
+            return json.dumps({
+                "success": True, 
+                "setting": setting_name,
+                "new_value": getattr(STATE, setting_name),
+                "message": f"Setting {setting_name} updated successfully"
+            })
+        else:
+            response.status = 400
+            return json.dumps({"error": f"Failed to update setting {setting_name}. Check logs for details."})
+            
+    except Exception as e:
+        log.main.error("Error setting user setting %s: %s", setting_name, e)
+        response.status = 500
+        return json.dumps({"error": str(e)})
+
+@route("/api/user-settings/<setting_name>", method="GET")
+def api_get_single_user_setting(setting_name):
+    """Get a specific user setting"""
+    response.content_type = 'application/json'
+    try:
+        settings = STATE.get_user_settings()
+        if setting_name not in settings:
+            response.status = 404
+            return json.dumps({"error": f"Setting {setting_name} not found"})
+            
+        return json.dumps({
+            "setting": setting_name,
+            "config": settings[setting_name]
+        })
+    except Exception as e:
+        log.main.error("Error getting user setting %s: %s", setting_name, e)
+        response.status = 500
+        return json.dumps({"error": str(e)})
+
 @route("/api/chat", method="GET")
 def api_chat_get():
     """Get chat messages"""

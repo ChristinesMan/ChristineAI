@@ -11,7 +11,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
 from christine import log
-
+#pylint: disable=protected-access
 
 class ChristineDB:
     """
