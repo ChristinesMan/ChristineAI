@@ -60,11 +60,6 @@ class Neocortex:
         # get the weaviate hostname from the config
         self.host = CONFIG.neocortex_server
 
-        # this is a list of proper names that were already matched today and should not be matched again until midnight
-        # thinking now about maybe not using this, because each time a name is mentioned it would trigger a separate memory
-        # and maybe that's a good thing? Let's see how it goes first.
-        self.matched_proper_names = []
-
         self.client = None
         self.memories = None
         self.proper_names = None
@@ -269,7 +264,7 @@ class Neocortex:
                     self.proper_names.data.insert(proper_name)
 
         # this is only run at midnight, so we can clear the list of matched proper names
-        self.matched_proper_names = []
+        STATE.matched_proper_names = []
 
         # rebuild the regex
         self.build_proper_name_regex()
@@ -532,7 +527,7 @@ Consolidated memory:"""
         matches = list(set(matches))
 
         # eliminate any matches that have already been matched today
-        matches = [match for match in matches if match not in self.matched_proper_names]
+        matches = [match for match in matches if match not in STATE.matched_proper_names]
 
         if len(matches) == 0 or matches == ['']:
             return None
@@ -542,7 +537,7 @@ Consolidated memory:"""
         for name in matches:
 
             # add the name to the list of matched proper names
-            self.matched_proper_names.append(name)
+            STATE.matched_proper_names.append(name)
 
             response = self.proper_names.query.near_text(
                 query=name,

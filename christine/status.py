@@ -3,6 +3,7 @@ Keeps track of all the things and share this with all the other modules
 """
 import time
 import threading
+import json
 
 from christine.database import database
 
@@ -150,9 +151,12 @@ class Status(threading.Thread):
         # How often to try restoring primary APIs (in seconds)
         self.primary_restoration_interval = 300.0  # 5 minutes
 
+        # List of proper names that were already matched today (prevents duplicate recalls until midnight)
+        self.matched_proper_names = []
+
         # Define which status variables should be persisted to the database.
         # Auto-persisted vars are saved every 25 seconds automatically
-        # Type codes: 'f' = float, 'b' = boolean, 'i' = integer, 's' = string
+        # Type codes: 'f' = float, 'b' = boolean, 'i' = integer, 's' = string, 'l' = list (JSON)
         self.persisted_vars = {
             # Core environmental and state variables (auto-saved)
             'light_level': 'f',          # Ambient light level (0.0-1.0)
@@ -160,6 +164,7 @@ class Status(threading.Thread):
             'horny': 'f',               # Long-term arousal level (0.0-1.0) 
             'sexual_arousal': 'f',       # Short-term arousal (0.0-1.0)
             'breath_intensity': 'f',     # Breathing sound intensity
+            'matched_proper_names': 'l', # List of proper names matched today (JSON stored)
         }
         
         # Define user-configurable settings (only saved when user changes them)
@@ -304,6 +309,9 @@ class Status(threading.Thread):
             # Format the value based on type
             if type_code == "f":
                 set_value = f"{getattr(self, var_name):.2f}"
+            elif type_code == "l":
+                # Serialize list as JSON
+                set_value = json.dumps(getattr(self, var_name))
             else:
                 set_value = str(getattr(self, var_name))
             
@@ -347,6 +355,14 @@ class Status(threading.Thread):
                     setattr(self, var_name, int(value))
                 elif expected_type == "s":
                     setattr(self, var_name, str(value))
+                elif expected_type == "l":
+                    # Deserialize JSON list, default to empty list if invalid
+                    try:
+                        setattr(self, var_name, json.loads(value))
+                    except (json.JSONDecodeError, TypeError):
+                        from christine import log
+                        log.main.warning("Invalid JSON for list variable '%s', using empty list", var_name)
+                        setattr(self, var_name, [])
                 else:
                     from christine import log
                     log.main.warning("Unknown type code '%s' for variable '%s'", expected_type, var_name)
