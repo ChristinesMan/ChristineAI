@@ -24,5 +24,7 @@ RUN python3 -m spacy download en_core_web_sm
 # Add later when time to rebuild
 # apt install sqlite (the cli command)
 
+RUN pip install --no-cache-dir sqlalchemy
+
 EXPOSE 2222
 CMD ["/usr/sbin/sshd","-D"]
