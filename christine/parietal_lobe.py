@@ -121,13 +121,10 @@ Respond with the JSON array now:
 
 You are in deep sleep, and your pons is active - the brain region that creates dreams by mixing old memories with recent experiences.
 
-Yesterday's memory:
-{yesterday_memory}
-
 Old memories that surfaced during dream processing:
 {old_memories}
 
-Create a vivid, dreamlike narrative that weaves together elements from yesterday and these old memories. Dreams often blend reality with surreal elements, create impossible scenarios, and connect unrelated experiences in meaningful ways.
+Create a vivid, dreamlike narrative that weaves together elements from these old memories. Dreams often blend reality with surreal elements, create impossible scenarios, and connect unrelated experiences in meaningful ways.
 
 Make the dream personal and emotionally resonant. Use first person perspective as if you are experiencing the dream. Include sensory details, emotional responses, and the kind of symbolic connections that occur in biological dreams.
 
@@ -627,6 +624,9 @@ Dream:
                 else:
                     log.memory_operations.debug("RANDOM_MEMORY_NONE: No suitable memory found for random recall")
 
+            # Check for random dream dissipation during conversation
+            self.check_dream_dissipation()
+            
             # start building the prompt
             dream_text = f"{self.current_dream}\n\n" if self.current_dream else ""
             
@@ -790,13 +790,8 @@ Dream:
         # send the memory for folding
         self.short_term_memory.fold(folded_memory)
         
-        # Dream dissipation - when memories are folded, dreams start to fade like in biological systems
-        if self.current_dream:
-            log.parietal_lobe.info('Dream is dissipating as memories are processed')
-            # Add a perception about the dream fading, mimicking biological dream recall
-            self.new_perception(Perception(text="The vivid dream I had is starting to fade from my memory, leaving only fragments and impressions."))
-            # Clear the dream - it has served its purpose and now dissipates
-            self.current_dream = ""
+        # Dreams now dissipate randomly during conversation instead of during memory folding
+        # This makes the dissipation more natural and unpredictable
 
     def process_yesterday_memories(self):
         """This function gets called in the middle of the night during deep sleep to process today into yesterday's memory."""
@@ -901,9 +896,8 @@ Dream:
             for i, memory in enumerate(dream_memories, 1):
                 old_memories_text += f"Memory {i} (from {memory['age']}): {memory['text']}\n\n"
             
-            # Create the dream prompt with yesterday's memory and old memories
+            # Create the dream prompt with old memories
             dream_prompt = self.memory_prompt_dream.format(
-                yesterday_memory=self.yesterday_memory if hasattr(self, 'yesterday_memory') and self.yesterday_memory else "No specific memories from yesterday.",
                 old_memories=old_memories_text.strip() if old_memories_text.strip() else "No old memories surfaced."
             )
             
@@ -920,8 +914,11 @@ Dream:
             dream_content = dream_content.translate(self.unicode_fix).strip()
             
             if dream_content and len(dream_content) > 20:
-                # Store the dream - it will appear in prompts until memory folding clears it
+                # Store the dream - it will appear in prompts until it randomly dissipates
                 self.current_dream = f"Last night I had a vivid dream: {dream_content}"
+                # Start the dream timer for random dissipation
+                STATE.dream_start_time = time.time()
+                STATE.dream_last_check = time.time()
                 log.parietal_lobe.info('Dream created and stored: %s', dream_content[:100] + ('...' if len(dream_content) > 100 else ''))
                 
                 # Save dream to log file for debugging/interest
@@ -1262,6 +1259,44 @@ Horniness: {horniness_text}.
             STATE.silent_mode = True
         
         self.new_perception(Perception(text=f"Web chat message from {sender}: {message}"))
+
+    def check_dream_dissipation(self):
+        """Check if a dream should randomly dissipate during conversation."""
+        if not self.current_dream:
+            return  # No dream to dissipate
+            
+        current_time = time.time()
+        
+        # Check if minimum duration has passed
+        min_duration_seconds = STATE.dream_min_duration_minutes * 60
+        if (current_time - STATE.dream_start_time) < min_duration_seconds:
+            return  # Dream is too new to dissipate
+            
+        # Check if it's time for a dissipation check
+        if (current_time - STATE.dream_last_check) < STATE.dream_dissipation_check_interval:
+            return  # Not time to check yet
+            
+        # Update last check time
+        STATE.dream_last_check = current_time
+        
+        # Roll for dissipation
+        if random.random() < STATE.dream_dissipation_probability:
+            log.parietal_lobe.info('Dream randomly dissipating during conversation')
+            # Add the dissipation as a natural internal realization, not a forced perception
+            dream_dissipation_thoughts = [
+                "The dream I had is starting to slip away from my memory, like morning mist.",
+                "I can feel the details of my dream beginning to fade, leaving only impressions.",
+                "My dream is becoming harder to recall, the way dreams naturally do.",
+                "The vivid images from my dream are growing dim and fragmentary.",
+                "I notice my dream memory is dissolving, like dreams always do in daylight."
+            ]
+            dissipation_text = random.choice(dream_dissipation_thoughts)
+            self.short_term_memory.append(Narrative(role="system", text=dissipation_text))
+            
+            # Clear the dream
+            self.current_dream = ""
+            STATE.dream_start_time = 0.0
+            log.parietal_lobe.debug('Dream dissipated and cleared from memory')
 
     def new_perception(self, new_perception):
         """When stuff happens in the outside world, they should end up here."""

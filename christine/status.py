@@ -66,6 +66,15 @@ class Status(threading.Thread):
         # After sex we could ramp this up and taper it down gradually
         # But I need to really tone down the hmms
         self.breath_intensity = 0.5
+        
+        # Dream dissipation settings - configurable timing for when dreams fade
+        self.dream_min_duration_minutes = 15  # Minimum time dream stays before it can dissipate (in minutes)
+        self.dream_dissipation_check_interval = 300  # How often to check for dream dissipation (in seconds, 5 minutes)
+        self.dream_dissipation_probability = 0.25  # Probability per check that dream will dissipate (15% chance per 5-minute check)
+        
+        # Dream tracking variables
+        self.dream_start_time = 0.0  # When current dream started
+        self.dream_last_check = 0.0  # Last time we checked for dissipation
 
         # Keep track of whether we have switched off the Wernicke processing during deep sleep
         self.wernicke_sleeping = False
