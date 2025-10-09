@@ -38,6 +38,7 @@ time.sleep(2)
 
 from christine.vagina import vagina
 from christine.parietal_lobe import parietal_lobe
+from christine.prefrontal_cortex import prefrontal_cortex
 from christine.light import light
 from christine.cputemp import cputemp
 from christine.gyro import gyro
@@ -56,6 +57,7 @@ for thread in [
     cputemp,
     sleep,
     parietal_lobe,
+    prefrontal_cortex,
     vagina,
     httpserver,
     horny,

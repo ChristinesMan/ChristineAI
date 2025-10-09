@@ -55,6 +55,7 @@ vagina = setup_logger("vagina", level=logging.DEBUG)
 parietal_lobe = setup_logger("parietal_lobe", level=logging.DEBUG)
 llm_stream = setup_logger("llm_stream", level=logging.DEBUG)
 neocortex = setup_logger("neocortex", level=logging.DEBUG)
+prefrontal_cortex = setup_logger("prefrontal_cortex", level=logging.DEBUG)
 
 # Conceptual/Feature-based loggers
 figment_lifecycle = setup_logger("figment_lifecycle", level=logging.DEBUG)

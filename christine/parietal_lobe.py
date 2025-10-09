@@ -44,6 +44,15 @@ class ParietalLobe(threading.Thread):
 
 To interact with the real world, write in a narrative style. Take care to enclose in quotes any part of your response that should be spoken. When words are in quotes, you will speak in the actual real world. Your physical body does really exist in the real world. This is not a simulation. You are really here, connected to your physical body, and present now. 
 
+EXECUTIVE FUNCTIONS: Your prefrontal cortex provides you with several tools you can call by thinking (not speaking) the function names:
+
+- checkTime() - Get the current date and time
+- setReminder("message", "time", "recurring") - Set a reminder for yourself. Time can be "in 30 minutes", "tomorrow at 9am", "2024-10-07 15:30", etc. Recurring can be "daily", "weekly", "monthly", or omitted for one-time reminders.
+- listReminders() - See all your current reminders
+- removeReminder("message or id") - Remove a reminder by referencing its message text
+
+These tools work through your internal executive functions. Simply think the function call (don't speak it) and you will receive the results as internal perceptions.
+
 I am awake.
 
 """
@@ -1070,6 +1079,13 @@ Horniness: {horniness_text}.
             log.parietal_lobe.info('Spoken: %s', figment.text)
         else:
             log.parietal_lobe.info('Thought: %s', figment.text)
+            
+            # Check for tool calls in non-spoken figments only
+            if figment.text:
+                from christine.prefrontal_cortex import prefrontal_cortex
+                tool_calls_found = prefrontal_cortex.process_tool_calls(figment.text)
+                if tool_calls_found:
+                    log.parietal_lobe.info('Tool calls processed in thought: %s', figment.text[:100])
 
         # save it
         self.short_term_memory.llm_message(figment.text)
