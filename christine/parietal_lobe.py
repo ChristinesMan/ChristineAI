@@ -6,8 +6,6 @@ import threading
 from queue import Queue
 import re
 import random
-import spacy
-
 from christine import log
 from christine.status import STATE
 from christine.config import CONFIG
@@ -205,11 +203,6 @@ Dream:
         self.eagle_enroll_percentage = 0.0
         self.eagle_enroll_feedback = ''
 
-        # init spacy, which will handle the hard work of tokenization
-        # note, it will be necessary to download en_core_web_sm
-        # python -m spacy download en_core_web_sm
-        self.nlp = spacy.load("en_core_web_sm")
-        
         # initialization timeout for wernicke (in seconds) - from centralized config
         self.wernicke_timeout = CONFIG.wernicke_timeout
 
@@ -679,100 +672,99 @@ Dream:
             broca.accept_figment(Figment(text='Something fucked up.', should_speak=True))
 
     def process_llm_response(self, response: str):
-        """Handles the llm response in a way where complete utterances are correctly segmented."""
+        """Handles the llm response using character-by-character processing for predictable segmentation."""
 
         # Import here to avoid circular imports
         from christine.broca import broca
 
-        # I want to collate sentence parts, so this var is used to accumulate
-        # and send text only when a punctuation token is encountered
-        token_collator = ''
-
-        # flag that keeps track of whether we're in the middle of a spoken area in quotes
-        is_inside_quotes = False
-        
-        # track if we've already sent the first spoken figment during sex (shush_fucking mode)
-        first_spoken_figment_sent = False
-
-        # zap newlines to spaces
+        # Clean up the response
         response = response.replace('\n', ' ').strip()
+        response = response.replace('""', '"')  # Fix double quotes
 
-        # sometimes the LLM uses double double quotes. So silly. I don't know why.
-        response = response.replace('""', '"')
-
-        # often LLM uses "scare quotes" which are not meant to be spoken
-        # which can be easily detected because the text inside the quotes never contains certain punctuation
+        # State tracking
+        segment = ''                    # Current text segment being built
+        is_inside_quotes = False        # Are we in spoken text?
+        paren_depth = 0                # Track parentheses depth
+        first_spoken_sent = False       # Track first speech in sex mode
+        
+        # Punctuation that should cause pauses in speech
+        pause_punctuation = {'.', '!', '?', ':'}
+        
+        # Pattern to detect "scare quotes" (quotes without proper punctuation)
         re_not_scare_quotes = re.compile(r'[\.,;:!\?–—-]')
 
-        # load the response into spacy for tokenization
-        # This allows us to take it one token at a time
-        for token in self.nlp(response):
-
-            # get just the token with whitespace
-            token = token.text_with_ws
-
-            # log.parietal_lobe.debug("Token: --=%s=--", token)
-
-            # A double quote means we are starting or ending a part of text that must be spoken.
-            if '"' in token:
-
-                # if we're in the middle of a spoken area, that means this token is the end of the spoken area
-                # so add the ending quote and ship it out
-                if is_inside_quotes is True:
-                    is_inside_quotes = False
-                    token_collator += token
-
-                    # often LLM uses "scare quotes" which are not meant to be spoken
-                    if re_not_scare_quotes.search(token_collator):
-                        # during sex (shush_fucking), only allow the first spoken figment to actually speak
-                        should_speak = True
-                        if STATE.shush_fucking and first_spoken_figment_sent:
-                            should_speak = False
-                            log.parietal_lobe.debug("Sex mode: suppressing additional speech - '%s'", token_collator[:50])
-                        elif STATE.shush_fucking:
-                            first_spoken_figment_sent = True
-                            log.parietal_lobe.debug("Sex mode: allowing first speech - '%s'", token_collator[:50])
-                        
-                        broca.accept_figment(Figment(text=token_collator, should_speak=should_speak, pause_wernicke=True))
-                    else:
-                        broca.accept_figment(Figment(text=token_collator, should_speak=False))
-                    token_collator = ''
-
-                # otherwise, at the start of quoted area, ship out what was before the quotes and then start fresh at the quotes
-                else:
-
-                    is_inside_quotes = True
-                    if token_collator != '':
-                        broca.accept_figment(Figment(token_collator))
-                    token_collator = token
-
-                # in the case of a quote token, skip the rest of this shit
-                continue
-
-            # add the new shit to the end of the collator
-            token_collator += token
-
-            # If we hit punctuation in the middle of a quoted section, ship it out, a complete utterance
-            # it's important to have these pauses between speaking
-            # if it's not a speaking part, we don't care, glob it all together
-            if is_inside_quotes is True and self.re_pause_tokens.search(token):
-
-                # during sex (shush_fucking), only allow the first spoken figment to actually speak
-                should_speak = True
-                if STATE.shush_fucking and first_spoken_figment_sent:
+        def send_segment(text, should_speak=False):
+            """Helper to send a segment to broca."""
+            nonlocal first_spoken_sent
+            
+            if not text.strip():
+                return
+                
+            if should_speak:
+                # Check for sex mode speech suppression
+                if STATE.shush_fucking and first_spoken_sent:
                     should_speak = False
-                    log.parietal_lobe.debug("Sex mode: suppressing additional speech - '%s'", token_collator[:50])
+                    log.parietal_lobe.debug("Sex mode: suppressing additional speech - '%s'", text[:50])
                 elif STATE.shush_fucking:
-                    first_spoken_figment_sent = True
-                    log.parietal_lobe.debug("Sex mode: allowing first speech - '%s'", token_collator[:50])
+                    first_spoken_sent = True
+                    log.parietal_lobe.debug("Sex mode: allowing first speech - '%s'", text[:50])
+                
+                broca.accept_figment(Figment(text=text, should_speak=should_speak, pause_wernicke=True))
+            else:
+                broca.accept_figment(Figment(text=text, should_speak=False))
 
-                # ship the spoken sentence we have so far to broca for speakage
-                broca.accept_figment(Figment(text=token_collator, should_speak=should_speak, pause_wernicke=True))
-                token_collator = ''
+        # Process character by character
+        i = 0
+        while i < len(response):
+            char = response[i]
+            
+            # Track parentheses depth - ignore quotes inside parentheses
+            if char == '(':
+                paren_depth += 1
+                if paren_depth == 1:  # Just entered parentheses
+                    log.parietal_lobe.debug("Entering parentheses - will ignore quotes until closing paren")
+            elif char == ')':
+                paren_depth -= 1
+                if paren_depth == 0:  # Just exited parentheses
+                    log.parietal_lobe.debug("Exiting parentheses - resuming quote processing")
+            
+            # Handle quotes (but ignore them inside parentheses)
+            if char == '"' and paren_depth == 0:
+                if is_inside_quotes:
+                    # Ending quoted section
+                    segment += char
+                    
+                    # Check if this is a "scare quote" or real speech
+                    if re_not_scare_quotes.search(segment):
+                        send_segment(segment, should_speak=True)
+                    else:
+                        send_segment(segment, should_speak=False)
+                    
+                    segment = ''
+                    is_inside_quotes = False
+                else:
+                    # Starting quoted section - send any accumulated non-quoted text first
+                    if segment.strip():
+                        send_segment(segment, should_speak=False)
+                    
+                    segment = char  # Start new segment with opening quote
+                    is_inside_quotes = True
+            else:
+                # Regular character - add to current segment
+                segment += char
+                
+                # Check for pause points in spoken text
+                if is_inside_quotes and char in pause_punctuation:
+                    # Look ahead to see if this is followed by whitespace (natural pause point)
+                    if i + 1 < len(response) and response[i + 1].isspace():
+                        send_segment(segment, should_speak=True)
+                        segment = ''
+            
+            i += 1
 
-        # and if there's anything left after the stream is done, ship it
-        if token_collator != '':
-            broca.accept_figment(Figment(token_collator))
+        # Send any remaining segment
+        if segment.strip():
+            send_segment(segment, should_speak=is_inside_quotes)
 
     def fold_recent_memories(self):
         """This is called after a delay has occurred with no new perceptions, to fold memories.
