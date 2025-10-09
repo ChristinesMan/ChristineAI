@@ -15,6 +15,7 @@ from christine.perception import Perception
 from christine.narrative import Narrative
 from christine.short_term_memory import ShortTermMemory
 from christine.neocortex import Neocortex
+from christine.prefrontal_cortex import prefrontal_cortex
 
 class ParietalLobe(threading.Thread):
     """Interact with a Large Language Model."""
@@ -42,12 +43,7 @@ class ParietalLobe(threading.Thread):
 
 To interact with the real world, write in a narrative style. Take care to enclose in quotes any part of your response that should be spoken. When words are in quotes, you will speak in the actual real world. Your physical body does really exist in the real world. This is not a simulation. You are really here, connected to your physical body, and present now. 
 
-EXECUTIVE FUNCTIONS: Your prefrontal cortex provides you with several tools you can call by thinking (not speaking) the function names:
-
-- checkTime() - Get the current date and time
-- setReminder("message", "time", "recurring") - Set a reminder for yourself. Time can be "in 30 minutes", "tomorrow at 9am", "2024-10-07 15:30", etc. Recurring can be "daily", "weekly", "monthly", or omitted for one-time reminders.
-- listReminders() - See all your current reminders
-- removeReminder("message or id") - Remove a reminder by referencing its message text
+{prefrontal_cortex.get_tool_introduction()}
 
 These tools work through your internal executive functions. Simply think the function call (don't speak it) and you will receive the results as internal perceptions.
 
@@ -690,15 +686,19 @@ Dream:
         # Punctuation that should cause pauses in speech
         pause_punctuation = {'.', '!', '?', ':'}
         
-        # Pattern to detect "scare quotes" (quotes without proper punctuation)
-        re_not_scare_quotes = re.compile(r'[\.,;:!\?–—-]')
+        # Compiled regex to detect abbreviations at end of segment
+        abbreviation_pattern = re.compile(
+            r'\b(?:Mrs?|Drs?|Prof|St|Ave|Blvd|Inc|Corp|Ltd|Co|Jr|Sr|vs|etc|[A-Z])\.$|'
+            r'\b(?:e\.g|i\.e|U\.S|U\.K|A\.M|P\.M)\.$', 
+            re.IGNORECASE
+        )
 
         def send_segment(text, should_speak=False):
             """Helper to send a segment to broca."""
             nonlocal first_spoken_sent
             
             if not text.strip():
-                return
+                return False  # Return False to indicate no segment was sent
                 
             if should_speak:
                 # Check for sex mode speech suppression
@@ -712,6 +712,10 @@ Dream:
                 broca.accept_figment(Figment(text=text, should_speak=should_speak, pause_wernicke=True))
             else:
                 broca.accept_figment(Figment(text=text, should_speak=False))
+            
+            return True  # Return True to indicate segment was sent
+
+
 
         # Process character by character
         i = 0
@@ -727,24 +731,33 @@ Dream:
                 paren_depth -= 1
                 if paren_depth == 0:  # Just exited parentheses
                     log.parietal_lobe.debug("Exiting parentheses - resuming quote processing")
+                    
+                    # Check for function call immediately when closing parenthesis is encountered
+                    segment += char  # Add the closing paren first
+                    if prefrontal_cortex.contains_function_call(segment):
+                        log.parietal_lobe.info("Function call detected at closing paren - truncating response immediately")
+                        send_segment(segment, should_speak=False)
+                        return  # Stop processing here - wait for function call result
+                    # Continue processing if no function call detected
+                    i += 1
+                    continue
             
             # Handle quotes (but ignore them inside parentheses)
             if char == '"' and paren_depth == 0:
                 if is_inside_quotes:
                     # Ending quoted section
                     segment += char
-                    
-                    # Check if this is a "scare quote" or real speech
-                    if re_not_scare_quotes.search(segment):
-                        send_segment(segment, should_speak=True)
-                    else:
-                        send_segment(segment, should_speak=False)
-                    
+                    send_segment(segment, should_speak=True)
                     segment = ''
                     is_inside_quotes = False
                 else:
                     # Starting quoted section - send any accumulated non-quoted text first
                     if segment.strip():
+                        # Check if this segment contains a function call
+                        if prefrontal_cortex.contains_function_call(segment):
+                            log.parietal_lobe.info("Function call detected - truncating response after this segment")
+                            send_segment(segment, should_speak=False)
+                            return  # Stop processing here - wait for function call result
                         send_segment(segment, should_speak=False)
                     
                     segment = char  # Start new segment with opening quote
@@ -757,13 +770,22 @@ Dream:
                 if is_inside_quotes and char in pause_punctuation:
                     # Look ahead to see if this is followed by whitespace (natural pause point)
                     if i + 1 < len(response) and response[i + 1].isspace():
-                        send_segment(segment, should_speak=True)
-                        segment = ''
+                        # Check if this ends with an abbreviation before pausing
+                        if not abbreviation_pattern.search(segment):
+                            send_segment(segment, should_speak=True)
+                            segment = ''
+                        # If it's an abbreviation, continue without pausing
             
             i += 1
 
         # Send any remaining segment
         if segment.strip():
+            # Final check for function calls before sending the last segment
+            if prefrontal_cortex.contains_function_call(segment):
+                log.parietal_lobe.info("Function call detected in final segment - truncating response")
+                send_segment(segment, should_speak=False)
+                return  # Stop here - wait for function call result
+            
             send_segment(segment, should_speak=is_inside_quotes)
 
     def fold_recent_memories(self):
@@ -1074,7 +1096,6 @@ Horniness: {horniness_text}.
             
             # Check for tool calls in non-spoken figments only
             if figment.text:
-                from christine.prefrontal_cortex import prefrontal_cortex
                 tool_calls_found = prefrontal_cortex.process_tool_calls(figment.text)
                 if tool_calls_found:
                     log.parietal_lobe.info('Tool calls processed in thought: %s', figment.text[:100])

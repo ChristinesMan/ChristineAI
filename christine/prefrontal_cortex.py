@@ -109,6 +109,35 @@ class PrefrontalCortex(threading.Thread):
         
         log.prefrontal_cortex.info("🧠 Prefrontal Cortex initialized with %d existing reminders", len(self.reminders))
     
+    @staticmethod
+    def contains_function_call(text: str) -> bool:
+        """
+        Check if text contains any function calls.
+        
+        Args:
+            text: Text to check for function calls
+            
+        Returns:
+            True if any function calls are found
+        """
+        function_pattern = re.compile(r'\b(checkTime|setReminder|listReminders|removeReminder)\s*\(')
+        return function_pattern.search(text) is not None
+    
+    @staticmethod
+    def get_tool_introduction() -> str:
+        """
+        Get the tool introduction text for Christine's context.
+        
+        Returns:
+            The formatted tool introduction text
+        """
+        return """EXECUTIVE FUNCTIONS: Your prefrontal cortex provides you with several tools you can call by thinking (not speaking) the function names:
+
+- checkTime() - Get the current date and time
+- setReminder("message", "time", "recurring") - Set a reminder for yourself. Time can be "in 30 minutes", "tomorrow at 9am", "2024-10-07 15:30", etc. Recurring can be "daily", "weekly", "monthly", or omitted for one-time reminders.
+- listReminders() - See all your current reminders
+- removeReminder("message or id") - Remove a reminder by referencing its message text"""
+    
     def run(self):
         """Main loop - check for due reminders."""
         
