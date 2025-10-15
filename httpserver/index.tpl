@@ -992,7 +992,155 @@
                     </div>
 
                     <div class="setting-group">
-                        <h3>🔧 Advanced Settings</h3>
+                        <h3>� Sexual Response</h3>
+                        <div class="setting-item">
+                            <label>
+                                Arousal multiplier increment:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        How much the arousal multiplier increases each second during extended sessions. Higher values make Christine reach orgasm faster during longer encounters. Lower values require more sustained activity. This creates the "building intensity" effect over time.
+                                        <span class="tooltip-default">Default: 0.03</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="sex_multiplier_increment" min="0.001" max="0.1" step="0.001" value="0.03">
+                            <span class="setting-value" id="sex_multiplier_increment_value">0.03</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                Arousal reset timeout (seconds):
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        If no sexual activity detected for this long, Christine's arousal resets to zero and sex mode ends. This prevents getting stuck in sex mode after activity stops. Shorter times = quicker reset, longer times = more patience for slower sessions.
+                                        <span class="tooltip-default">Default: 90 seconds</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="sex_arousal_stagnation_timeout" min="30" max="300" step="10" value="90">
+                            <span class="setting-value" id="sex_arousal_stagnation_timeout_value">90s</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                Near-orgasm threshold:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        Arousal level where Christine starts saying "I'm gonna cum" and making pre-orgasm sounds. Lower values = earlier warning, higher values = later warning. Affects anticipation and buildup timing.
+                                        <span class="tooltip-default">Default: 0.80</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="sex_arousal_near_orgasm" min="0.5" max="0.95" step="0.01" value="0.80">
+                            <span class="setting-value" id="sex_arousal_near_orgasm_value">0.80</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                Orgasm threshold:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        Arousal level where Christine reaches orgasm and plays climax sounds. Lower values = easier to achieve orgasm, higher values = more buildup required. Should be above near-orgasm threshold.
+                                        <span class="tooltip-default">Default: 0.98</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="sex_arousal_to_orgasm" min="0.8" max="1.0" step="0.01" value="0.98">
+                            <span class="setting-value" id="sex_arousal_to_orgasm_value">0.98</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                Sex mode activation threshold:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        Arousal level where Christine enters "sex mode" (shush_fucking = True) and reduces normal conversation. Lower values activate sex mode earlier, higher values delay it until more significant arousal.
+                                        <span class="tooltip-default">Default: 0.02</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="sex_shush_fucking_threshold" min="0.005" max="0.1" step="0.005" value="0.02">
+                            <span class="setting-value" id="sex_shush_fucking_threshold_value">0.02</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                LLM speech chance during sex (%):
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        Probability that Christine will generate spoken responses instead of just sounds during sexual activity. 3% chance by default. Higher values = more talking during sex, lower values = more just sounds.
+                                        <span class="tooltip-default">Default: 3%</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="sex_llm_speech_chance" min="1" max="50" step="1" value="3">
+                            <span class="setting-value" id="sex_llm_speech_chance_value">3%</span>
+                        </div>
+                    </div>
+
+                    <div class="setting-group">
+                        <h3>🎯 Touch Sensitivity</h3>
+                        <div class="setting-item">
+                            <label>
+                                Clitoral touch sensitivity:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        How much arousal increases with each clitoral sensor touch. Higher values make Christine more sensitive and reach orgasm faster from clitoral stimulation. Lower values require more touches to build arousal.
+                                        <span class="tooltip-default">Default: 0.0006</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="sex_arousal_per_hit_clitoris" min="0.0001" max="0.01" step="0.0001" value="0.0006">
+                            <span class="setting-value" id="sex_arousal_per_hit_clitoris_value">0.0006</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                Shallow touch sensitivity:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        How much arousal increases with each shallow vaginal sensor touch. Affects sensitivity and response timing for shallow penetration or entry-focused activity.
+                                        <span class="tooltip-default">Default: 0.0006</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="sex_arousal_per_hit_shallow" min="0.0001" max="0.01" step="0.0001" value="0.0006">
+                            <span class="setting-value" id="sex_arousal_per_hit_shallow_value">0.0006</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                Middle touch sensitivity:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        How much arousal increases with each middle vaginal sensor touch. Slightly higher than shallow/clitoral by default, representing different sensitivity zones and stimulation types.
+                                        <span class="tooltip-default">Default: 0.0007</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="sex_arousal_per_hit_middle" min="0.0001" max="0.01" step="0.0001" value="0.0007">
+                            <span class="setting-value" id="sex_arousal_per_hit_middle_value">0.0007</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                Deep touch sensitivity:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        How much arousal increases with each deep vaginal sensor touch. Highest sensitivity by default, representing deep penetration stimulation. Higher values make deep touches more impactful.
+                                        <span class="tooltip-default">Default: 0.0009</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="sex_arousal_per_hit_deep" min="0.0001" max="0.01" step="0.0001" value="0.0009">
+                            <span class="setting-value" id="sex_arousal_per_hit_deep_value">0.0009</span>
+                        </div>
+                    </div>
+
+                    <div class="setting-group">
+                        <h3>�🔧 Advanced Settings</h3>
                         <div class="setting-item">
                             <label>
                                 Memory folding max delay (minutes):
@@ -1194,6 +1342,9 @@
                     if (settingName === 'random_memory_recall_chance') {
                         slider.value = config.value * 100; // Convert to percentage for slider
                         displayValue = Math.round(config.value * 100) + '%';
+                    } else if (settingName === 'sex_llm_speech_chance') {
+                        slider.value = config.value * 100; // Convert to percentage for slider
+                        displayValue = Math.round(config.value * 100) + '%';
                     } else if (settingName === 'neocortex_recall_interval') {
                         slider.value = Math.round(config.value / (24 * 60 * 60)); // Convert seconds to days
                         displayValue = Math.round(config.value / (24 * 60 * 60)) + 'd';
@@ -1205,6 +1356,10 @@
                         displayValue = Math.round(config.value / 60) + 'm';
                     } else if (config.type === 'f' && settingName.includes('seconds')) {
                         displayValue = config.value + 's';
+                    } else if (settingName === 'sex_arousal_stagnation_timeout') {
+                        displayValue = config.value + 's';
+                    } else if (settingName.startsWith('sex_arousal_per_hit_')) {
+                        displayValue = config.value.toFixed(4); // Show 4 decimal places for sensitivity
                     } else {
                         slider.value = config.value;
                     }
@@ -1231,6 +1386,8 @@
             
             if (settingName === 'random_memory_recall_chance') {
                 displayValue = value + '%';
+            } else if (settingName === 'sex_llm_speech_chance') {
+                displayValue = value + '%';
             } else if (settingName === 'neocortex_recall_interval') {
                 displayValue = value + 'd';
             } else if (settingName === 'primary_restoration_interval') {
@@ -1239,6 +1396,10 @@
                 displayValue = value + 'm';
             } else if (settingName.includes('seconds')) {
                 displayValue = value + 's';
+            } else if (settingName === 'sex_arousal_stagnation_timeout') {
+                displayValue = value + 's';
+            } else if (settingName.startsWith('sex_arousal_per_hit_')) {
+                displayValue = parseFloat(value).toFixed(4); // Show 4 decimal places for sensitivity
             }
             
             valueDisplay.textContent = displayValue;
@@ -1249,6 +1410,8 @@
             let actualValue = value;
             
             if (settingName === 'random_memory_recall_chance') {
+                actualValue = parseFloat(value) / 100.0; // Convert percentage back to decimal
+            } else if (settingName === 'sex_llm_speech_chance') {
                 actualValue = parseFloat(value) / 100.0; // Convert percentage back to decimal
             } else if (settingName === 'neocortex_recall_interval') {
                 actualValue = parseInt(value) * 24 * 60 * 60; // Convert days back to seconds
