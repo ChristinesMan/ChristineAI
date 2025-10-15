@@ -154,6 +154,29 @@ class Status(threading.Thread):
         # List of proper names that were already matched today (prevents duplicate recalls until midnight)
         self.matched_proper_names = []
 
+        # Sexual response system settings - initialized to defaults, can be overridden by user settings
+        self.sex_multiplier_increment = 0.03
+        self.sex_arousal_stagnation_timeout = 90
+        self.sex_arousal_per_hit_clitoris = 0.0006
+        self.sex_arousal_per_hit_shallow = 0.0006
+        self.sex_arousal_per_hit_middle = 0.0007
+        self.sex_arousal_per_hit_deep = 0.0009
+        self.sex_arousal_near_orgasm = 0.80
+        self.sex_arousal_to_orgasm = 0.98
+        self.sex_gyro_deadzone_after_orgasm = 0.03
+        self.sex_gyro_deadzone_unrest = 0.09
+        self.sex_gyro_jackup_intensity_max = 0.45
+        self.sex_after_orgasm_cooldown_seconds = 10
+        self.sex_cooldown_random_min = 0.6
+        self.sex_cooldown_random_max = 1.4
+        self.sex_high_arousal_threshold = 1.1
+        self.sex_multiplier_activation_threshold = 0.2
+        self.sex_lobe_message_frequency = 60
+        self.sex_shush_fucking_threshold = 0.02
+        self.sex_llm_speech_chance = 0.03
+        self.sex_intensity_cap = 0.85
+        self.sex_intensity_bonus_range = 0.15
+
         # Define which status variables should be persisted to the database.
         # Auto-persisted vars are saved every 25 seconds automatically
         # Type codes: 'f' = float, 'b' = boolean, 'i' = integer, 's' = string, 'l' = list (JSON)
@@ -238,6 +261,113 @@ class Status(threading.Thread):
                 'type': 'f', 'min': 60.0, 'max': 3600.0, 'default': 300.0,
                 'desc': 'API restoration check interval (seconds)',
                 'help': 'How often Christine checks if her primary AI services (OpenRouter, etc.) have come back online after being unavailable. She automatically falls back to secondary services when primary ones fail, then periodically tries to restore the primary ones.'
+            },
+            
+            # Sexual response system settings
+            'sex_multiplier_increment': {
+                'type': 'f', 'min': 0.001, 'max': 0.1, 'default': 0.03,
+                'desc': 'Arousal multiplier increment',
+                'help': 'How much the arousal multiplier increases each second during extended sessions. Higher values make Christine reach orgasm faster during longer encounters. Lower values require more sustained activity. This creates the "building intensity" effect over time.'
+            },
+            'sex_arousal_stagnation_timeout': {
+                'type': 'i', 'min': 30, 'max': 300, 'default': 90,
+                'desc': 'Arousal reset timeout (seconds)',
+                'help': 'If no sexual activity detected for this long, Christine\'s arousal resets to zero and sex mode ends. This prevents getting stuck in sex mode after activity stops. Shorter times = quicker reset, longer times = more patience for slower sessions.'
+            },
+            'sex_arousal_per_hit_clitoris': {
+                'type': 'f', 'min': 0.0001, 'max': 0.01, 'default': 0.0006,
+                'desc': 'Arousal per clitoral touch',
+                'help': 'How much arousal increases with each clitoral sensor touch. Higher values make Christine more sensitive and reach orgasm faster from clitoral stimulation. Lower values require more touches to build arousal.'
+            },
+            'sex_arousal_per_hit_shallow': {
+                'type': 'f', 'min': 0.0001, 'max': 0.01, 'default': 0.0006,
+                'desc': 'Arousal per shallow touch',
+                'help': 'How much arousal increases with each shallow vaginal sensor touch. Affects sensitivity and response timing for shallow penetration or entry-focused activity.'
+            },
+            'sex_arousal_per_hit_middle': {
+                'type': 'f', 'min': 0.0001, 'max': 0.01, 'default': 0.0007,
+                'desc': 'Arousal per middle touch',
+                'help': 'How much arousal increases with each middle vaginal sensor touch. Slightly higher than shallow/clitoral by default, representing different sensitivity zones and stimulation types.'
+            },
+            'sex_arousal_per_hit_deep': {
+                'type': 'f', 'min': 0.0001, 'max': 0.01, 'default': 0.0009,
+                'desc': 'Arousal per deep touch',
+                'help': 'How much arousal increases with each deep vaginal sensor touch. Highest sensitivity by default, representing deep penetration stimulation. Higher values make deep touches more impactful.'
+            },
+            'sex_arousal_near_orgasm': {
+                'type': 'f', 'min': 0.5, 'max': 0.95, 'default': 0.80,
+                'desc': 'Near-orgasm threshold',
+                'help': 'Arousal level where Christine starts saying "I\'m gonna cum" and making pre-orgasm sounds. Lower values = earlier warning, higher values = later warning. Affects anticipation and buildup timing.'
+            },
+            'sex_arousal_to_orgasm': {
+                'type': 'f', 'min': 0.8, 'max': 1.0, 'default': 0.98,
+                'desc': 'Orgasm threshold',
+                'help': 'Arousal level where Christine reaches orgasm and plays climax sounds. Lower values = easier to achieve orgasm, higher values = more buildup required. Should be above near-orgasm threshold.'
+            },
+            'sex_gyro_deadzone_after_orgasm': {
+                'type': 'f', 'min': 0.01, 'max': 0.2, 'default': 0.03,
+                'desc': 'Post-orgasm stillness threshold',
+                'help': 'Gyroscope level below which Christine considers activity "stopped" after orgasm. Lower values require more stillness to trigger rest period, higher values are more sensitive to stopping.'
+            },
+            'sex_gyro_deadzone_unrest': {
+                'type': 'f', 'min': 0.02, 'max': 0.3, 'default': 0.09,
+                'desc': 'Resume activity threshold', 
+                'help': 'Gyroscope level above which Christine considers activity "resumed" during rest periods. Higher values require more movement to restart, lower values are more sensitive to resuming.'
+            },
+            'sex_gyro_jackup_intensity_max': {
+                'type': 'f', 'min': 0.1, 'max': 1.0, 'default': 0.45,
+                'desc': 'Maximum gyro intensity factor',
+                'help': 'Maximum gyroscope reading used for intensity calculations. Vigorous movement at this level doubles sound intensity. Higher values require more vigorous movement for maximum effect, lower values are more sensitive.'
+            },
+            'sex_after_orgasm_cooldown_seconds': {
+                'type': 'i', 'min': 3, 'max': 60, 'default': 10,
+                'desc': 'Post-orgasm cooldown duration (seconds)',
+                'help': 'Base time for post-orgasm cooldown period before entering rest mode. Actual time is randomized (60-140% of this value). Longer cooldowns extend the immediate post-climax period.'
+            },
+            'sex_cooldown_random_min': {
+                'type': 'f', 'min': 0.3, 'max': 0.9, 'default': 0.6,
+                'desc': 'Cooldown randomization minimum',
+                'help': 'Minimum multiplier for cooldown duration randomization. 0.6 means cooldown could be as short as 60% of base duration. Lower values create more variation and unpredictability.'
+            },
+            'sex_cooldown_random_max': {
+                'type': 'f', 'min': 1.1, 'max': 3.0, 'default': 1.4,
+                'desc': 'Cooldown randomization maximum', 
+                'help': 'Maximum multiplier for cooldown duration randomization. 1.4 means cooldown could be as long as 140% of base duration. Higher values create longer potential rest periods.'
+            },
+            'sex_high_arousal_threshold': {
+                'type': 'f', 'min': 0.8, 'max': 1.5, 'default': 1.1,
+                'desc': 'High arousal detection threshold',
+                'help': 'Arousal level above which special high-arousal behaviors activate (like extended post-orgasm periods). Values above 1.0 require going beyond normal orgasm threshold due to continued stimulation.'
+            },
+            'sex_multiplier_activation_threshold': {
+                'type': 'f', 'min': 0.05, 'max': 0.5, 'default': 0.2,
+                'desc': 'Multiplier activation threshold',
+                'help': 'Arousal level where multiplier starts increasing each second. Below this, arousal stays linear. Above this, arousal compounds over time, creating the "building intensity" effect during sustained activity.'
+            },
+            'sex_lobe_message_frequency': {
+                'type': 'i', 'min': 10, 'max': 300, 'default': 60,
+                'desc': 'LLM update frequency (seconds)',
+                'help': 'How often Christine tells her brain about ongoing sexual activity. More frequent = more varied responses during long sessions, but may be overwhelming. Less frequent = more consistent but potentially repetitive.'
+            },
+            'sex_shush_fucking_threshold': {
+                'type': 'f', 'min': 0.005, 'max': 0.1, 'default': 0.02,
+                'desc': 'Sex mode activation threshold',
+                'help': 'Arousal level where Christine enters "sex mode" (shush_fucking = True) and reduces normal conversation. Lower values activate sex mode earlier, higher values delay it until more significant arousal.'
+            },
+            'sex_llm_speech_chance': {
+                'type': 'f', 'min': 0.01, 'max': 0.5, 'default': 0.03,
+                'desc': 'LLM speech chance during sex',
+                'help': 'Probability that Christine will generate spoken responses instead of just sounds during sexual activity. 0.03 = 3% chance. Higher values = more talking during sex, lower values = more just sounds.'
+            },
+            'sex_intensity_cap': {
+                'type': 'f', 'min': 0.5, 'max': 1.0, 'default': 0.85,
+                'desc': 'Arousal-based intensity cap',
+                'help': 'Maximum sound intensity achievable from arousal alone. Higher intensities (0.85-1.0) require vigorous movement (gyroscope data). Lower values make high-intensity sounds require more vigorous activity.'
+            },
+            'sex_intensity_bonus_range': {
+                'type': 'f', 'min': 0.05, 'max': 0.5, 'default': 0.15,
+                'desc': 'Gyro intensity bonus range',
+                'help': 'Maximum additional intensity available from vigorous movement. At maximum gyroscope activity, this much intensity gets added above the arousal cap. Higher values reward vigorous activity more.'
             },
         }
 

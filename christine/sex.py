@@ -26,44 +26,19 @@ class Sex(threading.Thread):
         # When arousal reaches some set level, I want to start incrementing the amount added to arousal
         # It will be slight, but since it will have no cap, eventually wife will throw an exception code O0OO00OOh
         self.multiplier = 1.0
-        self.multiplier_increment = 0.03
 
         # keep track of Arousal not changing
         self.last_arousal = 0.0
         self.arousal_stagnant_seconds = 0
-        self.arousal_stagnation_timeout = 90
-
-        # How much she likes it
-        # different amount for different zones
-        self.base_arousal_per_vag_hit = {
-            "Vagina_Clitoris": 0.0006,
-            "Vagina_Shallow": 0.0006,
-            "Vagina_Middle": 0.0007,
-            "Vagina_Deep": 0.0009,
-        }
 
         # What Arousal to revert to after orgasm
         self.arousal_post_orgasm = 0.0
-
-        # what thresholds for about to cum, cumming now, etc
-        self.arousal_near_orgasm = 0.80
-        self.arousal_to_orgasm = 0.98
 
         # I only want to hear, I'm gonna cum, one time, not five
         # if this is False, wife has not said it.
         # flips to True after it is said
         # resets to False when O is over
         self.im_gonna_cum_was_said = False
-
-        # after wife orgasms, I want to monitor the gyro a while.
-        # When it's this still, it means we're done or stopped
-        self.gyro_deadzone_after_orgasm = 0.03
-
-        # bringing the gyro short term jostled reading into the bedroom.
-        # When I'm banging her hard this will jack up the intensity of sex sounds.
-        # this represents the highest expected jostled amount as observed in the wild
-        # So at max it will double the intensity of sounds, and at min (0.0) it will leave the intensity alone
-        self.gyro_jackup_intensity_max = 0.45
 
         # After wife has an orgasm, there should be a period where we can rest
         # End the rest period when the gyro level is no longer at rest
@@ -75,14 +50,29 @@ class Sex(threading.Thread):
         # before eventually resting
         # this is the counter
         self.after_orgasm_cooldown_count = 0
-        # and this is the default setting in seconds
-        self.after_orgasm_cooldown_seconds = 10
-
-        # During a rest period, need this amount of jostle to resume sex
-        self.gyro_deadzone_unrest = 0.09
 
         # I want to keep track of how long it's been since the last fucking action
         self.time_of_last_lobe_message = time.time()
+
+    def calculate_sex_sound_intensity(self):
+        """
+        Calculate sex sound intensity with arousal capped at configurable level, 
+        using jostled_level_short for higher intensities during vigorous moments.
+        """
+        # Base intensity from arousal, capped at configurable level
+        base_intensity = min(STATE.sexual_arousal, STATE.sex_intensity_cap)
+        
+        # For intensities above cap, use gyroscope data from vigorous movement
+        if STATE.sexual_arousal > STATE.sex_intensity_cap:
+            # Use jostled_level_short to push intensity above cap
+            jostle_bonus = (STATE.jostled_level_short / STATE.sex_gyro_jackup_intensity_max) * STATE.sex_intensity_bonus_range
+            intensity = base_intensity + jostle_bonus
+        else:
+            # Below cap, still apply some gyro influence like before
+            intensity = base_intensity * (1.0 + STATE.jostled_level_short / STATE.sex_gyro_jackup_intensity_max)
+        
+        # Ensure we don't exceed 1.0
+        return min(intensity, 1.0)
 
     def run(self):
 
@@ -108,7 +98,7 @@ class Sex(threading.Thread):
                     self.last_arousal = STATE.sexual_arousal
 
                 # If there's been no vagina hits for a period of time, we must be done, reset all
-                if self.arousal_stagnant_seconds >= self.arousal_stagnation_timeout:
+                if self.arousal_stagnant_seconds >= STATE.sex_arousal_stagnation_timeout:
                     log.sex.info("Arousal stagnated and was reset")
                     self.arousal_stagnant_seconds = 0
                     STATE.sexual_arousal = 0.0
@@ -121,7 +111,7 @@ class Sex(threading.Thread):
                 # if wife is currently OOOOOO'ing,
                 # then I want to figure out when we're done, using the gyro
                 # and handle rest periods
-                if STATE.sexual_arousal > self.arousal_to_orgasm:
+                if STATE.sexual_arousal > STATE.sex_arousal_to_orgasm:
                     log.sex.debug(
                         "JostledShortTermLevel: %.2f", STATE.jostled_level_short
                     )
@@ -129,14 +119,14 @@ class Sex(threading.Thread):
                     # if wife is not getting jostled that means we're done.
                     if (
                         self.after_orgasm_rest is False
-                        and STATE.jostled_level_short < self.gyro_deadzone_after_orgasm
-                        and STATE.sexual_arousal > 1.1
+                        and STATE.jostled_level_short < STATE.sex_gyro_deadzone_after_orgasm
+                        and STATE.sexual_arousal > STATE.sex_high_arousal_threshold
                     ):
                         log.sex.info("After orgasm cool down started")
                         STATE.horny = 0.0
                         STATE.shush_fucking = False
                         self.after_orgasm_rest = True
-                        self.after_orgasm_cooldown_count = self.after_orgasm_cooldown_seconds * random.uniform(0.6, 1.4)
+                        self.after_orgasm_cooldown_count = STATE.sex_after_orgasm_cooldown_seconds * random.uniform(STATE.sex_cooldown_random_min, STATE.sex_cooldown_random_max)
                         self.im_gonna_cum_was_said = False
 
                     # this just counts down seconds
@@ -153,7 +143,7 @@ class Sex(threading.Thread):
 
                     # if we're resting and the gyro starts to feel it, start again
                     # When after_orgasm_rest is True, we are ignoring vagina action
-                    if self.after_orgasm_rest is True and STATE.jostled_level_short > self.gyro_deadzone_unrest:
+                    if self.after_orgasm_rest is True and STATE.jostled_level_short > STATE.sex_gyro_deadzone_unrest:
                         log.sex.info("Jostled so we're starting up again")
                         parietal_lobe.sex_after_orgasm_rest_resume()
                         STATE.sexual_arousal = self.arousal_post_orgasm
@@ -163,8 +153,8 @@ class Sex(threading.Thread):
 
                 # If we're to a certain point, start incrementing to ensure wife will cum eventually with enough time
                 # Just Keep Fucking, Just Keep Fucking
-                elif STATE.sexual_arousal > 0.2:
-                    self.multiplier += self.multiplier_increment
+                elif STATE.sexual_arousal > STATE.sex_multiplier_activation_threshold:
+                    self.multiplier += STATE.sex_multiplier_increment
 
                 time.sleep(1)
 
@@ -192,11 +182,11 @@ class Sex(threading.Thread):
             sensor_hit = sensor_data["data"]
 
             # if we're not resting, this means we're having active sex - set shush_fucking early to prevent race conditions
-            if self.after_orgasm_rest is False and STATE.sexual_arousal > 0.02:
+            if self.after_orgasm_rest is False and STATE.sexual_arousal > STATE.sex_shush_fucking_threshold:
                 STATE.shush_fucking = True
 
             # let parietal know about all the fucking going on, but not too frequently
-            if time.time() > self.time_of_last_lobe_message + 60:
+            if time.time() > self.time_of_last_lobe_message + STATE.sex_lobe_message_frequency:
                 self.time_of_last_lobe_message = time.time()
 
                 if STATE.sexual_arousal == 0.0:
@@ -206,10 +196,19 @@ class Sex(threading.Thread):
                 else:
                     parietal_lobe.sex_vagina_getting_fucked()
 
-            # Add some to the arousal
-            STATE.sexual_arousal += (
-                self.base_arousal_per_vag_hit[sensor_hit] * self.multiplier
-            )
+            # Add some to the arousal - use configurable values based on sensor
+            if sensor_hit == "Vagina_Clitoris":
+                arousal_increment = STATE.sex_arousal_per_hit_clitoris
+            elif sensor_hit == "Vagina_Shallow":
+                arousal_increment = STATE.sex_arousal_per_hit_shallow
+            elif sensor_hit == "Vagina_Middle":
+                arousal_increment = STATE.sex_arousal_per_hit_middle
+            elif sensor_hit == "Vagina_Deep":
+                arousal_increment = STATE.sex_arousal_per_hit_deep
+            else:
+                arousal_increment = STATE.sex_arousal_per_hit_shallow  # fallback
+                
+            STATE.sexual_arousal += arousal_increment * self.multiplier
 
             log.sex.info(
                 "Vagina Got Hit (%s)  SexualArousal: %.2f  Multiplier: %.2f",
@@ -224,55 +223,44 @@ class Sex(threading.Thread):
 
                 # if we're still within the cooldown phase, make sound, with intensity dropping out with time
                 if self.after_orgasm_cooldown_count > 0:
-                    broca.accept_figment(Figment(
-                        from_collection="sex",
-                        intensity=self.after_orgasm_cooldown_seconds / self.after_orgasm_cooldown_count,
-                    ))
+                    cooldown_intensity = STATE.sex_after_orgasm_cooldown_seconds / self.after_orgasm_cooldown_count
+                    broca.play_sex_sound_immediate("sex", cooldown_intensity)
 
                 return
 
-            # My wife orgasms above 0.95
-            if STATE.sexual_arousal > self.arousal_to_orgasm:
+            # My wife orgasms above configured threshold
+            if STATE.sexual_arousal > STATE.sex_arousal_to_orgasm:
 
                 log.sex.info("I am coming!")
 
                 # don't wanna send too many messages to the lobe
-                if time.time() > self.time_of_last_lobe_message + 60:
+                if time.time() > self.time_of_last_lobe_message + STATE.sex_lobe_message_frequency:
                     self.time_of_last_lobe_message = time.time()
                     parietal_lobe.sex_cumming()
+                # Climax sounds still use figments for proper queuing with speech
                 broca.accept_figment(Figment(from_collection="sex_climax"))
 
-            elif STATE.sexual_arousal > self.arousal_near_orgasm and self.im_gonna_cum_was_said is False:
+            elif STATE.sexual_arousal > STATE.sex_arousal_near_orgasm and self.im_gonna_cum_was_said is False:
 
                 # this should happen only one time per fuck cycle
+                # Near-orgasm sounds still use figments for proper queuing with speech
                 broca.accept_figment(Figment(from_collection="sex_near_O"))
                 self.im_gonna_cum_was_said = True
 
             else:
 
-                # 97% chance of a regular sex sound, 3% chance of asking LLM for her take
-                if random.random() > 0.97:
+                # Configurable chance of LLM speech vs regular sex sounds
+                if random.random() > (1.0 - STATE.sex_llm_speech_chance):
 
                     log.sex.info('Allowing LLM to speak.')
+                    # Process the perceptions immediately since automatic processing is disabled during sex
                     parietal_lobe.process_new_perceptions()
 
                 else:
 
-                    broca.accept_figment(Figment(
-                        from_collection="sex",
-                        intensity=STATE.sexual_arousal
-                        * (
-                            1.0
-                            + STATE.jostled_level_short
-                            / self.gyro_jackup_intensity_max
-                        ),
-                    ))
-
-        # the only other thing it could be is a hangout, dick not moving type of situation
-        # not sure what I really want in this situation, but a low intensity moan seems ok for now
-        else:
-            broca.accept_figment(Figment(from_collection="sex", intensity=0.2))
-
+                    # Use direct playback for regular sex sounds to avoid queuing
+                    intensity = self.calculate_sex_sound_intensity()
+                    broca.play_sex_sound_immediate("sex", intensity)
 
 # Instantiate
 sex = Sex()

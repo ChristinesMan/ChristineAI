@@ -580,6 +580,48 @@ class Broca(threading.Thread):
                     # set cycles_to_breathe to a random number of seconds between 0.5 and 1.5 for the next time
                     seconds_to_breathe = 0.5 + random.random()
 
+    def play_sex_sound_immediate(self, collection_name: str, intensity: float = None):
+        """
+        Play a sex sound immediately if nothing else is playing, otherwise discard.
+        This bypasses the figment queue to prevent 15-minute delays after sex.
+        """
+        # Check if we're already playing something (queue not empty or currently processing)
+        if self.figment_queue.qsize() > 0:
+            log.broca_main.debug("Discarding sex sound - broca is busy")
+            return
+        
+        # Apply timing limits to prevent rapid-fire sounds
+        current_time = time.time()
+        if not hasattr(self, 'last_sex_sound_time'):
+            self.last_sex_sound_time = 0
+        
+        time_since_last = current_time - self.last_sex_sound_time
+        if time_since_last < 2.0:
+            log.broca_main.debug('Discarding sex sound - only %.1f seconds since last', time_since_last)
+            return
+        
+        # Get the sound from the collection
+        sound = sounds_db.get_random_sound(collection_name=collection_name, intensity=intensity)
+        if sound is None:
+            log.broca_main.warning('No sound available in collection %s', collection_name)
+            return
+        
+        if not os.path.isfile(sound.file_path):
+            log.broca_main.warning('Sound file %s does not exist', sound.file_path)
+            return
+        
+        log.broca_main.debug("Playing sex sound immediately: %s", sound.file_path)
+        
+        # Send directly to subprocess for immediate playback
+        self.to_shuttlecraft.send({
+            "action": "playwav",
+            "wavfile": sound.file_path,
+            "vol": 100,
+            "pause_wernicke": sound.pause_wernicke if sound.pause_wernicke else False,
+        })
+        
+        self.last_sex_sound_time = current_time
+
 # Instantiate
 broca = Broca()
 

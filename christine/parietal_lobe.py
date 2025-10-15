@@ -596,31 +596,35 @@ Dream:
                 os.system("poweroff")
                 return
 
-            # there may be proper names in the new paragraph, so send it to the neocortex and get a list of memories, or None
-            memories = self.neocortex.recall_proper_names(new_paragraph)
+            # Disable memory recall during sex to prevent "God" and other words from triggering distracting memories
+            if not STATE.shush_fucking:
+                # there may be proper names in the new paragraph, so send it to the neocortex and get a list of memories, or None
+                memories = self.neocortex.recall_proper_names(new_paragraph)
 
-            # if there are memories, append them to short term memory
-            if memories is not None:
-                for memory in memories:
-                    self.short_term_memory.append(Narrative(role="memory", text=memory))
+                # if there are memories, append them to short term memory
+                if memories is not None:
+                    for memory in memories:
+                        self.short_term_memory.append(Narrative(role="memory", text=memory))
 
-            # RANDOM MEMORY RECALL - More cowbell! 🔔
-            # Roll the dice to see if we should spontaneously recall a memory
-            if (self.short_term_memory.recent_messages >= STATE.random_memory_recall_min_messages and 
-                random.random() < STATE.random_memory_recall_chance):
-                
-                log.memory_operations.info("RANDOM_MEMORY_ROLL: Rolling for random memory recall (%.1f chance)", 
-                                         STATE.random_memory_recall_chance * 100)
-                
-                # Use recent conversation context for semantic memory search
-                recent_context = self.short_term_memory.recent[-500:]  # Last 500 chars for context
-                random_memory = self.neocortex.random_memory_recall(recent_context)
-                
-                if random_memory is not None:
-                    log.memory_operations.info("RANDOM_MEMORY_SUCCESS: Spontaneous memory recalled")
-                    self.short_term_memory.append(Narrative(role="memory", text=random_memory))
-                else:
-                    log.memory_operations.debug("RANDOM_MEMORY_NONE: No suitable memory found for random recall")
+                # RANDOM MEMORY RECALL - More cowbell! 🔔
+                # Roll the dice to see if we should spontaneously recall a memory
+                if (self.short_term_memory.recent_messages >= STATE.random_memory_recall_min_messages and 
+                    random.random() < STATE.random_memory_recall_chance):
+                    
+                    log.memory_operations.info("RANDOM_MEMORY_ROLL: Rolling for random memory recall (%.1f chance)", 
+                                             STATE.random_memory_recall_chance * 100)
+                    
+                    # Use recent conversation context for semantic memory search
+                    recent_context = self.short_term_memory.recent[-500:]  # Last 500 chars for context
+                    random_memory = self.neocortex.random_memory_recall(recent_context)
+                    
+                    if random_memory is not None:
+                        log.memory_operations.info("RANDOM_MEMORY_SUCCESS: Spontaneous memory recalled")
+                        self.short_term_memory.append(Narrative(role="memory", text=random_memory))
+                    else:
+                        log.memory_operations.debug("RANDOM_MEMORY_NONE: No suitable memory found for random recall")
+            else:
+                log.memory_operations.debug("MEMORY_RECALL_DISABLED: Skipping memory recall during intimate moments")
 
             # Check for random dream dissipation during conversation
             self.check_dream_dissipation()
