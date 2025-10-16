@@ -61,8 +61,20 @@ class Reminder:
         elif self.recurring == 'weekly':
             next_dt = current_dt + timedelta(weeks=1)
         elif self.recurring == 'monthly':
-            # Approximate monthly - add 30 days
-            next_dt = current_dt + timedelta(days=30)
+            # Proper monthly calculation - add 1 month
+            if current_dt.month == 12:
+                next_dt = current_dt.replace(year=current_dt.year + 1, month=1)
+            else:
+                next_dt = current_dt.replace(month=current_dt.month + 1)
+            
+            # Handle day overflow (e.g., Jan 31 -> Feb 28/29)
+            try:
+                next_dt = current_dt.replace(month=next_dt.month, year=next_dt.year)
+            except ValueError:
+                # Day doesn't exist in target month, use last day of month
+                import calendar
+                last_day = calendar.monthrange(next_dt.year, next_dt.month)[1]
+                next_dt = current_dt.replace(year=next_dt.year, month=next_dt.month, day=last_day)
         else:
             return None
         
@@ -131,10 +143,11 @@ class PrefrontalCortex(threading.Thread):
         Returns:
             The formatted tool introduction text
         """
-        return """EXECUTIVE FUNCTIONS: Your prefrontal cortex provides you with several tools you can call by thinking (not speaking) the function names:
+        current_date = datetime.now().strftime("%B %d, %Y")
+        return f"""EXECUTIVE FUNCTIONS: Your prefrontal cortex provides you with several tools you can call by thinking (not speaking) the function names:
 
-- checkTime() - Get the current date and time
-- setReminder("message", "time", "recurring") - Set a reminder for yourself. Time can be "in 30 minutes", "tomorrow at 9am", "2024-10-07 15:30", etc. Recurring can be "daily", "weekly", "monthly", or omitted for one-time reminders.
+- checkTime() - Get the current date and time (today is {current_date})
+- setReminder("message", "time", "recurring") - Set a reminder for yourself. Time can be "in 30 minutes", "in 1 month", "in 2 weeks", "tomorrow at 9am", "2025-11-15 14:30", etc. Recurring can be "daily", "weekly", "monthly", or omitted for one-time reminders.
 - listReminders() - See all your current reminders
 - removeReminder("message or id") - Remove a reminder by referencing its message text"""
     
@@ -234,7 +247,17 @@ class PrefrontalCortex(threading.Thread):
             target_datetime = self.parse_time_specification(time_spec)
             
             if target_datetime is None:
-                self.send_error_perception(f"Could not understand time specification: {time_spec}")
+                current_time = datetime.now()
+                current_str = current_time.strftime("%A, %B %d, %Y at %I:%M %p")
+                self.send_error_perception(f"Could not understand time specification: {time_spec}. Current date/time is {current_str}")
+                return
+            
+            # Check if the target date is in the past
+            now = datetime.now()
+            if target_datetime <= now:
+                current_str = now.strftime("%A, %B %d, %Y at %I:%M %p")
+                target_str = target_datetime.strftime("%A, %B %d, %Y at %I:%M %p")
+                self.send_error_perception(f"Cannot set reminder for past date/time. You specified {target_str}, but current date/time is {current_str}")
                 return
             
             # Create the reminder
@@ -249,10 +272,31 @@ class PrefrontalCortex(threading.Thread):
             self.reminders.append(reminder)
             self.save_reminders()
             
-            # Confirm to Christine
+            # Confirm to Christine with relative time information
             time_str = target_datetime.strftime("%A, %B %d at %I:%M %p")
+            
+            # Calculate relative time
+            time_diff = target_datetime - now
+            days = time_diff.days
+            hours, remainder = divmod(time_diff.seconds, 3600)
+            minutes, _ = divmod(remainder, 60)
+            
+            # Build relative time string
+            relative_parts = []
+            if days > 0:
+                relative_parts.append(f"{days} day{'s' if days != 1 else ''}")
+            if hours > 0:
+                relative_parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
+            if minutes > 0 and days == 0:  # Only show minutes if less than a day
+                relative_parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
+            
+            if relative_parts:
+                relative_str = f" (in {', '.join(relative_parts)})"
+            else:
+                relative_str = " (very soon)"
+            
             recurring_text = f" (recurring {recurring})" if recurring else ""
-            perception_text = f"Reminder set: '{message}' for {time_str}{recurring_text}."
+            perception_text = f"Reminder set: '{message}' for {time_str}{relative_str}{recurring_text}."
             self.send_perception(perception_text)
             
             log.prefrontal_cortex.info("REMINDER_SET: '%s' for %s", message, time_str)
@@ -315,8 +359,8 @@ class PrefrontalCortex(threading.Thread):
         
         # Handle relative times
         if "in " in time_spec:
-            # "in 30 minutes", "in 2 hours", etc.
-            match = re.search(r'in\s+(\d+)\s+(minute|hour|day)s?', time_spec)
+            # "in 30 minutes", "in 2 hours", "in 1 month", "in 2 weeks", "in 1 year", etc.
+            match = re.search(r'in\s+(\d+)\s+(minute|hour|day|week|month|year)s?', time_spec)
             if match:
                 amount = int(match.group(1))
                 unit = match.group(2)
@@ -327,6 +371,14 @@ class PrefrontalCortex(threading.Thread):
                     return now + timedelta(hours=amount)
                 elif unit == 'day':
                     return now + timedelta(days=amount)
+                elif unit == 'week':
+                    return now + timedelta(weeks=amount)
+                elif unit == 'month':
+                    # Approximate month as 30 days
+                    return now + timedelta(days=amount * 30)
+                elif unit == 'year':
+                    # Approximate year as 365 days
+                    return now + timedelta(days=amount * 365)
         
         # Handle "tomorrow at X"
         if "tomorrow" in time_spec:

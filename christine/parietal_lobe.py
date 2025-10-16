@@ -679,7 +679,6 @@ Dream:
 
         # Clean up the response
         response = response.replace('\n', ' ').strip()
-        response = response.replace('""', '"')  # Fix double quotes
 
         # State tracking
         segment = ''                    # Current text segment being built
