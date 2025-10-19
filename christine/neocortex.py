@@ -46,15 +46,15 @@ class Neocortex:
             "Time has passed, but the memory of {} lingers. {}",
         ]
 
-        # a list of variations of "the conversation is idle so I start to remember" that will be inserted when a memory is recalled
-        self.idle_remember = [
-            "Nothing is said for some time, and my mind drifts back to a memory from {}. {}",
-            "The conversation is idle, so my mind drifts back to a memory from {}. {}",
+        # a list of variations of remembering random memories via similarity search
+        self.random_memory_prompts = [
+            "My mind drifts back to a memory from {}. {}",
             "A flash of recollection transports me to {}. {}",
-            "Lost in thought, I ponder the time {} when {}",
-            "Out of nowhere, a memory strikes me like lightning. It was {}. {}",
+            "Suddenly, I recall a moment from {}. {}",
+            "I ponder the time {} when {}",
             "A seemingly unrelated detail sparks a recollection from {}. {}",
             "My mind drifts back to a time {} when {}",
+            "An unexpected association brings to mind a memory from {}. {}",
         ]
 
         # get the weaviate hostname from the config
@@ -424,7 +424,7 @@ Consolidated memory:"""
         self.memories.data.update(uuid=response.objects[0].uuid, properties={"date_recalled": int(time.time())})
 
         log.neocortex.debug('Recalled memory (distance %s): %s', response.objects[0].metadata.distance, response.objects[0].properties['memory'])
-        return random.choice(self.idle_remember).format(self.how_long_ago(response.objects[0].properties['date_happened']), response.objects[0].properties['memory'])
+        return random.choice(self.random_memory_prompts).format(self.how_long_ago(response.objects[0].properties['date_happened']), response.objects[0].properties['memory'])
 
     def random_memory_recall(self, recent_messages: str):
         """Randomly recall a memory based on recent conversation context.
@@ -454,7 +454,7 @@ Consolidated memory:"""
                              selected_memory.metadata.distance, selected_memory.properties['memory'][:100])
             
             # Use the idle_remember templates for natural insertion
-            return random.choice(self.idle_remember).format(
+            return random.choice(self.random_memory_prompts).format(
                 self.how_long_ago(selected_memory.properties['date_happened']), 
                 selected_memory.properties['memory']
             )
