@@ -385,8 +385,6 @@ class Wernicke(threading.Thread):
 
             def __init__(self):
                 super().__init__(daemon=True)
-                self.last_processing_stop_time = None
-                self.max_processing_stop_duration = 30.0  # Max 30 seconds stopped
 
             def run(self):
                 nonlocal recording_state
@@ -395,13 +393,6 @@ class Wernicke(threading.Thread):
                 nonlocal buffer_queue
 
                 while True:
-                    # Check for safety timeout - auto-resume if stopped too long
-                    if (not processing_state and 
-                        self.last_processing_stop_time is not None and
-                        time.time() - self.last_processing_stop_time > self.max_processing_stop_duration):
-                        log.wernicke.warning("Auto-resuming wernicke processing after safety timeout")
-                        processing_state = True
-                        self.last_processing_stop_time = None
 
                     # Check for messages with timeout so we can do safety checks
                     if to_enterprise.poll(1.0):  # 1 second timeout
@@ -413,7 +404,6 @@ class Wernicke(threading.Thread):
                             recording_state = None
                         elif comm["msg"] == "start_processing":
                             processing_state = True
-                            self.last_processing_stop_time = None
                             # CRITICAL: Flush buffer queue when starting to prevent processing 
                             # any stale audio that was captured while paused
                             # Clear the queue by draining all items
@@ -426,7 +416,6 @@ class Wernicke(threading.Thread):
                             log.wernicke.debug("Buffer queue flushed (%d items) on processing start", queue_size)
                         elif comm["msg"] == "stop_processing":
                             processing_state = False
-                            self.last_processing_stop_time = time.time()
                             # CRITICAL: Flush the buffer queue to prevent processing old audio
                             # when wernicke resumes after audio playback
                             # Clear the queue by draining all items
