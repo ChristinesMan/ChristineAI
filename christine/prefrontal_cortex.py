@@ -299,6 +299,9 @@ class PrefrontalCortex(threading.Thread):
             perception_text = f"Reminder set: '{message}' for {time_str}{relative_str}{recurring_text}."
             self.send_perception(perception_text)
             
+            # Automatically show updated reminder list
+            self.execute_list_reminders()
+            
             log.prefrontal_cortex.info("REMINDER_SET: '%s' for %s", message, time_str)
             
         except Exception as ex:
@@ -310,13 +313,24 @@ class PrefrontalCortex(threading.Thread):
         if not self.reminders:
             perception_text = "No reminders are currently set."
         else:
-            reminder_list = []
-            for reminder in sorted(self.reminders, key=lambda r: r.get_datetime()):
+            sorted_reminders = sorted(self.reminders, key=lambda r: r.get_datetime())
+            count = len(sorted_reminders)
+            
+            # Build formatted list
+            reminder_lines = []
+            for i, reminder in enumerate(sorted_reminders, 1):
                 time_str = reminder.get_datetime().strftime("%A, %B %d at %I:%M %p")
                 recurring_text = f" (recurring {reminder.recurring})" if reminder.recurring else ""
-                reminder_list.append(f"'{reminder.message}' - {time_str}{recurring_text}")
+                reminder_lines.append(f"{i}. '{reminder.message}' - {time_str}{recurring_text}")
             
-            perception_text = f"Current reminders: {', '.join(reminder_list)}."
+            # Create well-formatted perception text
+            if count == 1:
+                count_text = "1 reminder"
+            else:
+                count_text = f"{count} reminders"
+            
+            # Use semicolons and spaces for better separation
+            perception_text = f"Current reminder list ({count_text}): {'; '.join(reminder_lines)}."
         
         self.send_perception(perception_text)
         log.prefrontal_cortex.info("REMINDER_LIST: Sent %d reminders to Christine", len(self.reminders))
@@ -342,11 +356,15 @@ class PrefrontalCortex(threading.Thread):
                 self.save_reminders()
                 removed_messages = [r.message for r in removed_reminders]
                 perception_text = f"Removed reminder(s): {', '.join(removed_messages)}."
+                self.send_perception(perception_text)
+                
+                # Automatically show updated reminder list
+                self.execute_list_reminders()
+                
                 log.prefrontal_cortex.info("REMINDER_REMOVED: %d reminders removed", len(removed_reminders))
             else:
                 perception_text = f"No matching reminder found for: {target}."
-            
-            self.send_perception(perception_text)
+                self.send_perception(perception_text)
             
         except Exception as ex:
             log.prefrontal_cortex.exception("Error removing reminder: %s", ex)
