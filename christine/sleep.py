@@ -353,8 +353,15 @@ class Sleep(threading.Thread):
         # if this was done within the last 8 hours, don't do it again
         if STATE.midnight_tasks_done_time < time.time() - (8 * 60 * 60) and STATE.is_sleeping is True:
             log.sleep.info("Running midnight process")
-            parietal_lobe.sleep_midnight_task()
+            
+            # Set the done time BEFORE starting processing to prevent loops on failure
             STATE.midnight_tasks_done_time = time.time()
+            
+            try:
+                parietal_lobe.sleep_midnight_task()
+                log.sleep.info("Midnight process completed successfully")
+            except Exception as ex:
+                log.sleep.exception("Midnight process failed but will not retry: %s", ex)
 
         self.midnight_process_time = None
 

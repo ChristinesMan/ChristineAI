@@ -3,6 +3,7 @@
 import os
 import time
 import threading
+import json
 from queue import Queue
 import re
 import random
@@ -332,6 +333,12 @@ Dream:
         # Initialize all core systems
         if not self._initialize_core_systems(api_selector):
             log.parietal_lobe.error("Critical initialization failure - shutting down")
+            return
+
+        # Check for recovery files from previous failed memory processing
+        if not self.check_for_recovery_on_startup():
+            log.parietal_lobe.critical("Recovery failed - system shutting down")
+            STATE.please_shut_down = True
             return
 
         # Wait for wernicke to be ready (handles audio processing)
@@ -822,86 +829,137 @@ Dream:
     def process_yesterday_memories(self):
         """This function gets called in the middle of the night during deep sleep to process today into yesterday's memory."""
 
-        # start building the prompt to be sent over to the api, starting with the top of the special prompt for memory processing
-        prompt = self.memory_prompt_top
-
-        # add the message history from all of today, but exclude retrieved memories to avoid duplication
-        # only include narratives that represent actual experiences, not recalled memories
-        total_narratives = len(self.short_term_memory.memory)
-        excluded_memories = 0
+        timestamp = int(time.time())
         
-        for narrative in self.short_term_memory.memory:
-            if narrative.role != "memory":
-                prompt += narrative.text + '\n\n'
+        try:
+            # start building the prompt to be sent over to the api, starting with the top of the special prompt for memory processing
+            prompt = self.memory_prompt_top
+
+            # add the message history from all of today, but exclude retrieved memories to avoid duplication
+            # only include narratives that represent actual experiences, not recalled memories
+            total_narratives = len(self.short_term_memory.memory)
+            excluded_memories = 0
+            
+            for narrative in self.short_term_memory.memory:
+                if narrative.role != "memory":
+                    prompt += narrative.text + '\n\n'
+                else:
+                    excluded_memories += 1
+            
+            log.parietal_lobe.info('Memory processing: %d total narratives, %d excluded retrieved memories, %d included experiences', 
+                                  total_narratives, excluded_memories, total_narratives - excluded_memories)
+
+            # Save the base prompt for recovery purposes
+            self._save_recovery_prompt(prompt, timestamp)
+
+            # Process yesterday's memory first (this usually succeeds)
+            prompt_yesterday = prompt + self.memory_prompt_yesterday
+
+            # process using the current LLM
+            log.parietal_lobe.debug('Sending to api for yesterday memory processing.')
+            try:
+                memory = STATE.current_llm.call_api(prompt=prompt_yesterday, max_tokens=5000, temperature=1.2)
+                log.parietal_lobe.debug('Sending to api complete.')
+            except Exception as ex:
+                log.parietal_lobe.error('LLM failed to generate yesterday memory: %s', ex)
+                self._save_failed_prompt("yesterday_memory", prompt_yesterday, timestamp)
+                self._trigger_shutdown("LLM failed to generate yesterday memory")
+                return
+
+            # fix chars in the yesterday memory
+            memory = memory.translate(self.unicode_fix).replace('\n', ' ').strip()
+
+            # save yesterday's memory (replace any existing memory)
+            self.yesterday_memory = memory
+            if self.yesterday_memory:
+                self.yesterday_memory_text = f'Yesterday\n{self.yesterday_memory}\n\n'
             else:
-                excluded_memories += 1
-        
-        log.parietal_lobe.info('Memory processing: %d total narratives, %d excluded retrieved memories, %d included experiences', 
-                              total_narratives, excluded_memories, total_narratives - excluded_memories)
+                self.yesterday_memory_text = ""
+            self.save_yesterday_memory()
 
-        # add the bottom of the prompt sandwich meant for memories of full days
-        prompt_yesterday = prompt + self.memory_prompt_yesterday
+            # Process neocortex memories
+            prompt_neocortex = prompt + self.memory_prompt_loose_memories
 
-        # process using the current LLM
-        log.parietal_lobe.debug('Sending to api for yesterday memory processing.')
-        memory = STATE.current_llm.call_api(prompt=prompt_yesterday, max_tokens=5000, temperature=1.2)
-        log.parietal_lobe.debug('Sending to api complete.')
+            log.parietal_lobe.debug('Sending to api for neocortex memory.')
+            try:
+                neocortex_json = STATE.current_llm.call_api(prompt=prompt_neocortex, max_tokens=8192, temperature=0.7, expects_json=True)
+                log.parietal_lobe.debug('Sending to api complete.')
+            except Exception as ex:
+                log.parietal_lobe.error('LLM failed to generate neocortex memories: %s', ex)
+                self._save_failed_prompt("neocortex_memories", prompt_neocortex, timestamp)
+                self._trigger_shutdown("LLM failed to generate neocortex memories")
+                return
 
-        # fix chars in the yesterday memory
-        memory = memory.translate(self.unicode_fix).replace('\n', ' ').strip()
+            # make sure the neocortex logs directory exists
+            os.makedirs("./logs/neocortex/", exist_ok=True)
 
-        # save yesterday's memory (replace any existing memory)
-        self.yesterday_memory = memory
-        if self.yesterday_memory:
-            self.yesterday_memory_text = f'Yesterday\n{self.yesterday_memory}\n\n'
-        else:
-            self.yesterday_memory_text = ""
-        self.save_yesterday_memory()
+            # the neocortex are in a json format. Save to a file just in case.
+            neocortex_file = open(f'./logs/neocortex/memories_{timestamp}.json', 'w', encoding='utf-8')
+            neocortex_file.write(neocortex_json)
+            neocortex_file.close()
 
-        # now on to the memories to be stored way long term, in the neocortex
-        prompt_neocortex = prompt + self.memory_prompt_loose_memories
+            # Try to process memories into neocortex
+            try:
+                self.neocortex.process_memories_json(neocortex_json)
+                log.parietal_lobe.info('Successfully processed memories into neocortex')
+            except Exception as ex:
+                log.parietal_lobe.error('Failed to save memories to neocortex: %s', ex)
+                self._save_failed_memories("memories", neocortex_json, timestamp)
+                self._trigger_shutdown("Failed to save memories to neocortex database")
+                return
 
-        # send to api to get json formatted stuff
-        log.parietal_lobe.debug('Sending to api for neocortex memory.')
-        neocortex_json = STATE.current_llm.call_api(prompt=prompt_neocortex, max_tokens=8192, temperature=0.7, expects_json=True)
-        log.parietal_lobe.debug('Sending to api complete.')
+            # Process proper names
+            prompt_proper_names = prompt + self.memory_prompt_proper_names
 
-        # make sure the neocortex logs directory exists
-        os.makedirs("./logs/neocortex/", exist_ok=True)
+            log.parietal_lobe.debug('Sending to api for proper names.')
+            try:
+                proper_names_json = STATE.current_llm.call_api(prompt=prompt_proper_names, max_tokens=8192, temperature=0.7, expects_json=True)
+                log.parietal_lobe.debug('Sending to api complete.')
+            except Exception as ex:
+                log.parietal_lobe.error('LLM failed to generate proper names: %s', ex)
+                self._save_failed_prompt("proper_names", prompt_proper_names, timestamp)
+                self._trigger_shutdown("LLM failed to generate proper names")
+                return
 
-        # the neocortex are in a json format. Save to a file just in case.
-        neocortex_file = open(f'./logs/neocortex/memories_{int(time.time())}.json', 'w', encoding='utf-8')
-        neocortex_file.write(neocortex_json)
-        neocortex_file.close()
+            # the proper names are in a json format. Save to a file just in case.
+            proper_names_file = open(f'./logs/neocortex/proper_names_{timestamp}.json', 'w', encoding='utf-8')
+            proper_names_file.write(proper_names_json)
+            proper_names_file.close()
 
-        # just pass the json to the neocortex module
-        self.neocortex.process_memories_json(neocortex_json)
+            # Try to process proper names into neocortex
+            try:
+                self.neocortex.process_proper_names_json(proper_names_json)
+                log.parietal_lobe.info('Successfully processed proper names into neocortex')
+            except Exception as ex:
+                log.parietal_lobe.error('Failed to save proper names to neocortex: %s', ex)
+                self._save_failed_memories("proper_names", proper_names_json, timestamp)
+                self._trigger_shutdown("Failed to save proper names to neocortex database")
+                return
+            
+            # Try to clean up duplicates (non-critical - don't shut down if this fails)
+            try:
+                self.neocortex.cleanup_duplicate_proper_names()
+                log.parietal_lobe.info('Successfully cleaned up duplicate proper names')
+            except Exception as ex:
+                log.parietal_lobe.error('Failed to cleanup duplicate proper names (non-critical): %s', ex)
 
-        # also process the memories into proper names
-        prompt_proper_names = prompt + self.memory_prompt_proper_names
+            # Try to create dreams (non-critical - don't shut down if this fails)
+            try:
+                self.process_pons_dreams()
+                log.parietal_lobe.info('Successfully processed pons dreams')
+            except Exception as ex:
+                log.parietal_lobe.error('Failed to process pons dreams (non-critical): %s', ex)
 
-        # send to api to get json formatted stuff
-        log.parietal_lobe.debug('Sending to api for proper names.')
-        proper_names_json = STATE.current_llm.call_api(prompt=prompt_proper_names, max_tokens=8192, temperature=0.7, expects_json=True)
-        log.parietal_lobe.debug('Sending to api complete.')
+            # If we made it here, all critical operations succeeded
+            # Clear short term memory and remove any recovery files
+            self.short_term_memory.save_and_clear()
+            self._cleanup_recovery_files(timestamp)
+            
+            log.parietal_lobe.info('Memory processing completed successfully')
 
-        # the proper names are in a json format. Save to a file just in case.
-        proper_names_file = open(f'./logs/neocortex/proper_names_{int(time.time())}.json', 'w', encoding='utf-8')
-        proper_names_file.write(proper_names_json)
-        proper_names_file.close()
-
-        # just pass the json to the neocortex module, which will now handle duplicates
-        self.neocortex.process_proper_names_json(proper_names_json)
-        
-        # after processing, clean up any duplicates that were created
-        self.neocortex.cleanup_duplicate_proper_names()
-
-        # now create dreams using the pons system - mixing old memories with recent experiences
-        self.process_pons_dreams()
-
-        # clear short term memory since we're done with it
-        # she will wake up in the morning feeling refreshed
-        self.short_term_memory.save_and_clear()
+        except Exception as ex:
+            log.parietal_lobe.exception('Unexpected critical error during memory processing: %s', ex)
+            self._trigger_shutdown(f"Unexpected error in memory processing: {ex}")
 
     def process_pons_dreams(self):
         """Pons processing - creates dreams by mixing old forgotten memories with yesterday's experiences.
@@ -1359,6 +1417,241 @@ Horniness: {horniness_text}.
 
         # wake up a little bit
         sleep.wake_up(0.005)
+
+    def _save_recovery_prompt(self, prompt: str, timestamp: int):
+        """Save the base prompt for potential recovery."""
+        
+        os.makedirs("./recovery/", exist_ok=True)
+        recovery_file = f'./recovery/base_prompt_{timestamp}.txt'
+        
+        with open(recovery_file, 'w', encoding='utf-8') as f:
+            f.write(f"# Recovery prompt saved at {time.ctime(timestamp)}\n")
+            f.write(f"# Timestamp: {timestamp}\n\n")
+            f.write(prompt)
+        
+        log.parietal_lobe.info('Saved recovery prompt to %s', recovery_file)
+
+    def _save_failed_prompt(self, prompt_type: str, prompt: str, timestamp: int):
+        """Save a failed prompt for recovery retry."""
+        
+        os.makedirs("./recovery/", exist_ok=True)
+        recovery_file = f'./recovery/failed_prompt_{prompt_type}_{timestamp}.txt'
+        
+        with open(recovery_file, 'w', encoding='utf-8') as f:
+            f.write(f"# Failed {prompt_type} prompt at {time.ctime(timestamp)}\n")
+            f.write(f"# Timestamp: {timestamp}\n")
+            f.write(f"# Type: {prompt_type}\n\n")
+            f.write(prompt)
+        
+        # Also save the short-term memory state
+        self._save_short_term_memory_state(timestamp)
+        
+        log.parietal_lobe.error('Saved failed %s prompt to %s', prompt_type, recovery_file)
+
+    def _save_failed_memories(self, memory_type: str, memory_json: str, timestamp: int):
+        """Save generated memories that failed to be stored."""
+        
+        os.makedirs("./recovery/", exist_ok=True)
+        recovery_file = f'./recovery/failed_{memory_type}_{timestamp}.json'
+        
+        with open(recovery_file, 'w', encoding='utf-8') as f:
+            f.write(memory_json)
+        
+        # Also save metadata about the failure
+        metadata_file = f'./recovery/failed_{memory_type}_{timestamp}_metadata.txt'
+        with open(metadata_file, 'w', encoding='utf-8') as f:
+            f.write(f"# Failed {memory_type} storage at {time.ctime(timestamp)}\n")
+            f.write(f"# Timestamp: {timestamp}\n")
+            f.write(f"# Type: {memory_type}\n")
+            f.write(f"# JSON file: failed_{memory_type}_{timestamp}.json\n")
+        
+        # Save the short-term memory state
+        self._save_short_term_memory_state(timestamp)
+        
+        log.parietal_lobe.error('Saved failed %s memories to %s', memory_type, recovery_file)
+
+    def _save_short_term_memory_state(self, timestamp: int):
+        """Save current short-term memory state for recovery."""
+        
+        os.makedirs("./recovery/", exist_ok=True)
+        state_file = f'./recovery/short_term_memory_state_{timestamp}.json'
+        
+        # Convert short-term memory to serializable format
+        memory_data = []
+        for narrative in self.short_term_memory.memory:
+            memory_data.append({
+                'role': narrative.role,
+                'text': narrative.text,
+                'timestamp': getattr(narrative, 'timestamp', timestamp)
+            })
+        
+        with open(state_file, 'w', encoding='utf-8') as f:
+            json.dump({
+                'timestamp': timestamp,
+                'saved_at': time.ctime(timestamp),
+                'memory_count': len(memory_data),
+                'memories': memory_data
+            }, f, indent=2, ensure_ascii=False)
+        
+        log.parietal_lobe.info('Saved short-term memory state to %s', state_file)
+
+    def _cleanup_recovery_files(self, timestamp: int):
+        """Remove recovery files after successful processing."""
+        
+        recovery_patterns = [
+            f'./recovery/base_prompt_{timestamp}.txt',
+            f'./recovery/failed_*_{timestamp}.*',
+            f'./recovery/short_term_memory_state_{timestamp}.json'
+        ]
+        
+        import glob
+        for pattern in recovery_patterns:
+            for file_path in glob.glob(pattern):
+                try:
+                    os.remove(file_path)
+                    log.parietal_lobe.debug('Cleaned up recovery file: %s', file_path)
+                except Exception as ex:
+                    log.parietal_lobe.warning('Failed to cleanup recovery file %s: %s', file_path, ex)
+
+    def _trigger_shutdown(self, reason: str):
+        """Trigger graceful system shutdown due to critical failure."""
+        
+        log.parietal_lobe.critical('TRIGGERING SYSTEM SHUTDOWN: %s', reason)
+        log.parietal_lobe.critical('Recovery files have been saved. Restart Christine to attempt recovery.')
+        
+        # Set shutdown flag that main thread will detect
+        STATE.please_shut_down = True
+        
+        # Also try to trigger emergency shutdown via killsignal if available
+        try:
+            from christine.killsignal import killsignal
+            killsignal.emergency_shutdown(reason)
+        except Exception as ex:
+            log.parietal_lobe.error('Could not trigger emergency shutdown: %s', ex)
+
+    def check_for_recovery_on_startup(self):
+        """Check for recovery files on startup and attempt recovery."""
+        
+        import glob
+        
+        log.parietal_lobe.info('Checking for recovery files from previous failed memory processing...')
+        
+        # Look for failed prompt files
+        failed_prompts = glob.glob('./recovery/failed_prompt_*.txt')
+        failed_memories = glob.glob('./recovery/failed_*_*.json')
+        
+        if failed_prompts or failed_memories:
+            log.parietal_lobe.warning('Found %d failed prompts and %d failed memories from previous session', 
+                                    len(failed_prompts), len(failed_memories))
+            
+            # Attempt recovery
+            if self._attempt_recovery():
+                log.parietal_lobe.info('Recovery completed successfully!')
+            else:
+                log.parietal_lobe.critical('Recovery failed! Manual intervention required.')
+                log.parietal_lobe.critical('Check ./recovery/ directory and fix underlying issues.')
+                return False
+        else:
+            log.parietal_lobe.info('No recovery files found - clean startup')
+        
+        return True
+
+    def _attempt_recovery(self):
+        """Attempt to recover from saved failure state."""
+        
+        import glob
+        
+        log.parietal_lobe.info('Attempting memory processing recovery...')
+        
+        try:
+            # Find the most recent failure timestamp
+            recovery_files = glob.glob('./recovery/failed_*_*.txt') + glob.glob('./recovery/failed_*_*.json')
+            if not recovery_files:
+                return True
+            
+            # Extract timestamps and find the most recent
+            timestamps = set()
+            for file_path in recovery_files:
+                # Extract timestamp from filename
+                parts = os.path.basename(file_path).split('_')
+                for part in reversed(parts):
+                    if part.replace('.txt', '').replace('.json', '').isdigit():
+                        timestamps.add(int(part.replace('.txt', '').replace('.json', '')))
+                        break
+            
+            if not timestamps:
+                log.parietal_lobe.error('Could not extract timestamp from recovery files')
+                return False
+            
+            latest_timestamp = max(timestamps)
+            log.parietal_lobe.info('Attempting recovery for timestamp %d (%s)', latest_timestamp, time.ctime(latest_timestamp))
+            
+            # Try to process any failed memories first (these should work if neocortex is healthy now)
+            failed_memories = glob.glob(f'./recovery/failed_memories_{latest_timestamp}.json')
+            failed_proper_names = glob.glob(f'./recovery/failed_proper_names_{latest_timestamp}.json')
+            
+            for memory_file in failed_memories:
+                log.parietal_lobe.info('Recovering memories from %s', memory_file)
+                with open(memory_file, 'r', encoding='utf-8') as f:
+                    memory_json = f.read()
+                self.neocortex.process_memories_json(memory_json)
+                log.parietal_lobe.info('Successfully recovered memories')
+            
+            for names_file in failed_proper_names:
+                log.parietal_lobe.info('Recovering proper names from %s', names_file)
+                with open(names_file, 'r', encoding='utf-8') as f:
+                    names_json = f.read()
+                self.neocortex.process_proper_names_json(names_json)
+                log.parietal_lobe.info('Successfully recovered proper names')
+            
+            # If there were failed prompts, we need to regenerate and process
+            failed_prompts = glob.glob(f'./recovery/failed_prompt_*_{latest_timestamp}.txt')
+            for prompt_file in failed_prompts:
+                log.parietal_lobe.info('Regenerating from failed prompt %s', prompt_file)
+                
+                # Determine prompt type from filename
+                if 'neocortex_memories' in prompt_file:
+                    with open(prompt_file, 'r', encoding='utf-8') as f:
+                        prompt_content = f.read()
+                        # Remove the header comments
+                        prompt_lines = prompt_content.split('\n')
+                        prompt = '\n'.join(line for line in prompt_lines if not line.startswith('#'))
+                    
+                    # Regenerate and process
+                    neocortex_json = STATE.current_llm.call_api(prompt=prompt, max_tokens=8192, temperature=0.7, expects_json=True)
+                    self.neocortex.process_memories_json(neocortex_json)
+                    
+                elif 'proper_names' in prompt_file:
+                    with open(prompt_file, 'r', encoding='utf-8') as f:
+                        prompt_content = f.read()
+                        prompt_lines = prompt_content.split('\n')
+                        prompt = '\n'.join(line for line in prompt_lines if not line.startswith('#'))
+                    
+                    proper_names_json = STATE.current_llm.call_api(prompt=prompt, max_tokens=8192, temperature=0.7, expects_json=True)
+                    self.neocortex.process_proper_names_json(proper_names_json)
+            
+            # Clean up recovery files after successful recovery
+            recovery_files = glob.glob(f'./recovery/*_{latest_timestamp}.*')
+            for file_path in recovery_files:
+                try:
+                    os.remove(file_path)
+                    log.parietal_lobe.debug('Cleaned up recovery file: %s', file_path)
+                except Exception as ex:
+                    log.parietal_lobe.warning('Failed to cleanup recovery file %s: %s', file_path, ex)
+            
+            # Clear the short-term memory that was preserved
+            short_term_state_file = f'./recovery/short_term_memory_state_{latest_timestamp}.json'
+            if os.path.exists(short_term_state_file):
+                log.parietal_lobe.info('Clearing preserved short-term memory after successful recovery')
+                self.short_term_memory.save_and_clear()
+                os.remove(short_term_state_file)
+            
+            log.parietal_lobe.info('Recovery completed successfully')
+            return True
+            
+        except Exception as ex:
+            log.parietal_lobe.exception('Recovery failed: %s', ex)
+            return False
 
 # Instantiate the parietal lobe
 parietal_lobe = ParietalLobe()

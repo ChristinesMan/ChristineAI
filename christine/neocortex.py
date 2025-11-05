@@ -202,7 +202,10 @@ class Neocortex:
                 log.neocortex.error("Borked memories saved to %s", borked_file)
                 return
 
-        # iterate over the list
+        # iterate over the list and store memories with error handling
+        successful_memories = 0
+        failed_memories = 0
+        
         for memory in memories:
 
             # check if the item is a dict
@@ -211,14 +214,31 @@ class Neocortex:
                 # check if the dict has a 'memory' key
                 if 'memory' in memory:
 
-                    # store the memory
-                    log.neocortex.debug("Storing memory: %s", memory['memory'])
-                    memory['date_happened'] = int(time.time())
-                    memory['date_recalled'] = 0
-                    self.memories.data.insert(memory)
+                    try:
+                        # store the memory
+                        log.neocortex.debug("Storing memory: %s", memory['memory'])
+                        memory['date_happened'] = int(time.time())
+                        memory['date_recalled'] = 0
+                        self.memories.data.insert(memory)
+                        successful_memories += 1
+                    except WeaviateBaseError as ex:
+                        failed_memories += 1
+                        log.neocortex.error("Failed to store memory in Weaviate: %s", ex)
+                        if "read-only" in str(ex):
+                            log.neocortex.error("Weaviate is in read-only mode - stopping memory processing")
+                            break
+                    except Exception as ex:
+                        failed_memories += 1
+                        log.neocortex.error("Unexpected error storing memory: %s", ex)
 
-        # run a backup
-        self.backup('memories')
+        log.neocortex.info("Memory processing complete: %d successful, %d failed", successful_memories, failed_memories)
+
+        # run a backup only if we successfully stored some memories
+        if successful_memories > 0:
+            try:
+                self.backup('memories')
+            except Exception as ex:
+                log.neocortex.error("Failed to backup memories: %s", ex)
 
     def process_proper_names_json(self, proper_names_json: str):
         """Takes the json formatted response from the llm and stores it in the neocortex."""
@@ -248,7 +268,10 @@ class Neocortex:
                 log.neocortex.error("Borked proper names saved to %s", borked_file)
                 return
 
-        # iterate over the list
+        # iterate over the list and store proper names with error handling
+        successful_names = 0
+        failed_names = 0
+        
         for proper_name in proper_names:
 
             # check if the item is a dict
@@ -257,20 +280,41 @@ class Neocortex:
                 # check if the dict has 'name' and 'memory' keys
                 if 'name' in proper_name and 'memory' in proper_name:
 
-                    # store the proper name
-                    log.neocortex.debug("Storing proper name: %s", proper_name['name'])
-                    proper_name['date_happened'] = int(time.time())
-                    proper_name['date_recalled'] = 0
-                    self.proper_names.data.insert(proper_name)
+                    try:
+                        # store the proper name
+                        log.neocortex.debug("Storing proper name: %s", proper_name['name'])
+                        proper_name['date_happened'] = int(time.time())
+                        proper_name['date_recalled'] = 0
+                        self.proper_names.data.insert(proper_name)
+                        successful_names += 1
+                    except WeaviateBaseError as ex:
+                        failed_names += 1
+                        log.neocortex.error("Failed to store proper name in Weaviate: %s", ex)
+                        if "read-only" in str(ex):
+                            log.neocortex.error("Weaviate is in read-only mode - stopping proper name processing")
+                            break
+                    except Exception as ex:
+                        failed_names += 1
+                        log.neocortex.error("Unexpected error storing proper name: %s", ex)
+
+        log.neocortex.info("Proper names processing complete: %d successful, %d failed", successful_names, failed_names)
 
         # this is only run at midnight, so we can clear the list of matched proper names
         STATE.matched_proper_names = []
 
-        # rebuild the regex
-        self.build_proper_name_regex()
+        # rebuild the regex if we successfully stored some names
+        if successful_names > 0:
+            try:
+                self.build_proper_name_regex()
+            except Exception as ex:
+                log.neocortex.error("Failed to rebuild proper names regex: %s", ex)
 
-        # run a backup
-        self.backup('proper_names')
+        # run a backup only if we successfully stored some names
+        if successful_names > 0:
+            try:
+                self.backup('proper_names')
+            except Exception as ex:
+                log.neocortex.error("Failed to backup proper names: %s", ex)
 
     def cleanup_duplicate_proper_names(self):
         """Scan for duplicate proper names and merge them using the current LLM API."""
@@ -312,9 +356,16 @@ class Neocortex:
         log.neocortex.info('Duplicate cleanup complete: %d duplicates found, %d successfully merged', 
                           duplicates_found, merges_successful)
         
-        # rebuild the regex and backup after cleanup
-        self.build_proper_name_regex()
-        self.backup('proper_names')
+        # rebuild the regex and backup after cleanup with error handling
+        try:
+            self.build_proper_name_regex()
+        except Exception as ex:
+            log.neocortex.error("Failed to rebuild proper names regex after cleanup: %s", ex)
+            
+        try:
+            self.backup('proper_names')
+        except Exception as ex:
+            log.neocortex.error("Failed to backup proper names after cleanup: %s", ex)
 
     def _merge_duplicate_entries(self, entries):
         """Merge a list of duplicate proper name entries."""
@@ -343,14 +394,23 @@ class Neocortex:
                     return False
             
             # update the base entry with the merged memory
-            self.proper_names.data.update(
-                uuid=base_entry['uuid'],
-                properties={
-                    "memory": merged_memory,
-                    "date_happened": int(time.time()),  # update to current time
-                    "date_recalled": 0
-                }
-            )
+            try:
+                self.proper_names.data.update(
+                    uuid=base_entry['uuid'],
+                    properties={
+                        "memory": merged_memory,
+                        "date_happened": int(time.time()),  # update to current time
+                        "date_recalled": 0
+                    }
+                )
+            except WeaviateBaseError as ex:
+                log.neocortex.error('Failed to update merged proper name entry: %s', ex)
+                if "read-only" in str(ex):
+                    log.neocortex.error("Weaviate is in read-only mode - stopping merge operation")
+                return False
+            except Exception as ex:
+                log.neocortex.error('Unexpected error updating merged proper name entry: %s', ex)
+                return False
             
             # remove all the duplicate entries
             for i in range(1, len(entries)):
@@ -401,6 +461,10 @@ Consolidated memory:"""
         try:
             self.proper_names.data.delete_by_id(uuid)
             log.neocortex.debug('Removed duplicate proper name entry: %s', uuid)
+        except WeaviateBaseError as ex:
+            log.neocortex.warning('Failed to remove proper name entry %s (Weaviate error): %s', uuid, ex)
+            if "read-only" in str(ex):
+                log.neocortex.warning("Weaviate is in read-only mode - cannot remove duplicate entries")
         except Exception as ex:
             log.neocortex.warning('Failed to remove proper name entry %s: %s', uuid, ex)
 
@@ -421,7 +485,12 @@ Consolidated memory:"""
             return None
 
         # update the date_recalled property so that we don't trigger this over and over
-        self.memories.data.update(uuid=response.objects[0].uuid, properties={"date_recalled": int(time.time())})
+        try:
+            self.memories.data.update(uuid=response.objects[0].uuid, properties={"date_recalled": int(time.time())})
+        except WeaviateBaseError as ex:
+            log.neocortex.warning('Failed to update date_recalled for memory (Weaviate error): %s', ex)
+        except Exception as ex:
+            log.neocortex.warning('Failed to update date_recalled for memory: %s', ex)
 
         log.neocortex.debug('Recalled memory (distance %s): %s', response.objects[0].metadata.distance, response.objects[0].properties['memory'])
         return random.choice(self.random_memory_prompts).format(self.how_long_ago(response.objects[0].properties['date_happened']), response.objects[0].properties['memory'])
@@ -448,7 +517,12 @@ Consolidated memory:"""
             selected_memory = random.choice(response.objects)
             
             # Update the date_recalled property
-            self.memories.data.update(uuid=selected_memory.uuid, properties={"date_recalled": int(time.time())})
+            try:
+                self.memories.data.update(uuid=selected_memory.uuid, properties={"date_recalled": int(time.time())})
+            except WeaviateBaseError as ex:
+                log.neocortex.warning('Failed to update date_recalled for random memory recall (Weaviate error): %s', ex)
+            except Exception as ex:
+                log.neocortex.warning('Failed to update date_recalled for random memory recall: %s', ex)
 
             log.neocortex.info('Random memory recall (distance %s): %s', 
                              selected_memory.metadata.distance, selected_memory.properties['memory'][:100])
@@ -554,7 +628,12 @@ Consolidated memory:"""
 
             # update the date_recalled property so that we don't trigger this over and over
             # even though I have decided to not filter by date_recalled, I still want to update it just in case
-            self.proper_names.data.update(uuid=response.objects[0].uuid, properties={"date_recalled": int(time.time())})
+            try:
+                self.proper_names.data.update(uuid=response.objects[0].uuid, properties={"date_recalled": int(time.time())})
+            except WeaviateBaseError as ex:
+                log.neocortex.warning('Failed to update date_recalled for proper name recall (Weaviate error): %s', ex)
+            except Exception as ex:
+                log.neocortex.warning('Failed to update date_recalled for proper name recall: %s', ex)
 
             log.neocortex.debug('Recalled proper name (distance %s): %s', response.objects[0].metadata.distance, response.objects[0].properties['memory'])
             memories.append(random.choice(self.i_remember).format(response.objects[0].properties['name'], response.objects[0].properties['memory']))

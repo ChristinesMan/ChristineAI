@@ -24,3 +24,15 @@ class GracefulKiller:
         Set the variable used by the killer
         """
         self.kill_now = True
+
+    def emergency_shutdown(self, reason: str):
+        """
+        Trigger emergency shutdown with reason logging
+        """
+        from christine import log
+        log.main.critical("Emergency shutdown triggered: %s", reason)
+        self.kill_now = True
+
+
+# Instantiate the graceful killer
+killsignal = GracefulKiller()
