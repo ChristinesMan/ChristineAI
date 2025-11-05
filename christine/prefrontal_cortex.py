@@ -147,8 +147,8 @@ class PrefrontalCortex(threading.Thread):
         return f"""EXECUTIVE FUNCTIONS: Your prefrontal cortex provides you with several tools you can call by thinking (not speaking) the function names:
 
 - checkTime() - Get the current date and time (today is {current_date})
-- setReminder("message", "time", "recurring") - Set a reminder for yourself. Time can be "in 30 minutes", "in 1 month", "in 2 weeks", "tomorrow at 9am", "2025-11-15 14:30", etc. Recurring can be "daily", "weekly", "monthly", or omitted for one-time reminders.
-- listReminders() - See all your current reminders
+- setReminder("message", "time", "recurring") - Set a reminder for yourself. Time formats: "6:30pm", "18:30", "in 30 minutes", "in 1 month", "tomorrow at 9am", "2025-11-15 14:30". Recurring can be "daily", "weekly", "monthly", or omitted for one-time reminders.
+- listReminders() - See all your current reminders  
 - removeReminder("message or id") - Remove a reminder by referencing its message text"""
     
     def run(self):
@@ -420,6 +420,26 @@ class PrefrontalCortex(threading.Thread):
                     target += timedelta(days=1)
                 return target
         
+        # Handle "daily at X", "weekly at X" etc. (extract just the time part)
+        if " at " in time_spec and any(word in time_spec for word in ["daily", "weekly", "monthly"]):
+            time_part = time_spec.split(" at ")[1].strip()
+            time_obj = self.parse_time_string(time_part)
+            if time_obj:
+                target = now.replace(hour=time_obj.hour, minute=time_obj.minute, second=0, microsecond=0)
+                # If the time has already passed today, assume tomorrow
+                if target <= now:
+                    target += timedelta(days=1)
+                return target
+        
+        # Handle standalone times like "6:30pm", "18:30", "18:30:00"
+        time_obj = self.parse_time_string(time_spec)
+        if time_obj:
+            target = now.replace(hour=time_obj.hour, minute=time_obj.minute, second=0, microsecond=0)
+            # If the time has already passed today, assume tomorrow
+            if target <= now:
+                target += timedelta(days=1)
+            return target
+        
         # Handle ISO format datetime strings
         try:
             return datetime.fromisoformat(time_spec)
@@ -459,11 +479,12 @@ class PrefrontalCortex(threading.Thread):
                 hour = 0
             return datetime.now().replace(hour=hour, minute=minute)
         
-        # Handle 24-hour format like "15:30"
-        match = re.match(r'(\d{1,2}):(\d{2})', time_str)
+        # Handle 24-hour format like "15:30" or "18:30:00"
+        match = re.match(r'(\d{1,2}):(\d{2})(?::(\d{2}))?', time_str)
         if match:
             hour = int(match.group(1))
             minute = int(match.group(2))
+            # seconds = int(match.group(3)) if match.group(3) else 0  # We ignore seconds for reminders
             if 0 <= hour <= 23 and 0 <= minute <= 59:
                 return datetime.now().replace(hour=hour, minute=minute)
         
