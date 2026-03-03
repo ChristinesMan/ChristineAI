@@ -70,7 +70,11 @@ class Broca(threading.Thread):
 
         # initialize the last sex sound time used to prevent rapid-fire sex sounds
         self.last_sex_sound_time = 0
-                    
+
+        # keep only the latest deferred sex sound when Broca is busy
+        self.pending_sex_sound = None
+        self.pending_sex_sound_lock = threading.Lock()
+
         # setup the separate process with pipe that we're going to be fucking
         # lol I put the most insane things in code omg, but this will help keep it straight!
         # The enterprise sent out a shuttlecraft with Data at the helm.
@@ -195,6 +199,8 @@ class Broca(threading.Thread):
                             # if there's something in the queue, play it
                             if self.figment_queue.qsize() > 0:
                                 self.play_next_figment()
+                            else:
+                                self.play_pending_sex_sound_if_any()
                 else:
                     # No message available within timeout - continue processing to prevent backup
                     # This prevents the main thread from getting stuck waiting for shuttlecraft
@@ -677,47 +683,76 @@ class Broca(threading.Thread):
                     # set cycles_to_breathe to a random number of seconds between 0.5 and 1.5 for the next time
                     seconds_to_breathe = 0.5 + random.random()
 
-    def play_sex_sound_immediate(self, collection_name: str, intensity: float = None):
-        """
-        Play a sex sound immediately if nothing else is playing, otherwise discard.
-        This bypasses the figment queue to prevent 15-minute delays after sex.
-        """
-        # Check if we're already playing something (queue not empty or currently processing)
-        if self.figment_queue.qsize() > 0:
-            log.broca_main.debug("Discarding sex sound - broca is busy")
-            return
-        
-        # Apply timing limits to prevent rapid-fire sounds
+    def _store_pending_sex_sound(self, collection_name: str, intensity: float = None):
+        """Store the latest sex sound to play once Broca is idle."""
+        with self.pending_sex_sound_lock:
+            self.pending_sex_sound = (collection_name, intensity)
+        log.broca_main.debug("Deferred sex sound while busy: %s", collection_name)
+
+    def _play_sex_sound_direct(self, collection_name: str, intensity: float = None):
+        """Try to play a sex sound immediately via shuttlecraft. Returns True if played."""
+        if self.to_shuttlecraft is None:
+            return False
+
         current_time = time.time()
         if not hasattr(self, 'last_sex_sound_time'):
             self.last_sex_sound_time = 0
-        
+
         time_since_last = current_time - self.last_sex_sound_time
         if time_since_last < 2.0:
-            log.broca_main.debug('Discarding sex sound - only %.1f seconds since last', time_since_last)
-            return
-        
-        # Get the sound from the collection
+            log.broca_main.debug('Deferring sex sound - only %.1f seconds since last', time_since_last)
+            return False
+
         sound = sounds_db.get_random_sound(collection_name=collection_name, intensity=intensity)
         if sound is None:
             log.broca_main.warning('No sound available in collection %s', collection_name)
-            return
-        
+            return False
+
         if not os.path.isfile(sound.file_path):
             log.broca_main.warning('Sound file %s does not exist', sound.file_path)
-            return
-        
+            return False
+
         log.broca_main.debug("Playing sex sound immediately: %s", sound.file_path)
-        
-        # Send directly to subprocess for immediate playback
         self.to_shuttlecraft.send({
             "action": "playwav",
             "wavfile": sound.file_path,
             "vol": 100,
             "pause_wernicke": sound.pause_wernicke if sound.pause_wernicke else False,
         })
-        
+
         self.last_sex_sound_time = current_time
+        return True
+
+    def play_pending_sex_sound_if_any(self):
+        """If a sex sound was deferred while busy, try to play it now."""
+        with self.pending_sex_sound_lock:
+            pending = self.pending_sex_sound
+
+        if pending is None:
+            return
+
+        collection_name, intensity = pending
+        if self._play_sex_sound_direct(collection_name, intensity):
+            with self.pending_sex_sound_lock:
+                if self.pending_sex_sound == pending:
+                    self.pending_sex_sound = None
+
+    def play_sex_sound_immediate(self, collection_name: str, intensity: float = None):
+        """
+        Play a sex sound immediately if possible; if Broca is busy, defer the latest one.
+        """
+        # If Broca is busy with queued playback or user is speaking, keep latest deferred sex sound.
+        if self.figment_queue.qsize() > 0 or STATE.user_is_speaking is True:
+            self._store_pending_sex_sound(collection_name, intensity)
+            return
+
+        # If shuttlecraft is not ready yet, defer.
+        if self.to_shuttlecraft is None:
+            self._store_pending_sex_sound(collection_name, intensity)
+            return
+
+        if not self._play_sex_sound_direct(collection_name, intensity):
+            self._store_pending_sex_sound(collection_name, intensity)
 
 # Instantiate
 broca = Broca()

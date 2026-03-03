@@ -54,6 +54,34 @@ class Sex(threading.Thread):
         # I want to keep track of how long it's been since the last fucking action
         self.time_of_last_lobe_message = time.time()
 
+        # prevent blocking vagina event processing on LLM calls
+        self.sex_llm_processing = False
+        self.sex_llm_processing_lock = threading.Lock()
+
+    def _process_sex_perceptions_async(self):
+        """Run sex-related perception processing in the background."""
+        try:
+            parietal_lobe.process_new_perceptions()
+        except Exception as ex:
+            log.sex.exception(ex)
+        finally:
+            with self.sex_llm_processing_lock:
+                self.sex_llm_processing = False
+
+    def trigger_sex_llm_processing_async(self):
+        """Trigger sex-related perception processing without blocking touch handling."""
+        with self.sex_llm_processing_lock:
+            if self.sex_llm_processing:
+                log.sex.debug("Skipping sex LLM trigger - already processing")
+                return
+            self.sex_llm_processing = True
+
+        threading.Thread(
+            target=self._process_sex_perceptions_async,
+            daemon=True,
+            name="SexLLMAsync",
+        ).start()
+
     def calculate_sex_sound_intensity(self):
         """
         Calculate sex sound intensity with arousal capped at configurable level, 
@@ -237,8 +265,11 @@ class Sex(threading.Thread):
                 if time.time() > self.time_of_last_lobe_message + STATE.sex_lobe_message_frequency:
                     self.time_of_last_lobe_message = time.time()
                     parietal_lobe.sex_cumming()
-                # Climax sounds still use figments for proper queuing with speech
-                broca.accept_figment(Figment(from_collection="sex_climax"))
+                # # Climax sounds still use figments for proper queuing with speech
+                # broca.accept_figment(Figment(from_collection="sex_climax"))
+                # # actually, let me try direct playback for orgasm sounds to see if it feels better
+                intensity = self.calculate_sex_sound_intensity()
+                broca.play_sex_sound_immediate("sex_climax", intensity)
 
             elif STATE.sexual_arousal > STATE.sex_arousal_near_orgasm and self.im_gonna_cum_was_said is False:
 
@@ -249,18 +280,16 @@ class Sex(threading.Thread):
 
             else:
 
+                # Play regular sex sounds immediately and do not block touch handling.
+                intensity = self.calculate_sex_sound_intensity()
+                broca.play_sex_sound_immediate("sex", intensity)
+
                 # Configurable chance of LLM speech vs regular sex sounds
                 if random.random() > (1.0 - STATE.sex_llm_speech_chance):
 
                     log.sex.info('Allowing LLM to speak.')
-                    # Process the perceptions immediately since automatic processing is disabled during sex
-                    parietal_lobe.process_new_perceptions()
-
-                else:
-
-                    # Use direct playback for regular sex sounds to avoid queuing
-                    intensity = self.calculate_sex_sound_intensity()
-                    broca.play_sex_sound_immediate("sex", intensity)
+                    # Trigger in background so vagina event handling keeps flowing
+                    self.trigger_sex_llm_processing_async()
 
 # Instantiate
 sex = Sex()
