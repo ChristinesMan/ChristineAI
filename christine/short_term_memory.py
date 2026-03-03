@@ -49,7 +49,10 @@ class ShortTermMemory:
     def get(self) -> str:
         """Returns the short term memory as it should be inserted into the prompt"""
 
-        return self.earlier_today + self.recent
+        if self.recent == '':
+            return self.earlier_today
+
+        return self.earlier_today + '### Most recent events (still today):\n\n' + self.recent
 
     def append(self, narrative: Narrative):
         """Accepts a narrative and appends it to the memory."""
@@ -103,7 +106,7 @@ class ShortTermMemory:
 
         # if earlier_today memory is empty, start it out with a message at the top to identify it
         if self.earlier_today == '':
-            self.earlier_today = 'These events happened earlier today:\n\n'
+            self.earlier_today = '### Earlier today (current day only, not yesterday):\n\n'
 
         # add to earlier_today memory
         self.earlier_today += folded_memory + '\n\n'
@@ -242,7 +245,8 @@ class ShortTermMemory:
         self.save()
 
         # rename the file to save/clear it
-        os.rename('memory_today.json', f'./logs/memory_today_{int(time.time())}.json')
+        os.makedirs('./logs', exist_ok=True)
+        os.replace('memory_today.json', f'./logs/memory_today_{int(time.time())}.json')
 
         # clear the memory
         self.memory = []
@@ -250,3 +254,6 @@ class ShortTermMemory:
         self.earlier_today = ''
         self.recent = ''
         self.recent_messages = 0
+
+        # persist the cleared state so stale previous-day text cannot be reloaded after restart
+        self.save()

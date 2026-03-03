@@ -58,7 +58,9 @@ I am awake.
         # whenever there are enough memories to fold, this is the prompt to summarize them
         self.memory_prompt_recent = """
 
-Summarize the recent dialog above in a single comprehensive paragraph. Capture all main actions, emotions, and important details without losing any significant information. Write in first person as if you are remembering this experience personally.
+    Summarize only the "Recent dialog" section above in a single comprehensive paragraph. Capture all main actions, emotions, and important details without losing any significant information. Write in first person as if you are remembering this experience personally.
+
+    Do not mix in or rewrite information from yesterday or any prior-day summaries.
 """
 
         # this prompt is used when entering sleep, to summarize the day's events
@@ -307,7 +309,7 @@ Dream:
             with open('memory_yesterday.txt', 'r', encoding='utf-8') as f:
                 self.yesterday_memory = f.read().strip()
                 if self.yesterday_memory:
-                    self.yesterday_memory_text = f'Yesterday\n{self.yesterday_memory}\n\n'
+                    self.yesterday_memory_text = f'### Yesterday (previous day summary):\n\n{self.yesterday_memory}\n\n'
                     log.memory_operations.info("YESTERDAY_LOAD: Loaded yesterday's memory - '%s'", 
                                              self.yesterday_memory[:100] + ('...' if len(self.yesterday_memory) > 100 else ''))
                 else:
@@ -872,7 +874,7 @@ Dream:
             # save yesterday's memory (replace any existing memory)
             self.yesterday_memory = memory
             if self.yesterday_memory:
-                self.yesterday_memory_text = f'Yesterday\n{self.yesterday_memory}\n\n'
+                self.yesterday_memory_text = f'### Yesterday (previous day summary):\n\n{self.yesterday_memory}\n\n'
             else:
                 self.yesterday_memory_text = ""
             self.save_yesterday_memory()
