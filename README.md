@@ -59,6 +59,7 @@ CHRISTINE_OPENROUTER_API_KEY=sk-or-v1-your-api-key-here
 # Advanced wernicke settings
 CHRISTINE_WERNICKE_PV_KEY=your-picovoice-key
 CHRISTINE_WERNICKE_VAD=webrtcvad
+CHRISTINE_BROCA_TTS_CONCURRENCY=2
 
 # LLM model selection  
 CHRISTINE_OPENROUTER_MODEL=anthropic/claude-3.5-sonnet

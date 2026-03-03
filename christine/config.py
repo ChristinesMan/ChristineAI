@@ -16,6 +16,8 @@ class ConfigError(Exception):
 
 class Config:
     """Centralized configuration loaded from environment variables."""
+
+    broca_tts_concurrency: int
     
     def __init__(self):
         """Load and validate all configuration from environment variables."""
@@ -69,6 +71,7 @@ class Config:
 
         # Initialization timeout settings (in seconds)
         self.wernicke_timeout = int(os.getenv('CHRISTINE_WERNICKE_TIMEOUT', '30'))
+        self.broca_tts_concurrency = int(os.getenv('CHRISTINE_BROCA_TTS_CONCURRENCY', '2'))
 
         self.http_security_token = os.getenv('CHRISTINE_HTTP_SECURITY_TOKEN', 'christine_lovely_2025')
 
@@ -126,6 +129,11 @@ class Config:
         # Validate timeout values
         if self.wernicke_timeout <= 0:
             errors.append(f"CHRISTINE_WERNICKE_TIMEOUT must be positive, got {self.wernicke_timeout}")
+
+        if self.broca_tts_concurrency <= 0:
+            errors.append(
+                f"CHRISTINE_BROCA_TTS_CONCURRENCY must be positive, got {self.broca_tts_concurrency}"
+            )
         
         if errors:
             error_msg = "Configuration validation failed:\n" + "\n".join(f"  - {error}" for error in errors)

@@ -35,6 +35,16 @@ class Broca(threading.Thread):
         # queue up figments to feed into broca one at a time
         self.figment_queue = queue.Queue()
 
+        self.tts_request_queue = queue.Queue()
+        self.tts_workers = []
+        self.tts_generation = 0
+        self.tts_generation_lock = threading.Lock()
+        self.tts_concurrency = max(1, int(getattr(CONFIG, 'broca_tts_concurrency', 2)))
+        self.tts_active_workers = 0
+        self.tts_active_workers_lock = threading.Lock()
+        self.tts_metrics_interval_seconds = 5.0
+        self.tts_last_metrics_log = 0.0
+
         # track wernicke pause state to prevent conflicts
         self.wernicke_paused_by_broca = False
 
@@ -71,6 +81,81 @@ class Broca(threading.Thread):
         self.to_starship = None
         self.shuttlecraft_process = None
 
+    def _log_tts_metrics(self, reason: str, force: bool = False):
+        now = time.monotonic()
+        if force is False and (now - self.tts_last_metrics_log) < self.tts_metrics_interval_seconds:
+            return
+
+        self.tts_last_metrics_log = now
+        with self.tts_active_workers_lock:
+            active_workers = self.tts_active_workers
+
+        log.broca_main.info(
+            "TTS_METRICS[%s]: queue_depth=%s active_workers=%s concurrency=%s playback_queue_depth=%s",
+            reason,
+            self.tts_request_queue.qsize(),
+            active_workers,
+            self.tts_concurrency,
+            self.figment_queue.qsize(),
+        )
+
+    def _start_tts_workers(self):
+        if self.tts_workers:
+            return
+
+        for worker_index in range(self.tts_concurrency):
+            worker = threading.Thread(
+                target=self._tts_worker_loop,
+                args=(worker_index + 1,),
+                daemon=True,
+                name=f"BrocaTTS-{worker_index + 1}",
+            )
+            worker.start()
+            self.tts_workers.append(worker)
+
+        log.broca_main.info("Started %s TTS workers", self.tts_concurrency)
+        self._log_tts_metrics("workers_started", force=True)
+
+    def _stop_tts_workers(self):
+        for _ in self.tts_workers:
+            self.tts_request_queue.put_nowait(None)
+
+    def _tts_worker_loop(self, worker_id: int):
+        while True:
+            figment = self.tts_request_queue.get()
+            worker_started_processing = False
+
+            if figment is None:
+                self.tts_request_queue.task_done()
+                return
+
+            try:
+                figment_generation = getattr(figment, "tts_generation", 0)
+                with self.tts_generation_lock:
+                    current_generation = self.tts_generation
+
+                if figment_generation != current_generation:
+                    log.broca_main.debug(
+                        "Skipping stale TTS figment in worker %s", worker_id
+                    )
+                    continue
+
+                with self.tts_active_workers_lock:
+                    self.tts_active_workers += 1
+                worker_started_processing = True
+                self._log_tts_metrics("worker_started")
+
+                figment.run()
+            except Exception as ex:
+                log.broca_main.exception(ex)
+            finally:
+                if worker_started_processing:
+                    with self.tts_active_workers_lock:
+                        if self.tts_active_workers > 0:
+                            self.tts_active_workers -= 1
+                    self._log_tts_metrics("worker_finished")
+                self.tts_request_queue.task_done()
+
     def run(self):
 
         # Create subprocess communication after shared memory is injected
@@ -82,6 +167,7 @@ class Broca(threading.Thread):
         # Start the shuttlecraft subprocess
         log.broca_main.info("Thread started - starting shuttlecraft subprocess")
         self.shuttlecraft_process.start()
+        self._start_tts_workers()
 
         while True:
 
@@ -90,6 +176,7 @@ class Broca(threading.Thread):
                 # graceful shutdown
                 if STATE.please_shut_down:
                     log.broca_main.info("Thread shutting down")
+                    self._stop_tts_workers()
                     self.to_shuttlecraft.send({"action": "selfdestruct"})
                     break
 
@@ -305,8 +392,14 @@ class Broca(threading.Thread):
                 figment.silent_mode_processing = True
                 # Don't add inhalation sounds in silent mode
             else:
-                # start the thread asap to get the api call for synthesized speech going
-                figment.start()
+                with self.tts_generation_lock:
+                    figment.tts_generation = self.tts_generation
+                self.tts_request_queue.put_nowait(figment)
+                log.broca_main.debug("Queued figment for TTS synthesis")
+                if self.tts_request_queue.qsize() > self.tts_concurrency:
+                    self._log_tts_metrics("queue_backlog", force=True)
+                else:
+                    self._log_tts_metrics("queue_update")
 
                 # add a figment for an inhalation sound that will precede this spoken figment
                 self.figment_queue.put_nowait(Figment(from_collection='inhalation'))
@@ -364,6 +457,10 @@ class Broca(threading.Thread):
         # CRITICAL: Tell shuttlecraft to stop any ongoing audio immediately
         # This prevents audio from playing after interruption
         self.to_shuttlecraft.send({"action": "stop_audio"})
+
+        with self.tts_generation_lock:
+            self.tts_generation += 1
+        self._log_tts_metrics("flush", force=True)
 
         # When flushing, wernicke coordination is now handled directly via shared memory
         # No need for manual wernicke restart - the shuttlecraft will clear the flag
