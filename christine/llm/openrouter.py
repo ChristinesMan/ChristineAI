@@ -78,7 +78,7 @@ class OpenRouter(LLMAPI):
             self.openrouter_url,
             headers=headers,
             json=payload,
-            timeout=60
+            timeout=120
         )
         elapsed_time = time.time() - start_time
         log.llm_stream.info('API call completed in %.2f seconds.', elapsed_time)
