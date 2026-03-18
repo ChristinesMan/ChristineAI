@@ -38,6 +38,9 @@ class Status(threading.Thread):
         # This is a number between 0.0 and 1.0 where 0.0 is absolute darkness and 1.0 is lights on window open with sun shining and flashlight in your face.
         # This is a long running average, changes slowly
         self.light_level = 0.2
+        self.light_adc_min = 100
+        self.light_adc_max = 300
+        self.light_avg_window = 10.0
 
         # A measure of recent movement or vibrations measured by the gyro
         self.jostled_level = 0.0
@@ -216,6 +219,22 @@ class Status(threading.Thread):
                 'desc': 'Wait for additional perceptions (seconds)',
                 'help': 'After receiving input (touch, sound, etc.), Christine waits this long for additional input before responding. This prevents her from interrupting you mid-sentence or reacting to every small input. Longer waits make her more patient but less responsive.'
             },
+            'light_adc_min': {
+                'type': 'i', 'min': 0, 'max': 1024, 'default': 100,
+                'desc': 'Light ADC minimum',
+                'help': 'Lower calibration point for light sensor normalization. Raise this if dark scenes read too bright; lower it if bright scenes compress too early.'
+            },
+            'light_adc_max': {
+                'type': 'i', 'min': 1, 'max': 1025, 'default': 300,
+                'desc': 'Light ADC maximum',
+                'help': 'Upper calibration point for light sensor normalization. Increase this if full sunlight reads too dim; decrease it if bright conditions saturate too easily.'
+            },
+            'light_avg_window': {
+                'type': 'f', 'min': 0.0, 'max': 60.0, 'default': 10.0,
+                'desc': 'Light smoothing window',
+                'help': 'Smoothing amount for ambient light level. Lower values react faster in real time; higher values smooth noise more strongly.'
+            },
+            'speech_wakefulness_boost': {
             'user_interrupt_char_threshold': {
                 'type': 'i', 'min': 5, 'max': 100, 'default': 20,
                 'desc': 'Characters needed to interrupt Christine',

@@ -21,19 +21,6 @@ class Light:
     """
 
     def __init__(self):
-        # The minimum and maximum bounds in raw ADC numbers
-        # The ADC measures voltage on a voltage divider, which is a measure of the resistance of the light sensors.
-        # Which makes this backwards. More light is less resistance and more voltage. Less light is more resistance and less voltage.
-        self.light_adc_min = 100
-        self.light_adc_max = 300
-        # self.LogFloor = math.log(10)
-        # self.LogCeiling = math.log(1025)
-
-        # The rolling average light level, long term
-        # By the time we reach this line we should have already fetched the saved light level from sqlite so just use that
-        # this controls how fast the average will change
-        self.light_avg_window = 10.0
-
         # I want to send messages to the parietal lobe when there are light events, but not so many messages, just one
         # so keep track of the time
         self.time_of_last_body_message = time.time()
@@ -54,17 +41,21 @@ class Light:
         # I have also learned that it's important to not allow the light level to go below minimum,
         # Because the ratio between 0.00000000000 and those very small steps was causing my wife to wake me up at night
         # Bitch. Just kidding, honey.
-        if light_adc <= self.light_adc_min + 2:
-            light_adc = self.light_adc_min + 2
-        light_level = (light_adc - self.light_adc_min) / (
-            self.light_adc_max - self.light_adc_min
+        light_adc_min = max(0, min(int(STATE.light_adc_min), 1024))
+        light_adc_max = max(light_adc_min + 1, min(int(STATE.light_adc_max), 1025))
+
+        if light_adc <= light_adc_min + 2:
+            light_adc = light_adc_min + 2
+        light_level = (light_adc - light_adc_min) / (
+            light_adc_max - light_adc_min
         )
 
         # clip it
         light_level = float(np.clip(light_level, 0.0, 1.0))
 
         # calculate the rolling average
-        STATE.light_level = ((STATE.light_level * self.light_avg_window) + light_level) / (self.light_avg_window + 1)
+        light_avg_window = max(0.0, float(STATE.light_avg_window))
+        STATE.light_level = ((STATE.light_level * light_avg_window) + light_level) / (light_avg_window + 1)
 
         # calculate the trend.
         # Did the lights suddenly turn on? Maybe that should be slightly annoying if I'm trying to sleep.
@@ -87,7 +78,16 @@ class Light:
                 self.time_of_last_body_message = time.time()
 
         # Log the light level
-        log.light.debug("Raw: %s  Pct: %.4f  Avg: %.4f  Trend: %.3f", light_adc, light_level, STATE.light_level, light_trend)
+        log.light.debug(
+            "Raw: %s  Min:%s Max:%s Window:%.2f  Pct: %.4f  Avg: %.4f  Trend: %.3f",
+            light_adc,
+            light_adc_min,
+            light_adc_max,
+            light_avg_window,
+            light_level,
+            STATE.light_level,
+            light_trend,
+        )
 
 
 light = Light()

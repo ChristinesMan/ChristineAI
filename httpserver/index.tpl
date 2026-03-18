@@ -989,6 +989,49 @@
                             <input type="range" class="setting-range" id="user_interrupt_char_threshold" min="5" max="100" step="1" value="20">
                             <span class="setting-value" id="user_interrupt_char_threshold_value">20</span>
                         </div>
+                        <div class="setting-item">
+                            <label>
+                                Light ADC minimum:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        Lower calibration bound for light normalization.
+                                        <span class="tooltip-default">Default: 100</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="light_adc_min" min="0" max="1024" step="1" value="100">
+                            <span class="setting-value" id="light_adc_min_value">100</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                Light ADC maximum:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        Upper calibration bound for light normalization.
+                                        <span class="tooltip-default">Default: 300</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="light_adc_max" min="1" max="1025" step="1" value="300">
+                            <span class="setting-value" id="light_adc_max_value">300</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                Light smoothing window:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        Lower values react faster in real time; higher values smooth more.
+                                        <span class="tooltip-default">Default: 10.0</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="light_avg_window" min="0" max="60" step="0.5" value="10">
+                            <span class="setting-value" id="light_avg_window_value">10.0</span>
+                        </div>
+                    </div>
                     </div>
 
                     <div class="setting-group">
