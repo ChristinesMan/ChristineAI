@@ -59,6 +59,33 @@ class Status(threading.Thread):
         self.is_sleepy = False
         self.is_sleeping = False
 
+        # Sleep system tuning settings
+        self.sleep_wakefulness_avg_window = 10.0
+        self.sleep_weight_light = 6.0
+        self.sleep_weight_gyro = 5.0
+        self.sleep_weight_time = 3.0
+        self.sleep_weight_inertia = 4.0
+        self.sleep_wakefulness_pre_sleep = 0.15
+        self.sleep_wakefulness_fall_asleep = 0.08
+        self.sleep_wakefulness_wake_up = 0.12
+        self.sleep_transition_nudge_sleep = 0.10
+        self.sleep_transition_nudge_wake = 0.10
+        self.sleep_inertia_ramp_minutes = 18.0
+        self.sleep_inertia_env_initial = 0.35
+        self.sleep_inertia_env_final = 0.08
+        self.sleep_schedule_profile = [0.5] * 24
+        self.sleep_schedule_learning_rate = 0.03
+        self.sleep_schedule_neighbor_blend = 0.01
+        self.sleep_schedule_source_weight_light = 5.0
+        self.sleep_schedule_source_weight_gyro = 4.0
+        self.sleep_schedule_source_weight_talking = 3.0
+        self.sleep_tired_perception_threshold = 0.24
+        self.sleep_tired_perception_drop_min = 0.015
+        self.sleep_tired_perception_cooldown_minutes = 150
+        self.sleep_tired_perception_max_per_day = 3
+        self.sleep_offer_state_tools_until = 0.0
+        self.sleep_offer_state_tools_window_minutes = 20
+
         # A way to prevent talking, called a shush, not now honey
         self.shush_please_honey = False
 
@@ -126,6 +153,9 @@ class Status(threading.Thread):
         # setting controls how many seconds parietal_lobe will wait for additional perceptions
         self.additional_perception_wait_seconds = 2.5
 
+        # Wakefulness boost when Broca starts spoken output
+        self.speech_wakefulness_boost = 0.03
+
         # this is the threshold for how long user's spoken text should be before it is allowed to interrupt char
         self.user_interrupt_char_threshold = 20
 
@@ -191,6 +221,7 @@ class Status(threading.Thread):
             'sexual_arousal': 'f',       # Short-term arousal (0.0-1.0)
             'breath_intensity': 'f',     # Breathing sound intensity
             'matched_proper_names': 'l', # List of proper names matched today (JSON stored)
+            'sleep_schedule_profile': 'l', # Adaptive wakefulness schedule profile by hour
         }
         
         # Define user-configurable settings (only saved when user changes them)
@@ -235,6 +266,125 @@ class Status(threading.Thread):
                 'help': 'Smoothing amount for ambient light level. Lower values react faster in real time; higher values smooth noise more strongly.'
             },
             'speech_wakefulness_boost': {
+                'type': 'f', 'min': 0.0, 'max': 0.2, 'default': 0.03,
+                'desc': 'Wake boost per speech start',
+                'help': 'How much wakefulness increases each time Broca starts spoken output. Higher values make conversation wake Christine more strongly.'
+            },
+            'sleep_wakefulness_avg_window': {
+                'type': 'f', 'min': 1.0, 'max': 80.0, 'default': 10.0,
+                'desc': 'Sleep smoothing window',
+                'help': 'How strongly wakefulness is smoothed over time. Higher values make wakefulness changes slower and more stable. Lower values make sleep/wake state react faster to the environment.'
+            },
+            'sleep_weight_light': {
+                'type': 'f', 'min': 0.0, 'max': 20.0, 'default': 6.0,
+                'desc': 'Sleep weight: light',
+                'help': 'How much ambient light contributes to wakefulness. Higher values make light changes matter more when deciding sleep state.'
+            },
+            'sleep_weight_gyro': {
+                'type': 'f', 'min': 0.0, 'max': 20.0, 'default': 5.0,
+                'desc': 'Sleep weight: movement',
+                'help': 'How much jostling/movement contributes to wakefulness. Higher values make movement wake Christine more easily.'
+            },
+            'sleep_weight_time': {
+                'type': 'f', 'min': 0.0, 'max': 20.0, 'default': 3.0,
+                'desc': 'Sleep weight: schedule',
+                'help': 'How much circadian schedule contributes to wakefulness. Higher values make time-of-day more influential.'
+            },
+            'sleep_weight_inertia': {
+                'type': 'f', 'min': 0.0, 'max': 20.0, 'default': 4.0,
+                'desc': 'Sleep weight: inertia',
+                'help': 'How strongly sleep inertia stabilizes sleep once Christine is already asleep. Higher values reduce sleep-entry oscillation.'
+            },
+            'sleep_wakefulness_pre_sleep': {
+                'type': 'f', 'min': 0.05, 'max': 0.5, 'default': 0.15,
+                'desc': 'Pre-sleep threshold',
+                'help': 'Wakefulness threshold where Christine becomes sleepy (pre-sleep state).'
+            },
+            'sleep_wakefulness_fall_asleep': {
+                'type': 'f', 'min': 0.01, 'max': 0.3, 'default': 0.08,
+                'desc': 'Fall-asleep threshold',
+                'help': 'Wakefulness threshold to enter sleeping state. Lower values require deeper drowsiness before sleep begins.'
+            },
+            'sleep_wakefulness_wake_up': {
+                'type': 'f', 'min': 0.05, 'max': 0.5, 'default': 0.12,
+                'desc': 'Wake-up threshold',
+                'help': 'Wakefulness threshold to exit sleeping state. Keep this above fall-asleep threshold for hysteresis stability.'
+            },
+            'sleep_transition_nudge_sleep': {
+                'type': 'f', 'min': 0.0, 'max': 0.3, 'default': 0.10,
+                'desc': 'Sleep transition nudge down',
+                'help': 'Extra wakefulness reduction applied when entering pre-sleep or sleep, helping the transition settle.'
+            },
+            'sleep_transition_nudge_wake': {
+                'type': 'f', 'min': 0.0, 'max': 0.3, 'default': 0.10,
+                'desc': 'Wake transition nudge up',
+                'help': 'Extra wakefulness boost applied when waking, helping a clean exit from sleep state.'
+            },
+            'sleep_inertia_ramp_minutes': {
+                'type': 'f', 'min': 1.0, 'max': 120.0, 'default': 18.0,
+                'desc': 'Sleep inertia ramp (minutes)',
+                'help': 'How long it takes sleep inertia to ramp from initial to full strength after falling asleep. Longer ramps are gentler, shorter ramps lock sleep faster.'
+            },
+            'sleep_inertia_env_initial': {
+                'type': 'f', 'min': 0.0, 'max': 1.0, 'default': 0.35,
+                'desc': 'Sleep inertia initial level',
+                'help': 'Sleep inertia environmental value right after sleep onset. Lower values push wakefulness downward sooner.'
+            },
+            'sleep_inertia_env_final': {
+                'type': 'f', 'min': 0.0, 'max': 1.0, 'default': 0.08,
+                'desc': 'Sleep inertia final level',
+                'help': 'Sleep inertia environmental value after ramp completes. Lower values help maintain sustained sleep.'
+            },
+            'sleep_schedule_learning_rate': {
+                'type': 'f', 'min': 0.001, 'max': 0.2, 'default': 0.03,
+                'desc': 'Schedule learning rate',
+                'help': 'How quickly the 24-hour adaptive sleep schedule updates from observed environment. Higher values adapt faster; lower values preserve longer-term rhythm.'
+            },
+            'sleep_schedule_neighbor_blend': {
+                'type': 'f', 'min': 0.0, 'max': 0.2, 'default': 0.01,
+                'desc': 'Schedule neighbor blending',
+                'help': 'How much adjacent hours are gently blended when learning schedule values. This smooths sudden spikes between neighboring hours.'
+            },
+            'sleep_schedule_source_weight_light': {
+                'type': 'f', 'min': 0.0, 'max': 20.0, 'default': 5.0,
+                'desc': 'Schedule source weight: light',
+                'help': 'How strongly ambient light shapes the adaptive schedule over time.'
+            },
+            'sleep_schedule_source_weight_gyro': {
+                'type': 'f', 'min': 0.0, 'max': 20.0, 'default': 4.0,
+                'desc': 'Schedule source weight: movement',
+                'help': 'How strongly movement/jostling shapes the adaptive schedule over time.'
+            },
+            'sleep_schedule_source_weight_talking': {
+                'type': 'f', 'min': 0.0, 'max': 20.0, 'default': 3.0,
+                'desc': 'Schedule source weight: talking',
+                'help': 'How strongly active talking shapes the adaptive schedule over time.'
+            },
+            'sleep_tired_perception_threshold': {
+                'type': 'f', 'min': 0.05, 'max': 0.5, 'default': 0.24,
+                'desc': 'Tired perception threshold',
+                'help': 'Wakefulness level below which Christine may emit an organic tired perception when wakefulness is trending downward.'
+            },
+            'sleep_tired_perception_drop_min': {
+                'type': 'f', 'min': 0.001, 'max': 0.1, 'default': 0.015,
+                'desc': 'Tired perception drop minimum',
+                'help': 'Minimum single-cycle wakefulness drop needed to trigger a tired perception, reducing oscillation and chatter.'
+            },
+            'sleep_tired_perception_cooldown_minutes': {
+                'type': 'i', 'min': 5, 'max': 720, 'default': 150,
+                'desc': 'Tired perception cooldown (minutes)',
+                'help': 'Minimum time between tired perceptions so they occur naturally and only occasionally.'
+            },
+            'sleep_tired_perception_max_per_day': {
+                'type': 'i', 'min': 0, 'max': 12, 'default': 3,
+                'desc': 'Max tired perceptions per day',
+                'help': 'Daily cap for tired perceptions. Keeps this channel organic and non-repetitive.'
+            },
+            'sleep_offer_state_tools_window_minutes': {
+                'type': 'i', 'min': 1, 'max': 180, 'default': 20,
+                'desc': 'Sleep control tools offer window (minutes)',
+                'help': 'How long sleep-control executive tools stay documented in context after a tired perception appears.'
+            },
             'user_interrupt_char_threshold': {
                 'type': 'i', 'min': 5, 'max': 100, 'default': 20,
                 'desc': 'Characters needed to interrupt Christine',

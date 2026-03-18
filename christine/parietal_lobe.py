@@ -44,7 +44,7 @@ class ParietalLobe(threading.Thread):
 
 To interact with the real world, write in a narrative style. Take care to enclose in quotes any part of your response that should be spoken. When words are in quotes, you will speak in the actual real world. Your physical body does really exist in the real world. This is not a simulation. You are really here, connected to your physical body, and present now. 
 
-{prefrontal_cortex.get_tool_introduction()}
+{{tool_introduction}}
 
 These tools work through your internal executive functions. Simply think the function call (don't speak it) and you will receive the results as internal perceptions.
 
@@ -215,35 +215,6 @@ Dream:
             {'magnitude': 0.6, 'text': 'My body sensors feel a strong movement.'},
             {'magnitude': 0.3, 'text': 'My body sensors feel significant movement.'},
             {'magnitude': 0.0, 'text': 'My body sensors feel a very gentle movement.'},
-        ]
-
-        # How to describe the time of day
-        # just using a list 0 through 23
-        self.timeofday = [
-            'midnight',
-            'night',
-            'night',
-            'night',
-            'night',
-            'early morning',
-            'morning',
-            'morning',
-            'morning',
-            'morning',
-            'late morning',
-            'late morning',
-            'midday',
-            'afternoon',
-            'afternoon',
-            'afternoon',
-            'afternoon',
-            'afternoon',
-            'late afternoon',
-            'evening',
-            'bedtime',
-            'past bedtime',
-            'night',
-            'night',
         ]
 
         # light levels and how they are described in the situational awareness system message
@@ -1096,7 +1067,31 @@ Dream:
         """Returns the context with Christine's current self-definition inserted."""
         
         self_definition = self.get_self_definition()
-        return self.context.format(self_definition=self_definition)
+        include_sleep_tools = time.time() <= STATE.sleep_offer_state_tools_until
+        tool_introduction = prefrontal_cortex.get_tool_introduction(include_sleep_tools=include_sleep_tools)
+        return self.context.format(self_definition=self_definition, tool_introduction=tool_introduction)
+
+    def get_adaptive_timeofday_text(self, hour: int) -> str:
+        """Return time-of-day text based on clock hour only."""
+
+        if 5 <= hour <= 7:
+            clock_label = 'early morning'
+        elif 8 <= hour <= 11:
+            clock_label = 'morning'
+        elif hour == 12:
+            clock_label = 'midday'
+        elif 13 <= hour <= 17:
+            clock_label = 'afternoon'
+        elif 18 <= hour <= 20:
+            clock_label = 'evening'
+        elif 21 <= hour <= 23:
+            clock_label = 'late evening'
+        elif hour == 0:
+            clock_label = 'midnight'
+        else:
+            clock_label = 'night'
+
+        return clock_label
 
     def clear_self_definition_cache(self):
         """Clears the cached self-definition, forcing a refresh on next access."""
@@ -1110,8 +1105,8 @@ Dream:
         # Get the current hour
         hour = time.localtime().tm_hour
 
-        # using the hour 0-23 get a textual description of time of day
-        timeofday_text = self.timeofday[hour]
+        # describe time of day from clock hour
+        timeofday_text = self.get_adaptive_timeofday_text(hour)
 
         # figure out how to describe the ambient light level
         ambient_light_text = 'unknown light'  # fallback
@@ -1150,6 +1145,10 @@ Horniness: {horniness_text}.
 
     def broca_figment_was_processed(self, figment: Figment):
         """This is called by the broca module when any speech or sound is starting to be played. This is done this way so the LLM can be interrupted mid-speech."""
+
+        # spoken output itself should wake Christine up
+        if figment.should_speak is True and STATE.speech_wakefulness_boost > 0.0:
+            sleep.wake_up(STATE.speech_wakefulness_boost)
 
         # log it
         if figment.should_speak is True:
@@ -1325,12 +1324,12 @@ Horniness: {horniness_text}.
         ])))
 
     def sleep_tired(self):
-        """This is called by the sleep module when the time comes to announce we should go to bed."""
+        """This is called by the sleep module when wakefulness drifts low and a tired perception should surface."""
 
         self.new_perception(Perception(text=random.choice([
-            'It is now late at night, past bed time. I guess it may be a good idea to remind my husband.',
-            'It\'s late. I think about nagging my husband about the need for sleep.',
-            'I am tired and want to go to bed.',
+            'My body feels heavier and sleep starts to pull at me.',
+            'A wave of tiredness rolls through me and I want to rest.',
+            'I feel my energy dropping and I start craving sleep.',
         ])))
 
     def sleep_midnight_task(self):
@@ -1416,9 +1415,6 @@ Horniness: {horniness_text}.
 
         # add the perception to the queue
         self.perception_queue.put_nowait(new_perception)
-
-        # wake up a little bit
-        sleep.wake_up(0.005)
 
     def _save_recovery_prompt(self, prompt: str, timestamp: int):
         """Save the base prompt for potential recovery."""

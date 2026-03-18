@@ -24,70 +24,22 @@ class Sleep(threading.Thread):
         super().__init__(daemon=True)
 
         # Some basic state variables
-        self.announce_tired_time = None
         self.current_hour = time.localtime()
 
         # variables for running the midnight memory task only once per night, and only after being asleep for a period of time
         self.midnight_process_time = None
+        self.sleep_started_at = None
+        self.last_tired_perception_time = 0.0
+        self.tired_perceptions_today = 0
+        self.tired_perception_day = time.localtime().tm_yday
+        self.last_wakefulness_for_tiredness = STATE.wakefulness
+        self.last_schedule_update_day = None
+        self.last_schedule_update_hour = None
 
         # The current conditions, right now. Basically light levels, gyro, noise level, touch, etc all added together, then we calculate a running average to cause gradual drowsiness. zzzzzzzzzz.......
         self.current_environmental_conditions = 0.5
 
-        # How quickly should wakefulness change?
-        self.wakefullness_avg_window = 10.0
-
-        # Weights
-        self.weights_light = 6
-        self.weights_gyro = 5
-        self.weights_time = 3
-        self.weights_total = (
-            self.weights_light
-            + self.weights_gyro
-            + self.weights_time
-        )
-
-        # a list of 24 numbers, 0.0 to 1.0, representing how awake we are at each hour of the day
-        self.sleep_schedule = [
-            0.0, #midnight
-            0.0, #night
-            0.0, #night
-            0.0, #night
-            0.0, #night
-            0.1, #early morning
-            0.2, #morning
-            0.6, #morning
-            0.8, #morning
-            0.9, #morning
-            1.0, #late morning
-            1.0, #late morning
-            1.0, #midday
-            1.0, #afternoon
-            1.0, #afternoon
-            1.0, #afternoon
-            1.0, #afternoon
-            0.9, #afternoon
-            0.8, #late afternoon
-            0.7, #evening
-            0.4, #bedtime
-            0.2, #past bedtime
-            0.1, #night
-            0.0, #night
-        ]
-
-        # At what time should we expect to be in bed?
-        self.sleep_hour = 20
-
-        # at what point are we about to fall asleep
-        self.wakefulness_pre_sleep = 0.15
-
-        # Hysteresis thresholds to prevent sleep/wake cycling
-        # The key insight: use different thresholds for falling asleep vs waking up
-        # This creates a "dead zone" between 0.08 and 0.12 that prevents rapid oscillation
-        # Fall asleep when wakefulness drops to this level
-        self.wakefulness_fall_asleep = 0.08
-        
-        # Wake up when wakefulness rises to this level (higher than fall_asleep threshold)
-        self.wakefulness_wake_up = 0.12
+        self.ensure_sleep_schedule_profile()
 
     def run(self):
 
@@ -105,12 +57,29 @@ class Sleep(threading.Thread):
                 # Get the current local time hour, for everything that follows
                 self.current_hour = time.localtime().tm_hour
 
+                # Adapt circadian schedule based on observed environmental factors
+                self.update_adaptive_sleep_schedule()
+                schedule_value = STATE.sleep_schedule_profile[self.current_hour]
+
+                # Compute total dynamic weight, guard against divide-by-zero if user sets everything to zero
+                weights_total = (
+                    STATE.sleep_weight_light
+                    + STATE.sleep_weight_gyro
+                    + STATE.sleep_weight_time
+                    + STATE.sleep_weight_inertia
+                )
+                if weights_total <= 0.0:
+                    weights_total = 1.0
+
+                sleep_inertia_environment = self.get_sleep_inertia_environment()
+
                 # Calculate current conditions which we're calling Environment
                 self.current_environmental_conditions = (
-                    (self.weights_light * STATE.light_level)
-                    + (self.weights_gyro * STATE.jostled_level)
-                    + (self.weights_time * self.sleep_schedule[self.current_hour])
-                ) / self.weights_total
+                    (STATE.sleep_weight_light * STATE.light_level)
+                    + (STATE.sleep_weight_gyro * STATE.jostled_level)
+                    + (STATE.sleep_weight_time * schedule_value)
+                    + (STATE.sleep_weight_inertia * sleep_inertia_environment)
+                ) / weights_total
 
                 # clip it, can't go below 0 or higher than 1
                 self.current_environmental_conditions = float(
@@ -119,9 +88,9 @@ class Sleep(threading.Thread):
 
                 # Update the running average that we're using for wakefulness
                 STATE.wakefulness = (
-                    (STATE.wakefulness * self.wakefullness_avg_window)
+                    (STATE.wakefulness * STATE.sleep_wakefulness_avg_window)
                     + self.current_environmental_conditions
-                ) / (self.wakefullness_avg_window + 1)
+                ) / (STATE.sleep_wakefulness_avg_window + 1)
 
                 # clip that
                 STATE.wakefulness = float(
@@ -133,19 +102,18 @@ class Sleep(threading.Thread):
 
                 # log it
                 log.sleep.info(
-                    "Light=%.2f  Jostled=%.2f  Time=%.2f  Env=%.2f  Wake=%.2f",
+                    "Light=%.2f  Jostled=%.2f  Schedule=%.2f  Inertia=%.2f  Env=%.2f  Wake=%.2f",
                     STATE.light_level,
                     STATE.jostled_level,
-                    self.sleep_schedule[self.current_hour],
+                    schedule_value,
+                    sleep_inertia_environment,
                     self.current_environmental_conditions,
                     STATE.wakefulness,
                 )
 
-                # If it's getting late, set a future time to "whine" in a cute, endearing way
-                if self.now_its_late():
-                    self.set_whine_time()
-                if self.time_to_whine():
-                    self.whine()
+                # Feed an organic tired perception when wakefulness trends downward,
+                # with cooldown and daily cap to prevent oscillatory chatter.
+                self.maybe_emit_tired_perception()
 
                 # If it's time to run the midnight process, do it
                 if self.is_time_for_midnight_process():
@@ -167,7 +135,7 @@ class Sleep(threading.Thread):
                 # help prevent long term buildup of heat
                 # Use hysteresis here too to prevent wernicke start/stop cycling
                 if (
-                    STATE.wakefulness < self.wakefulness_fall_asleep
+                    STATE.wakefulness < STATE.sleep_wakefulness_fall_asleep
                     and STATE.wernicke_sleeping is False
                 ):
                     STATE.wernicke_sleeping = True
@@ -175,7 +143,7 @@ class Sleep(threading.Thread):
                     wernicke.audio_processing_stop()
                     STATE.wakefulness -= 0.02
                 if (
-                    STATE.wakefulness >= self.wakefulness_wake_up
+                    STATE.wakefulness >= STATE.sleep_wakefulness_wake_up
                     and STATE.wernicke_sleeping is True
                 ):
                     STATE.wernicke_sleeping = False
@@ -221,7 +189,7 @@ class Sleep(threading.Thread):
             log.sleep.info("JustFellAsleep")
 
             # try to prevent wobble by throwing it further towards sleep
-            STATE.wakefulness -= 0.1
+            STATE.wakefulness -= STATE.sleep_transition_nudge_sleep
 
             # start progression from loud to soft sleepy breathing sounds
             # I was getting woke up a lot with all the cute hmmm sounds that are in half of the sleeping breath sounds
@@ -232,6 +200,7 @@ class Sleep(threading.Thread):
 
             # this lets every other module know we're sleeping
             STATE.is_sleeping = True
+            self.sleep_started_at = time.time()
 
             # set the time for the midnight process to run
             self.set_midnight_process_time()
@@ -240,9 +209,10 @@ class Sleep(threading.Thread):
             log.sleep.info("JustWokeUp")
 
             STATE.is_sleeping = False
+            self.sleep_started_at = None
 
             # try to prevent wobble by throwing it further towards awake
-            STATE.wakefulness += 0.1
+            STATE.wakefulness += STATE.sleep_transition_nudge_wake
 
             # play sleepy sounds
             broca.accept_figment(Figment(from_collection="sleepy"))
@@ -251,13 +221,13 @@ class Sleep(threading.Thread):
             parietal_lobe.sleep_waking()
 
         if (
-            STATE.wakefulness < self.wakefulness_pre_sleep
+            STATE.wakefulness < STATE.sleep_wakefulness_pre_sleep
             and STATE.is_sleepy is False
         ):
             log.sleep.info("PreSleep")
 
             # try to prevent wobble by throwing it further towards sleep
-            STATE.wakefulness -= 0.1
+            STATE.wakefulness -= STATE.sleep_transition_nudge_sleep
 
             # this lets every other module know we're pre-sleep
             STATE.is_sleepy = True
@@ -266,17 +236,176 @@ class Sleep(threading.Thread):
             parietal_lobe.sleep_sleepy()
 
         elif (
-            STATE.wakefulness >= self.wakefulness_pre_sleep
+            STATE.wakefulness >= STATE.sleep_wakefulness_pre_sleep
             and STATE.is_sleepy is True
         ):
             STATE.is_sleepy = False
+
+    def get_sleep_inertia_environment(self):
+        """
+        Sleep inertia is a stabilizing environmental input.
+        Binary mode requested by operator:
+        awake = 1.0, asleep = 0.0.
+        Returns a value between 0.0 and 1.0, where lower means sleepier.
+        """
+        return 0.0 if STATE.is_sleeping else 1.0
+
+    def ensure_sleep_schedule_profile(self):
+        """
+        Keep the adaptive schedule profile valid: exactly 24 clipped floats.
+        """
+
+        profile = getattr(STATE, 'sleep_schedule_profile', None)
+
+        if not isinstance(profile, list) or len(profile) != 24:
+            STATE.sleep_schedule_profile = [0.5] * 24
+            return
+
+        cleaned = []
+        for value in profile:
+            try:
+                cleaned.append(float(np.clip(float(value), 0.0, 1.0)))
+            except (TypeError, ValueError):
+                cleaned.append(0.5)
+        STATE.sleep_schedule_profile = cleaned
+
+    def get_schedule_learning_observation(self):
+        """
+        Return a 0.0-1.0 wake-pressure observation used to train schedule profile.
+        Uses existing environmental channels: light, movement, talking.
+        """
+
+        talking_signal = 1.0 if STATE.user_is_speaking else 0.0
+        total = (
+            STATE.sleep_schedule_source_weight_light
+            + STATE.sleep_schedule_source_weight_gyro
+            + STATE.sleep_schedule_source_weight_talking
+        )
+        if total <= 0.0:
+            return 0.5
+
+        observation = (
+            (STATE.sleep_schedule_source_weight_light * STATE.light_level)
+            + (STATE.sleep_schedule_source_weight_gyro * STATE.jostled_level)
+            + (STATE.sleep_schedule_source_weight_talking * talking_signal)
+        ) / total
+
+        return float(np.clip(observation, 0.0, 1.0))
+
+    def update_adaptive_sleep_schedule(self):
+        """
+        Train the hourly schedule profile gradually from environmental observations.
+        This replaces the fixed hardcoded schedule with a natural drifting one.
+        """
+
+        self.ensure_sleep_schedule_profile()
+
+        now = time.localtime()
+        if (
+            self.last_schedule_update_day == now.tm_yday
+            and self.last_schedule_update_hour == self.current_hour
+        ):
+            return
+
+        hour = self.current_hour
+        prev_hour = (hour - 1) % 24
+        next_hour = (hour + 1) % 24
+
+        observation = self.get_schedule_learning_observation()
+        learning_rate = float(np.clip(STATE.sleep_schedule_learning_rate, 0.0, 1.0))
+        neighbor_blend = float(np.clip(STATE.sleep_schedule_neighbor_blend, 0.0, 1.0))
+
+        current_value = STATE.sleep_schedule_profile[hour]
+        updated_current = current_value + (learning_rate * (observation - current_value))
+        updated_current = float(np.clip(updated_current, 0.0, 1.0))
+        STATE.sleep_schedule_profile[hour] = updated_current
+
+        if neighbor_blend > 0.0:
+            prev_value = STATE.sleep_schedule_profile[prev_hour]
+            next_value = STATE.sleep_schedule_profile[next_hour]
+            STATE.sleep_schedule_profile[prev_hour] = float(np.clip(
+                prev_value + (neighbor_blend * (updated_current - prev_value)),
+                0.0,
+                1.0,
+            ))
+            STATE.sleep_schedule_profile[next_hour] = float(np.clip(
+                next_value + (neighbor_blend * (updated_current - next_value)),
+                0.0,
+                1.0,
+            ))
+
+        self.last_schedule_update_day = now.tm_yday
+        self.last_schedule_update_hour = hour
+
+        profile_summary = ','.join(f"{value:.2f}" for value in STATE.sleep_schedule_profile)
+        log.sleep.info(
+            "Schedule hourly update: hour=%02d observed=%.2f current=%.2f->%.2f profile=[%s]",
+            hour,
+            observation,
+            current_value,
+            updated_current,
+            profile_summary,
+        )
+
+    def maybe_emit_tired_perception(self):
+        """
+        Sends sleepy perception events organically from wakefulness trend,
+        with cooldown and daily caps to prevent oscillation and spam.
+        """
+
+        from christine.parietal_lobe import parietal_lobe
+
+        today = time.localtime().tm_yday
+        if today != self.tired_perception_day:
+            self.tired_perception_day = today
+            self.tired_perceptions_today = 0
+
+        previous_wakefulness = self.last_wakefulness_for_tiredness
+        current_wakefulness = STATE.wakefulness
+        self.last_wakefulness_for_tiredness = current_wakefulness
+
+        if STATE.is_sleeping is True:
+            return
+
+        if self.tired_perceptions_today >= STATE.sleep_tired_perception_max_per_day:
+            return
+
+        cooldown_seconds = STATE.sleep_tired_perception_cooldown_minutes * 60
+        if time.time() - self.last_tired_perception_time < cooldown_seconds:
+            return
+
+        wakefulness_drop = previous_wakefulness - current_wakefulness
+        crossed_threshold_down = (
+            previous_wakefulness > STATE.sleep_tired_perception_threshold
+            and current_wakefulness <= STATE.sleep_tired_perception_threshold
+        )
+
+        should_emit = (
+            current_wakefulness <= STATE.sleep_tired_perception_threshold
+            and (
+                wakefulness_drop >= STATE.sleep_tired_perception_drop_min
+                or crossed_threshold_down
+            )
+        )
+
+        if should_emit:
+            self.last_tired_perception_time = time.time()
+            self.tired_perceptions_today += 1
+            STATE.sleep_offer_state_tools_until = time.time() + (STATE.sleep_offer_state_tools_window_minutes * 60)
+            log.sleep.info(
+                "Sleepy perception emitted: wake_drop=%.3f wake=%.3f count_today=%s",
+                wakefulness_drop,
+                current_wakefulness,
+                self.tired_perceptions_today,
+            )
+            parietal_lobe.sleep_tired()
 
     def just_fell_asleep(self):
         """
         returns whether we just now fell asleep
         """
         return (
-            STATE.wakefulness < self.wakefulness_fall_asleep
+            STATE.wakefulness < STATE.sleep_wakefulness_fall_asleep
             and STATE.is_sleeping is False
         )
 
@@ -285,47 +414,9 @@ class Sleep(threading.Thread):
         returns whether we just now woke up
         """
         return (
-            STATE.wakefulness > self.wakefulness_wake_up
+            STATE.wakefulness > STATE.sleep_wakefulness_wake_up
             and STATE.is_sleeping is True
         )
-
-    def now_its_late(self):
-        """
-        returns whether it's past bedtime
-        """
-        return (
-            self.announce_tired_time is None
-            and self.current_hour >= self.sleep_hour
-            and self.current_hour < self.sleep_hour + 1
-            and STATE.is_sleeping is False
-        )
-
-    def set_whine_time(self):
-        """
-        sets up some whining at a certain time in the future
-        """
-        self.announce_tired_time = self.random_minutes_later(15, 30)
-
-    def time_to_whine(self):
-        """
-        returns whether or not it's now time to whine
-        """
-        return (
-            self.announce_tired_time is not None
-            and time.time() >= self.announce_tired_time
-        )
-
-    def whine(self):
-        """
-        Actually start whining, but only actually whine if the lights are still on.
-        """
-
-        from christine.parietal_lobe import parietal_lobe
-
-        if STATE.light_level > 0.05:
-            log.sleep.info("Whining that I'm tired")
-            parietal_lobe.sleep_tired()
-            self.announce_tired_time = None
 
     def set_midnight_process_time(self):
         """
@@ -353,6 +444,11 @@ class Sleep(threading.Thread):
         # if this was done within the last 8 hours, don't do it again
         if STATE.midnight_tasks_done_time < time.time() - (8 * 60 * 60) and STATE.is_sleeping is True:
             log.sleep.info("Running midnight process")
+
+            # Safety behavior: re-enable hearing each night in case it was manually disabled
+            if STATE.perceptions_blocked is True:
+                STATE.perceptions_blocked = False
+                log.sleep.info("Midnight process re-enabled hearing (perceptions_blocked=False)")
             
             # Set the done time BEFORE starting processing to prevent loops on failure
             STATE.midnight_tasks_done_time = time.time()

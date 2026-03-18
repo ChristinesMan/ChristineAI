@@ -991,6 +991,20 @@
                         </div>
                         <div class="setting-item">
                             <label>
+                                Wake boost per speech start:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        How much wakefulness rises when Broca starts spoken output. Increase if conversation should wake Christine more strongly.
+                                        <span class="tooltip-default">Default: 0.03</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="speech_wakefulness_boost" min="0" max="0.2" step="0.001" value="0.03">
+                            <span class="setting-value" id="speech_wakefulness_boost_value">0.03</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
                                 Light ADC minimum:
                                 <div class="tooltip">
                                     <span class="setting-help">?</span>
@@ -1032,6 +1046,177 @@
                             <span class="setting-value" id="light_avg_window_value">10.0</span>
                         </div>
                     </div>
+
+                    <div class="setting-group">
+                        <h3>😴 Sleep Transition</h3>
+                        <div class="setting-item">
+                            <label>
+                                Pre-sleep threshold:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        Wakefulness level where Christine enters sleepy pre-sleep mode.
+                                        <span class="tooltip-default">Default: 0.15</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="sleep_wakefulness_pre_sleep" min="0.05" max="0.5" step="0.01" value="0.15">
+                            <span class="setting-value" id="sleep_wakefulness_pre_sleep_value">0.15</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                Fall-asleep threshold:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        Wakefulness threshold to enter sleeping state. Keep this below wake-up threshold.
+                                        <span class="tooltip-default">Default: 0.08</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="sleep_wakefulness_fall_asleep" min="0.01" max="0.3" step="0.01" value="0.08">
+                            <span class="setting-value" id="sleep_wakefulness_fall_asleep_value">0.08</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                Wake-up threshold:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        Wakefulness threshold to leave sleep. Keep this above fall-asleep threshold for hysteresis.
+                                        <span class="tooltip-default">Default: 0.12</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="sleep_wakefulness_wake_up" min="0.05" max="0.5" step="0.01" value="0.12">
+                            <span class="setting-value" id="sleep_wakefulness_wake_up_value">0.12</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                Sleep inertia weight:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        How strongly sleep inertia stabilizes sleep after onset. Increase this to reduce sleep-entry bounce.
+                                        <span class="tooltip-default">Default: 4.0</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="sleep_weight_inertia" min="0" max="20" step="0.1" value="4.0">
+                            <span class="setting-value" id="sleep_weight_inertia_value">4.0</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                Sleep inertia ramp (minutes):
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        Time for sleep inertia to ramp to full effect after falling asleep.
+                                        <span class="tooltip-default">Default: 18m</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="sleep_inertia_ramp_minutes" min="1" max="120" step="1" value="18">
+                            <span class="setting-value" id="sleep_inertia_ramp_minutes_value">18m</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                Sleep inertia final level:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        Lower final level makes sustained sleep more stable once inertia has ramped in.
+                                        <span class="tooltip-default">Default: 0.08</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="sleep_inertia_env_final" min="0.00" max="1.00" step="0.01" value="0.08">
+                            <span class="setting-value" id="sleep_inertia_env_final_value">0.08</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                Schedule learning rate:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        How quickly the 24-hour adaptive schedule drifts based on observed environment.
+                                        <span class="tooltip-default">Default: 0.03</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="sleep_schedule_learning_rate" min="0.001" max="0.2" step="0.001" value="0.03">
+                            <span class="setting-value" id="sleep_schedule_learning_rate_value">0.03</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                Schedule source weight (talking):
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        How strongly talking activity shapes the learned schedule profile.
+                                        <span class="tooltip-default">Default: 3.0</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="sleep_schedule_source_weight_talking" min="0" max="20" step="0.1" value="3.0">
+                            <span class="setting-value" id="sleep_schedule_source_weight_talking_value">3.0</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                Tired perception threshold:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        Below this wakefulness value, Christine may generate a tired perception if wakefulness is dropping.
+                                        <span class="tooltip-default">Default: 0.24</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="sleep_tired_perception_threshold" min="0.05" max="0.5" step="0.01" value="0.24">
+                            <span class="setting-value" id="sleep_tired_perception_threshold_value">0.24</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                Tired perception cooldown (minutes):
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        Minimum gap between tired perceptions, preventing rapid oscillation and chatter.
+                                        <span class="tooltip-default">Default: 150m</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="sleep_tired_perception_cooldown_minutes" min="5" max="720" step="5" value="150">
+                            <span class="setting-value" id="sleep_tired_perception_cooldown_minutes_value">150m</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                Max tired perceptions/day:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        Hard daily cap so tired prompts stay occasional and organic.
+                                        <span class="tooltip-default">Default: 3</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="sleep_tired_perception_max_per_day" min="0" max="12" step="1" value="3">
+                            <span class="setting-value" id="sleep_tired_perception_max_per_day_value">3</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                Sleep-control tools window (minutes):
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        How long Christine sees sleep decision tools after a tiredness perception appears.
+                                        <span class="tooltip-default">Default: 20m</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="sleep_offer_state_tools_window_minutes" min="1" max="180" step="1" value="20">
+                            <span class="setting-value" id="sleep_offer_state_tools_window_minutes_value">20m</span>
+                        </div>
                     </div>
 
                     <div class="setting-group">
@@ -1394,6 +1579,15 @@
                     } else if (settingName === 'primary_restoration_interval') {
                         slider.value = Math.round(config.value / 60); // Convert seconds to minutes
                         displayValue = Math.round(config.value / 60) + 'm';
+                    } else if (settingName === 'sleep_inertia_ramp_minutes') {
+                        slider.value = Math.round(config.value);
+                        displayValue = Math.round(config.value) + 'm';
+                    } else if (settingName === 'sleep_tired_perception_cooldown_minutes') {
+                        slider.value = Math.round(config.value);
+                        displayValue = Math.round(config.value) + 'm';
+                    } else if (settingName === 'sleep_offer_state_tools_window_minutes') {
+                        slider.value = Math.round(config.value);
+                        displayValue = Math.round(config.value) + 'm';
                     } else if (settingName.includes('delay') && config.type === 'i') {
                         slider.value = Math.round(config.value / 60); // Convert seconds to minutes for display
                         displayValue = Math.round(config.value / 60) + 'm';
@@ -1434,6 +1628,12 @@
             } else if (settingName === 'neocortex_recall_interval') {
                 displayValue = value + 'd';
             } else if (settingName === 'primary_restoration_interval') {
+                displayValue = value + 'm';
+            } else if (settingName === 'sleep_inertia_ramp_minutes') {
+                displayValue = value + 'm';
+            } else if (settingName === 'sleep_tired_perception_cooldown_minutes') {
+                displayValue = value + 'm';
+            } else if (settingName === 'sleep_offer_state_tools_window_minutes') {
                 displayValue = value + 'm';
             } else if (settingName.includes('delay')) {
                 displayValue = value + 'm';

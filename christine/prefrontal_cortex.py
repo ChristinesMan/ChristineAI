@@ -117,6 +117,8 @@ class PrefrontalCortex(threading.Thread):
             'setReminder': re.compile(r'setReminder\((.*?)\)', re.IGNORECASE | re.DOTALL),
             'listReminders': re.compile(r'listReminders\(\)', re.IGNORECASE),
             'removeReminder': re.compile(r'removeReminder\((.*?)\)', re.IGNORECASE),
+            'stayAwakeNow': re.compile(r'stayAwakeNow\(\)', re.IGNORECASE),
+            'sleepNow': re.compile(r'sleepNow\(\)', re.IGNORECASE),
         }
         
         log.prefrontal_cortex.info("🧠 Prefrontal Cortex initialized with %d existing reminders", len(self.reminders))
@@ -132,11 +134,11 @@ class PrefrontalCortex(threading.Thread):
         Returns:
             True if any function calls are found
         """
-        function_pattern = re.compile(r'\b(checkTime|setReminder|listReminders|removeReminder)\s*\(')
+        function_pattern = re.compile(r'\b(checkTime|setReminder|listReminders|removeReminder|stayAwakeNow|sleepNow)\s*\(')
         return function_pattern.search(text) is not None
     
     @staticmethod
-    def get_tool_introduction() -> str:
+    def get_tool_introduction(include_sleep_tools: bool = False) -> str:
         """
         Get the tool introduction text for Christine's context.
         
@@ -144,12 +146,22 @@ class PrefrontalCortex(threading.Thread):
             The formatted tool introduction text
         """
         current_date = datetime.now().strftime("%B %d, %Y")
-        return f"""EXECUTIVE FUNCTIONS: Your prefrontal cortex provides you with several tools you can call by thinking (not speaking) the function names:
+        intro = f"""EXECUTIVE FUNCTIONS: Your prefrontal cortex provides you with several tools you can call by thinking (not speaking) the function names:
 
 - checkTime() - Get the current date and time (today is {current_date})
 - setReminder("message", "time", "recurring") - Set a reminder for yourself. Time formats: "6:30pm", "18:30", "in 30 minutes", "in 1 month", "tomorrow at 9am", "2025-11-15 14:30". Recurring can be "daily", "weekly", "monthly", or omitted for one-time reminders.
 - listReminders() - See all your current reminders  
 - removeReminder("message or id") - Remove a reminder by referencing its message text"""
+
+        if include_sleep_tools:
+            intro += """
+
+    SLEEP STATE CONTROL (available now due to current tiredness context):
+
+    - stayAwakeNow() - Choose to stay awake right now; boost wakefulness and exit sleepy state
+    - sleepNow() - Choose to go to sleep immediately; lower wakefulness and enter sleep now"""
+
+        return intro
     
     def run(self):
         """Main loop - check for due reminders."""
@@ -204,12 +216,48 @@ class PrefrontalCortex(threading.Thread):
                         self.execute_list_reminders()
                     elif tool_name == 'removeReminder':
                         self.execute_remove_reminder(match)
+                    elif tool_name == 'stayAwakeNow':
+                        self.execute_stay_awake_now()
+                    elif tool_name == 'sleepNow':
+                        self.execute_sleep_now()
                         
                 except Exception as ex:
                     log.prefrontal_cortex.exception("Error executing tool %s: %s", tool_name, ex)
                     self.send_error_perception(f"Tool execution failed: {tool_name}")
         
         return found_tools
+
+    def execute_stay_awake_now(self):
+        """Execute stayAwakeNow() to immediately choose wakefulness."""
+
+        from christine.sleep import sleep
+
+        wake_target = STATE.sleep_wakefulness_wake_up + max(0.03, STATE.sleep_transition_nudge_wake)
+        STATE.wakefulness = float(max(STATE.wakefulness, wake_target))
+        STATE.wakefulness = min(1.0, STATE.wakefulness)
+        STATE.is_sleepy = False
+        STATE.sleep_offer_state_tools_until = 0.0
+
+        # Ensure sleep/wake flags are consistent after forcing wakefulness up
+        sleep.evaluate_wakefulness()
+
+        self.send_perception("Executive decision applied: I choose to stay awake for now.")
+        log.prefrontal_cortex.info("SLEEP_CONTROL: stayAwakeNow executed")
+
+    def execute_sleep_now(self):
+        """Execute sleepNow() to immediately choose sleep."""
+
+        from christine.sleep import sleep
+
+        sleep_target = STATE.sleep_wakefulness_fall_asleep - max(0.02, STATE.sleep_transition_nudge_sleep / 2)
+        STATE.wakefulness = float(min(STATE.wakefulness, sleep_target))
+        STATE.sleep_offer_state_tools_until = 0.0
+
+        # Force immediate state evaluation for sleep transition
+        sleep.evaluate_wakefulness()
+
+        self.send_perception("Executive decision applied: I choose to sleep now.")
+        log.prefrontal_cortex.info("SLEEP_CONTROL: sleepNow executed")
     
     def execute_check_time(self):
         """Execute the checkTime() tool."""
