@@ -61,6 +61,14 @@ class Sex(threading.Thread):
     def _process_sex_perceptions_async(self):
         """Run sex-related perception processing in the background."""
         try:
+            # Skip if another thread is already mid-API-call to avoid
+            # hitting OpenRouter's concurrency limit and causing timeouts.
+            from christine.llm_class import llm_api_lock
+            if not llm_api_lock.acquire(blocking=False):
+                log.sex.info("Skipping sex LLM call - API already in use by another thread")
+                return
+            llm_api_lock.release()
+
             parietal_lobe.process_new_perceptions()
         except Exception as ex:
             log.sex.exception(ex)
