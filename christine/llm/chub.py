@@ -4,7 +4,6 @@ import re
 from requests import post
 
 from christine import log
-from christine.status import STATE
 from christine.config import CONFIG
 from christine.llm_class import LLMAPI
 
@@ -79,61 +78,26 @@ class Chub(LLMAPI):
             "template": prompt
         }
 
-        # this is for fault tolerance. Flag controls whether we're done here or need to try again.
-        # and how long we ought to wait before retrying after an error
-        llm_is_done_or_failed = False
-        sleep_after_error = 30
-        sleep_after_error_multiplier = 5
-        sleep_after_error_max = 750
-        while llm_is_done_or_failed is False:
+        log.llm_stream.info('Start api call.')
+        start_time = time.time()
+        # send the api call
+        response = post(
+            self.chub_url,
+            headers=headers,
+            json=payload,
+            timeout=300
+        )
+        elapsed_time = time.time() - start_time
+        log.llm_stream.info('API call completed in %.2f seconds.', elapsed_time)
 
-            try:
+        response.raise_for_status()
+        response = response.json()
 
-                log.llm_stream.info('Start api call.')
-                start_time = time.time()
-                # send the api call
-                response = post(
-                    self.chub_url,
-                    headers=headers,
-                    json=payload,
-                    timeout=60
-                )
-                elapsed_time = time.time() - start_time
-                log.llm_stream.info('API call completed in %.2f seconds.', elapsed_time)
+        # log the response
+        log.llm_stream.debug("Response: %s", response)
 
-                response.raise_for_status()
-                response = response.json()
-
-                # log the response
-                log.llm_stream.debug("Response: %s", response)
-
-                # get the text of the response
-                response_text=response['choices'][0]['message']['content'].strip()
-
-                # if the caller expects proper well formed json, let's try to fix common issues
-                if expects_json is True:
-
-                    # strip everything before [ and after ] to extract just the JSON array
-                    start_bracket = response_text.find('[')
-                    end_bracket = response_text.rfind(']')
-                    if start_bracket != -1 and end_bracket != -1 and end_bracket > start_bracket:
-                        response_text = response_text[start_bracket:end_bracket + 1]
-
-                # if we got here that means no errors, so signal we're done
-                llm_is_done_or_failed = True
-
-            # if api related exceptions occur, sleep here a while and retry, longer with each fail
-            except Exception as ex:
-                response_text = 'I try to say something, but nothing happens.'
-                log.parietal_lobe.exception(ex)
-                if sleep_after_error > sleep_after_error_max:
-                    STATE.perceptions_blocked = True
-                    llm_is_done_or_failed = True
-                else:
-                    STATE.perceptions_blocked = True
-                    time.sleep(sleep_after_error)
-                    STATE.perceptions_blocked = False
-                    sleep_after_error *= sleep_after_error_multiplier
+        # get the text of the response
+        response_text=response['choices'][0]['message']['content'].strip()
 
         # return the text of the response
         return response_text

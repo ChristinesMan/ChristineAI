@@ -78,7 +78,7 @@ class OpenRouter(LLMAPI):
             self.openrouter_url,
             headers=headers,
             json=payload,
-            timeout=120
+            timeout=300
         )
         elapsed_time = time.time() - start_time
         log.llm_stream.info('API call completed in %.2f seconds.', elapsed_time)
@@ -91,26 +91,6 @@ class OpenRouter(LLMAPI):
 
         # get the text of the response - OpenRouter /completions endpoint returns choices with 'text' field
         response_text = response['choices'][0]['text'].strip()
-
-        # if the caller expects proper well formed json, let's try to fix common issues
-        if expects_json is True:
-            
-            # First, try to find and extract just the JSON array
-            start_bracket = response_text.find('[')
-            end_bracket = response_text.rfind(']')
-            if start_bracket != -1 and end_bracket != -1 and end_bracket > start_bracket:
-                response_text = response_text[start_bracket:end_bracket + 1]
-            
-            # Also try to handle cases where the model might use ```json code blocks
-            if '```json' in response_text:
-                start_json = response_text.find('```json')
-                end_json = response_text.find('```', start_json + 7)
-                if start_json != -1 and end_json != -1:
-                    json_content = response_text[start_json + 7:end_json].strip()
-                    start_bracket = json_content.find('[')
-                    end_bracket = json_content.rfind(']')
-                    if start_bracket != -1 and end_bracket != -1:
-                        response_text = json_content[start_bracket:end_bracket + 1]
 
         # return the text of the response
         return response_text
