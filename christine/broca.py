@@ -64,10 +64,6 @@ class Broca(threading.Thread):
         self.re_question = re.compile(r'\?"?\s*$|\.{2,3}"?\s*$')
         self.re_comma = re.compile(r",\s*$")
 
-        # the LLM has a strong tendency to repeat itself, as LLMs do
-        self.repetition_destroyer = {}
-        self.repetition_max_ttl = 5
-
         # initialize the last sex sound time used to prevent rapid-fire sex sounds
         self.last_sex_sound_time = 0
 
@@ -281,24 +277,6 @@ class Broca(threading.Thread):
                 )
 
             elif figment.text is not None:
-
-                # purge old stuff from the repetition destroyer and decrement
-                for key in list(self.repetition_destroyer):
-                    if self.repetition_destroyer[key] > 0:
-                        self.repetition_destroyer[key] -= 1
-                    else:
-                        self.repetition_destroyer.pop(key)
-
-                # standardize the sentence to letters only
-                text_stripped = re.sub("[^a-zA-Z]", "", figment.text).lower()
-
-                # if this sequence of letters has shown up anywhere in the past 5 responses, destroy it
-                if text_stripped in self.repetition_destroyer:
-                    self.repetition_destroyer[text_stripped] = self.repetition_max_ttl
-                    return
-
-                # remember this for later destruction
-                self.repetition_destroyer[text_stripped] = self.repetition_max_ttl
 
                 if figment.should_speak is True:
 
