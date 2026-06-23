@@ -28,6 +28,19 @@ class Wernicke(threading.Thread):
     """
 
     name = "Wernicke"
+    runtime_setting_names = (
+        "wernicke_mic_gain_db",
+        "wernicke_padding_blocks",
+        "wernicke_triggered_block_limit",
+        "wernicke_triggered_continue_factor",
+        "wernicke_cobra_trigger_prob",
+        "wernicke_cobra_post_silence_blocks",
+        "wernicke_webrtc_mode",
+        "wernicke_webrtc_trigger_prob",
+        "wernicke_webrtc_prob_window",
+        "wernicke_webrtc_post_silence_blocks",
+        "wernicke_pause_blocks_on_queue_full",
+    )
 
     def __init__(self):
         super().__init__(daemon=True)
@@ -45,6 +58,20 @@ class Wernicke(threading.Thread):
         self.to_enterprise_audio = None
         self.away_team_process = None
 
+    def _current_runtime_settings(self):
+        """Collect runtime-adjustable Wernicke settings from STATE."""
+        return {name: getattr(STATE, name) for name in self.runtime_setting_names}
+
+    def push_runtime_settings(self):
+        """Push current runtime settings to the away team subprocess."""
+        if self.to_away_team is None:
+            return
+
+        self.to_away_team.send({
+            "msg": "update_settings",
+            "settings": self._current_runtime_settings(),
+        })
+
     def run(self):
 
         # Create subprocess communication after shared memory is injected
@@ -57,6 +84,9 @@ class Wernicke(threading.Thread):
         # Start the subprocess first thing to save memory
         log.wernicke.info("Thread started - starting away team subprocess")
         self.away_team_process.start()
+
+        # Push runtime tuning values immediately so subprocess starts with current settings.
+        self.push_runtime_settings()
 
         # importing here to avoid circular imports
         from christine.touch import touch
@@ -216,6 +246,21 @@ class Wernicke(threading.Thread):
         # If we're recording, this holds the message from the enterprise containing file data. If not recording, contains None
         recording_state = None
 
+        # Runtime-tunable audio/VAD settings. These can be updated over the control pipe.
+        runtime_settings = {
+            "wernicke_mic_gain_db": STATE.wernicke_mic_gain_db,
+            "wernicke_padding_blocks": STATE.wernicke_padding_blocks,
+            "wernicke_triggered_block_limit": STATE.wernicke_triggered_block_limit,
+            "wernicke_triggered_continue_factor": STATE.wernicke_triggered_continue_factor,
+            "wernicke_cobra_trigger_prob": STATE.wernicke_cobra_trigger_prob,
+            "wernicke_cobra_post_silence_blocks": STATE.wernicke_cobra_post_silence_blocks,
+            "wernicke_webrtc_mode": STATE.wernicke_webrtc_mode,
+            "wernicke_webrtc_trigger_prob": STATE.wernicke_webrtc_trigger_prob,
+            "wernicke_webrtc_prob_window": STATE.wernicke_webrtc_prob_window,
+            "wernicke_webrtc_post_silence_blocks": STATE.wernicke_webrtc_post_silence_blocks,
+            "wernicke_pause_blocks_on_queue_full": STATE.wernicke_pause_blocks_on_queue_full,
+        }
+
         # I want to be able to gracefully stop and start the cpu heavy tasks of audio classification, etc.
         # This starts False, and is flipped to true after some seconds to give pi time to catch up
         processing_state = False
@@ -364,7 +409,7 @@ class Wernicke(threading.Thread):
                         # happens every day. I definitely need to pare it down, but also this should just pause for a while not just
                         # I dunno what past me means by happens everyday. She seems fine. In fact, she is so fine. Honey..
                         except queue.Full:
-                            self.pause_processing = 10
+                            self.pause_processing = int(runtime_settings["wernicke_pause_blocks_on_queue_full"])
                             log.wernicke.warning("Buffer Queue FULL! Resting.")
 
                     else:
@@ -428,6 +473,13 @@ class Wernicke(threading.Thread):
                             log.wernicke.debug("Buffer queue flushed (%d items) on processing stop", queue_size)
                         elif comm["msg"] == "pause_processing":
                             head_mic.pause_processing = comm["num_of_blocks"]
+                        elif comm["msg"] == "update_settings":
+                            settings = comm.get("settings", {})
+                            for key, value in settings.items():
+                                if key in runtime_settings:
+                                    runtime_settings[key] = value
+
+                            log.wernicke.info("Updated runtime Wernicke settings: %s", settings)
                         elif comm["msg"] == "shutdown":
                             processing_state = False
                             shutdown = True
@@ -468,13 +520,14 @@ class Wernicke(threading.Thread):
                 # then we add 15 to the volume because the mics are really quiet
                 # so this happens 31.25 times per second
                 # which also means 0.032 seconds per block
+                gain_db = int(runtime_settings["wernicke_mic_gain_db"])
                 in_audio = (
                     AudioSegment(
                         data=buffer_queue.get(),
                         sample_width=2,
                         frame_rate=16000,
                         channels=2,
-                    ).split_to_mono()[1] + 15
+                    ).split_to_mono()[1] + gain_db
                 )
 
                 return in_audio.raw_data
@@ -484,7 +537,7 @@ class Wernicke(threading.Thread):
                 Example: (block, ..., block, None, block, ..., block, None, ...)
                             |---utterence---|        |---utterence---|
                 """
-                num_padding_blocks = 40
+                num_padding_blocks = int(runtime_settings["wernicke_padding_blocks"])
                 ring_buffer = deque(maxlen=num_padding_blocks)
 
                 # triggered means we're currently seeing blocks that are not silent
@@ -492,17 +545,19 @@ class Wernicke(threading.Thread):
 
                 # Limit the number of blocks accumulated to some sane amount, after I discovered minute-long recordings
                 triggered_blocks = 0
-                triggered_block_limit = 2560
+                triggered_block_limit = int(runtime_settings["wernicke_triggered_block_limit"])
 
                 # there's a spot below where I'll be using struct.unpack that uses this 513 byte long str
                 # worried python's going to try to build the string over and over, so set it here and reuse
                 unpack_string = '<'+'h'*512
 
                 # at what probability should we start being triggered
-                triggered_prob = 0.45
-
                 while True:
                     # forever read new blocks of audio data
+                    desired_padding_blocks = int(runtime_settings["wernicke_padding_blocks"])
+                    if desired_padding_blocks != ring_buffer.maxlen:
+                        ring_buffer = deque(ring_buffer, maxlen=desired_padding_blocks)
+
                     block = self.read()
 
                     # convert the 1 byte per element array into half as many 2 byte signed short ints
@@ -511,6 +566,9 @@ class Wernicke(threading.Thread):
 
                     # Sweep the leg.
                     block_prob = self.cobra.process(block_unpacked)
+                    triggered_prob = float(runtime_settings["wernicke_cobra_trigger_prob"])
+                    continue_factor = float(runtime_settings["wernicke_triggered_continue_factor"])
+                    triggered_block_limit = int(runtime_settings["wernicke_triggered_block_limit"])
 
                     # NOT triggered
                     # when not triggered, it means we're not currently collecting audio for processing
@@ -532,7 +590,7 @@ class Wernicke(threading.Thread):
                             ring_buffer.clear()
 
                             # this is to track how many silent/ignore blocks we've had, so we can stop at some point
-                            post_silence = 80
+                            post_silence = int(runtime_settings["wernicke_cobra_post_silence_blocks"])
 
                     # TRIGGERED!
                     # when triggered, it means we are currently in the middle of an utterance and accumulating it into a ball of data
@@ -545,10 +603,10 @@ class Wernicke(threading.Thread):
 
                         # if this is a lover or lover_maybe block, reset the counter, else if it's not lover determine if we should end streaming
                         # also I want to make it easier to trigger when already triggered
-                        if block_prob >= triggered_prob * 0.8:
+                        if block_prob >= triggered_prob * continue_factor:
 
                             # reset the counter of consecutive silent blocks, because we got one that was not silent
-                            post_silence = 80
+                            post_silence = int(runtime_settings["wernicke_cobra_post_silence_blocks"])
 
                         else:
 
@@ -570,7 +628,7 @@ class Wernicke(threading.Thread):
                 # start the webrtc vad
                 log.wernicke.debug("Initializing webrtcvad...")
                 self.vad = webrtcvad.Vad()
-                self.vad.set_mode(3)
+                self.vad.set_mode(int(runtime_settings["wernicke_webrtc_mode"]))
 
             def read(self):
                 """Return a block of audio data, blocking if necessary."""
@@ -585,13 +643,14 @@ class Wernicke(threading.Thread):
                 # then we add 15 to the volume because the mics are really quiet
                 # so this happens 31.25 times per second
                 # which also means 0.032 seconds per block
+                gain_db = int(runtime_settings["wernicke_mic_gain_db"])
                 in_audio = (
                     AudioSegment(
                         data=buffer_queue.get(),
                         sample_width=2,
                         frame_rate=16000,
                         channels=2,
-                    ).split_to_mono()[1] + 15
+                    ).split_to_mono()[1] + gain_db
                 )
 
                 return in_audio.raw_data
@@ -601,7 +660,7 @@ class Wernicke(threading.Thread):
                 Example: (block, ..., block, None, block, ..., block, None, ...)
                             |---utterence---|        |---utterence---|
                 """
-                num_padding_blocks = 40
+                num_padding_blocks = int(runtime_settings["wernicke_padding_blocks"])
                 ring_buffer = deque(maxlen=num_padding_blocks)
 
                 # triggered means we're currently seeing blocks that are not silent
@@ -609,18 +668,25 @@ class Wernicke(threading.Thread):
 
                 # Limit the number of blocks accumulated to some sane amount, after I discovered minute-long recordings
                 triggered_blocks = 0
-                triggered_block_limit = 2560
-
-                # at what probability should we start being triggered
-                triggered_prob = 0.45
+                triggered_block_limit = int(runtime_settings["wernicke_triggered_block_limit"])
 
                 # this tracks the probability of speech over the last second
                 block_prob = 0.0
-                block_prob_window = 32.0
+                block_prob_window = float(runtime_settings["wernicke_webrtc_prob_window"])
+                last_mode = int(runtime_settings["wernicke_webrtc_mode"])
 
                 while True:
                     # forever read new blocks of audio data
+                    desired_padding_blocks = int(runtime_settings["wernicke_padding_blocks"])
+                    if desired_padding_blocks != ring_buffer.maxlen:
+                        ring_buffer = deque(ring_buffer, maxlen=desired_padding_blocks)
+
                     block = self.read()
+
+                    current_mode = int(runtime_settings["wernicke_webrtc_mode"])
+                    if current_mode != last_mode:
+                        self.vad.set_mode(current_mode)
+                        last_mode = current_mode
 
                     try:
 
@@ -638,6 +704,11 @@ class Wernicke(threading.Thread):
                         is_speech = False
 
                     # I want to calculate a running average of the probability of speech over the last second
+                    triggered_prob = float(runtime_settings["wernicke_webrtc_trigger_prob"])
+                    continue_factor = float(runtime_settings["wernicke_triggered_continue_factor"])
+                    triggered_block_limit = int(runtime_settings["wernicke_triggered_block_limit"])
+                    block_prob_window = float(runtime_settings["wernicke_webrtc_prob_window"])
+
                     if is_speech:
                         # if this is speech, then the probability is 1.0
                         block_prob = (block_prob * (block_prob_window - 1) + 1.0) / block_prob_window
@@ -665,7 +736,7 @@ class Wernicke(threading.Thread):
                             ring_buffer.clear()
 
                             # this is to track how many silent/ignore blocks we've had, so we can stop at some point
-                            post_silence = 60
+                            post_silence = int(runtime_settings["wernicke_webrtc_post_silence_blocks"])
 
                     # TRIGGERED!
                     # when triggered, it means we are currently in the middle of an utterance and accumulating it into a ball of data
@@ -678,10 +749,10 @@ class Wernicke(threading.Thread):
 
                         # if this is a lover or lover_maybe block, reset the counter, else if it's not lover determine if we should end streaming
                         # also I want to make it easier to trigger when already triggered
-                        if block_prob >= triggered_prob * 0.8:
+                        if block_prob >= triggered_prob * continue_factor:
 
                             # reset the counter of consecutive silent blocks, because we got one that was not silent
-                            post_silence = 60
+                            post_silence = int(runtime_settings["wernicke_webrtc_post_silence_blocks"])
 
                         else:
 

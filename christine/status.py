@@ -4,6 +4,7 @@ Keeps track of all the things and share this with all the other modules
 import time
 import threading
 import json
+import sys
 
 from christine.database import database
 
@@ -158,6 +159,19 @@ class Status(threading.Thread):
 
         # this is the threshold for how long user's spoken text should be before it is allowed to interrupt char
         self.user_interrupt_char_threshold = 20
+
+        # Wernicke (speech-to-text) runtime tuning settings
+        self.wernicke_mic_gain_db = 15
+        self.wernicke_padding_blocks = 40
+        self.wernicke_triggered_block_limit = 2560
+        self.wernicke_triggered_continue_factor = 0.8
+        self.wernicke_cobra_trigger_prob = 0.45
+        self.wernicke_cobra_post_silence_blocks = 80
+        self.wernicke_webrtc_mode = 3
+        self.wernicke_webrtc_trigger_prob = 0.45
+        self.wernicke_webrtc_prob_window = 32.0
+        self.wernicke_webrtc_post_silence_blocks = 60
+        self.wernicke_pause_blocks_on_queue_full = 10
 
         # this is the minimum number of narratives before a bunch of old narratives get folded
         self.memory_folding_min_narratives = 25
@@ -389,6 +403,63 @@ class Status(threading.Thread):
                 'type': 'i', 'min': 5, 'max': 100, 'default': 20,
                 'desc': 'Characters needed to interrupt Christine',
                 'help': 'Minimum number of characters you need to speak before your voice can interrupt Christine while she\'s talking. This prevents accidental interruptions from brief sounds while allowing meaningful interruptions. Lower values make her easier to interrupt.'
+            },
+
+            # Wernicke (speech-to-text) tuning
+            'wernicke_mic_gain_db': {
+                'type': 'i', 'min': 0, 'max': 40, 'default': 15,
+                'desc': 'Mic gain boost (dB)',
+                'help': 'Amplification applied to the selected head microphone channel before VAD and STT segmentation. Increase if your voice is too quiet; decrease if background noise triggers false speech detection.'
+            },
+            'wernicke_padding_blocks': {
+                'type': 'i', 'min': 5, 'max': 200, 'default': 40,
+                'desc': 'Pre-speech padding blocks',
+                'help': 'How many recent audio blocks are prepended when speech trigger starts. Higher values preserve more lead-in context at the cost of larger utterances.'
+            },
+            'wernicke_triggered_block_limit': {
+                'type': 'i', 'min': 200, 'max': 8000, 'default': 2560,
+                'desc': 'Max blocks per utterance',
+                'help': 'Hard cap on utterance size. Prevents runaway minute-long captures if silence detection fails.'
+            },
+            'wernicke_triggered_continue_factor': {
+                'type': 'f', 'min': 0.5, 'max': 1.0, 'default': 0.8,
+                'desc': 'In-utterance continuation factor',
+                'help': 'Multiplier applied to trigger probability while already speaking. Lower values keep utterances open more easily between words; higher values close utterances sooner.'
+            },
+            'wernicke_cobra_trigger_prob': {
+                'type': 'f', 'min': 0.05, 'max': 0.95, 'default': 0.45,
+                'desc': 'Cobra speech trigger probability',
+                'help': 'Probability threshold for starting an utterance with Cobra VAD. Raise to reduce false positives, lower to catch quieter speech.'
+            },
+            'wernicke_cobra_post_silence_blocks': {
+                'type': 'i', 'min': 5, 'max': 300, 'default': 80,
+                'desc': 'Cobra post-silence blocks',
+                'help': 'How many consecutive below-threshold blocks are allowed before ending an utterance (Cobra mode).'
+            },
+            'wernicke_webrtc_mode': {
+                'type': 'i', 'min': 0, 'max': 3, 'default': 3,
+                'desc': 'WebRTC aggressiveness mode',
+                'help': 'WebRTC VAD aggressiveness. 0 is least aggressive (more speech accepted), 3 is most aggressive (more non-speech rejected).'
+            },
+            'wernicke_webrtc_trigger_prob': {
+                'type': 'f', 'min': 0.05, 'max': 0.95, 'default': 0.45,
+                'desc': 'WebRTC speech trigger probability',
+                'help': 'Smoothed speech probability threshold for starting an utterance in WebRTC mode.'
+            },
+            'wernicke_webrtc_prob_window': {
+                'type': 'f', 'min': 4.0, 'max': 128.0, 'default': 32.0,
+                'desc': 'WebRTC smoothing window',
+                'help': 'Running-average window size for WebRTC speech probability. Larger windows are smoother but react slower.'
+            },
+            'wernicke_webrtc_post_silence_blocks': {
+                'type': 'i', 'min': 5, 'max': 300, 'default': 60,
+                'desc': 'WebRTC post-silence blocks',
+                'help': 'How many consecutive below-threshold blocks are allowed before ending an utterance (WebRTC mode).'
+            },
+            'wernicke_pause_blocks_on_queue_full': {
+                'type': 'i', 'min': 1, 'max': 120, 'default': 10,
+                'desc': 'Queue-full recovery pause blocks',
+                'help': 'How long audio processing pauses when the mic buffer queue overflows. Higher values recover more gently under CPU spikes.'
             },
             
             # Memory system settings
@@ -762,6 +833,17 @@ class Status(threading.Thread):
         if success:
             from christine import log
             log.main.info("User setting changed: %s = %s (was %s)", name, validated_value, old_value)
+
+            # Push live Wernicke tuning updates to the subprocess immediately.
+            if name.startswith("wernicke_"):
+                try:
+                    wernicke_module = sys.modules.get("christine.wernicke")
+                    if wernicke_module is not None and hasattr(wernicke_module, "wernicke"):
+                        wernicke_obj = getattr(wernicke_module, "wernicke")
+                        if hasattr(wernicke_obj, "push_runtime_settings"):
+                            wernicke_obj.push_runtime_settings()
+                except Exception as ex:
+                    log.main.warning("Failed to push runtime Wernicke setting update for %s: %s", name, ex)
         else:
             from christine import log
             log.main.error("Failed to persist user setting: %s = %s", name, validated_value)

@@ -1220,6 +1220,164 @@
                     </div>
 
                     <div class="setting-group">
+                        <h3>🎙️ Wernicke STT Tuning</h3>
+                        <div class="setting-item">
+                            <label>
+                                Mic gain boost (dB):
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        Amplification applied to incoming mic audio before VAD and segmentation. Increase for quiet voice capture; decrease if room noise causes false triggers.
+                                        <span class="tooltip-default">Default: 15 dB</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="wernicke_mic_gain_db" min="0" max="40" step="1" value="15">
+                            <span class="setting-value" id="wernicke_mic_gain_db_value">15 dB</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                Pre-speech padding blocks:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        Number of recent audio blocks prepended when speech starts, helping preserve word onsets.
+                                        <span class="tooltip-default">Default: 40 blocks</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="wernicke_padding_blocks" min="5" max="200" step="1" value="40">
+                            <span class="setting-value" id="wernicke_padding_blocks_value">40 blk</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                Max blocks per utterance:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        Hard cap on utterance size to prevent runaway captures if end-of-speech detection misses.
+                                        <span class="tooltip-default">Default: 2560 blocks</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="wernicke_triggered_block_limit" min="200" max="8000" step="10" value="2560">
+                            <span class="setting-value" id="wernicke_triggered_block_limit_value">2560 blk</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                In-utterance continuation factor:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        Multiplier on trigger threshold while already in an utterance. Lower holds utterances open through short pauses.
+                                        <span class="tooltip-default">Default: 0.80</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="wernicke_triggered_continue_factor" min="0.5" max="1.0" step="0.01" value="0.8">
+                            <span class="setting-value" id="wernicke_triggered_continue_factor_value">0.80</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                Cobra trigger probability:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        Start-of-speech threshold in Cobra mode. Higher values reduce false starts; lower values catch softer speech.
+                                        <span class="tooltip-default">Default: 0.45</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="wernicke_cobra_trigger_prob" min="0.05" max="0.95" step="0.01" value="0.45">
+                            <span class="setting-value" id="wernicke_cobra_trigger_prob_value">0.45</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                Cobra post-silence blocks:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        Number of below-threshold blocks allowed before ending an utterance in Cobra mode.
+                                        <span class="tooltip-default">Default: 80 blocks</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="wernicke_cobra_post_silence_blocks" min="5" max="300" step="1" value="80">
+                            <span class="setting-value" id="wernicke_cobra_post_silence_blocks_value">80 blk</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                WebRTC aggressiveness mode:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        WebRTC VAD mode from 0 to 3. Higher values are stricter against non-speech.
+                                        <span class="tooltip-default">Default: mode 3</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="wernicke_webrtc_mode" min="0" max="3" step="1" value="3">
+                            <span class="setting-value" id="wernicke_webrtc_mode_value">mode 3</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                WebRTC trigger probability:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        Smoothed speech probability threshold for utterance start in WebRTC mode.
+                                        <span class="tooltip-default">Default: 0.45</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="wernicke_webrtc_trigger_prob" min="0.05" max="0.95" step="0.01" value="0.45">
+                            <span class="setting-value" id="wernicke_webrtc_trigger_prob_value">0.45</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                WebRTC smoothing window:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        Running-average window for speech probability smoothing in WebRTC mode.
+                                        <span class="tooltip-default">Default: 32 frames</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="wernicke_webrtc_prob_window" min="4" max="128" step="1" value="32">
+                            <span class="setting-value" id="wernicke_webrtc_prob_window_value">32 frm</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                WebRTC post-silence blocks:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        Number of below-threshold blocks allowed before utterance end in WebRTC mode.
+                                        <span class="tooltip-default">Default: 60 blocks</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="wernicke_webrtc_post_silence_blocks" min="5" max="300" step="1" value="60">
+                            <span class="setting-value" id="wernicke_webrtc_post_silence_blocks_value">60 blk</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                Queue-full recovery pause blocks:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        Pause duration after audio buffer overflow. Higher values can stabilize under CPU spikes.
+                                        <span class="tooltip-default">Default: 10 blocks</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="wernicke_pause_blocks_on_queue_full" min="1" max="120" step="1" value="10">
+                            <span class="setting-value" id="wernicke_pause_blocks_on_queue_full_value">10 blk</span>
+                        </div>
+                    </div>
+
+                    <div class="setting-group">
                         <h3>� Sexual Response</h3>
                         <div class="setting-item">
                             <label>
@@ -1643,6 +1801,16 @@
                 displayValue = value + 's';
             } else if (settingName.startsWith('sex_arousal_per_hit_')) {
                 displayValue = parseFloat(value).toFixed(4); // Show 4 decimal places for sensitivity
+            } else if (settingName === 'wernicke_mic_gain_db') {
+                displayValue = value + ' dB';
+            } else if (settingName === 'wernicke_webrtc_mode') {
+                displayValue = 'mode ' + value;
+            } else if (settingName === 'wernicke_webrtc_prob_window') {
+                displayValue = value + ' frm';
+            } else if (settingName === 'wernicke_triggered_continue_factor' || settingName === 'wernicke_cobra_trigger_prob' || settingName === 'wernicke_webrtc_trigger_prob') {
+                displayValue = parseFloat(value).toFixed(2);
+            } else if (settingName === 'wernicke_padding_blocks' || settingName === 'wernicke_triggered_block_limit' || settingName === 'wernicke_cobra_post_silence_blocks' || settingName === 'wernicke_webrtc_post_silence_blocks' || settingName === 'wernicke_pause_blocks_on_queue_full') {
+                displayValue = value + ' blk';
             }
             
             valueDisplay.textContent = displayValue;
