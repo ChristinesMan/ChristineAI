@@ -489,39 +489,58 @@ class Broca(threading.Thread):
         # import alsaaudio
         import wave
         import random
+
+        remote_audio_enabled = str(getattr(CONFIG, "audio_output_mode", "local")).lower() == "remote"
+        remote_play_url = None
+        remote_stop_url = None
+        remote_audio_timeout = float(getattr(CONFIG, "remote_audio_timeout_seconds", 30.0))
+
+        if remote_audio_enabled:
+            import requests
+
+            remote_play_url = f"http://{CONFIG.remote_audio_host}:{CONFIG.remote_audio_port}/play"
+            remote_stop_url = f"http://{CONFIG.remote_audio_host}:{CONFIG.remote_audio_port}/stop"
+            log.broca_shuttlecraft.info(
+                "Using remote audio sink at %s:%s",
+                CONFIG.remote_audio_host,
+                CONFIG.remote_audio_port,
+            )
         
-        # Use mock hardware in testing mode
-        if CONFIG.testing_mode:
-            from christine.mock_hardware import PyAudio, paContinue
-            log.broca_main.info("Using mock PyAudio for testing")
-        else:
-            from pyaudio import PyAudio, paContinue
+        pya_stream = None
 
-        # The current wav file buffer thing
-        # The pump is primed using some default sound.
-        wav_data = wave.open("sounds/beep.wav")
+        if not remote_audio_enabled:
+            # Use mock hardware in testing mode
+            if CONFIG.testing_mode:
+                from christine.mock_hardware import PyAudio, paContinue
+                log.broca_main.info("Using mock PyAudio for testing")
+            else:
+                from pyaudio import PyAudio, paContinue
 
-        # # Start fucking alsa
-        # # Oh, alsa died of 64bititis
-        # device = alsaaudio.PCM(
-        #     channels=1,
-        #     rate=rate,
-        #     format=alsaaudio.PCM_FORMAT_S16_LE,
-        #     periodsize=periodsize,
-        # )
+            # The current wav file buffer thing
+            # The pump is primed using some default sound.
+            wav_data = wave.open("sounds/beep.wav")
 
-        # # init the mixer thing
-        # mixer = alsaaudio.Mixer(control="PCM")
+            # # Start fucking alsa
+            # # Oh, alsa died of 64bititis
+            # device = alsaaudio.PCM(
+            #     channels=1,
+            #     rate=rate,
+            #     format=alsaaudio.PCM_FORMAT_S16_LE,
+            #     periodsize=periodsize,
+            # )
 
-        # Start up some pyaudio
-        pya = PyAudio()
+            # # init the mixer thing
+            # mixer = alsaaudio.Mixer(control="PCM")
 
-        # This will feed new wav data into pyaudio
-        def wav_data_feeder(in_data, frame_count, time_info, status): # pylint: disable=unused-argument
-            return (wav_data.readframes(frame_count), paContinue)
+            # Start up some pyaudio
+            pya = PyAudio()
 
-        # The pyaudio stream is instantiated
-        pya_stream = pya.open(format=8, channels=1, rate=44100, output=True, stream_callback=wav_data_feeder)
+            # This will feed new wav data into pyaudio
+            def wav_data_feeder(in_data, frame_count, time_info, status): # pylint: disable=unused-argument
+                return (wav_data.readframes(frame_count), paContinue)
+
+            # The pyaudio stream is instantiated
+            pya_stream = pya.open(format=8, channels=1, rate=44100, output=True, stream_callback=wav_data_feeder)
 
         # keep track of the last volume that was set, to avoid all the amixer forking
         # I miss pyalsaaudio
@@ -567,7 +586,15 @@ class Broca(threading.Thread):
                     
                     # IMMEDIATE AUDIO STOP for interruptions
                     # Stop the current stream immediately to prevent feedback
-                    if pya_stream.is_active():
+                    if remote_audio_enabled:
+                        try:
+                            requests.post(remote_stop_url, timeout=min(2.0, remote_audio_timeout))
+                        except Exception as ex:
+                            log.broca_shuttlecraft.warning("Remote stop request failed: %s", ex)
+
+                        # Signal back that audio stop was requested
+                        to_starship.send({"action": "pause_wernicke_end"})
+                    elif pya_stream.is_active():
                         log.broca_shuttlecraft.info("STOP AUDIO - Interruption detected")
                         pya_stream.stop_stream()
                         # Signal back that audio has been stopped
@@ -578,20 +605,37 @@ class Broca(threading.Thread):
                     # if seconds_idle is greater than the threshold, play a sound to get the speaker started back up
                     if seconds_idle > seconds_idle_to_play_presound:
                         log.broca_shuttlecraft.debug("Beep! (idle %ss)", seconds_idle)
-                        pya_stream.stop_stream()
-                        wav_data = wave.open("sounds/beep.wav")
-                        pya_stream.start_stream()
+                        if remote_audio_enabled:
+                            try:
+                                with open("sounds/beep.wav", "rb") as wav_file:
+                                    response = requests.post(
+                                        remote_play_url,
+                                        data=wav_file.read(),
+                                        headers={
+                                            "Content-Type": "audio/wav",
+                                            "X-Volume": "100",
+                                        },
+                                        timeout=remote_audio_timeout,
+                                    )
+                                response.raise_for_status()
+                            except Exception as ex:
+                                log.broca_shuttlecraft.warning("Remote beep playback failed: %s", ex)
+                        else:
+                            pya_stream.stop_stream()
+                            wav_data = wave.open("sounds/beep.wav")
+                            pya_stream.start_stream()
 
-                        # wait until the stream flips to not active which means the beep is done
-                        while pya_stream.is_active():
-                            time.sleep(0.2)
+                            # wait until the stream flips to not active which means the beep is done
+                            while pya_stream.is_active():
+                                time.sleep(0.2)
 
                     # the volume gets set before each sound is played
                     # mixer.setvolume(comms["vol"])
                     # pyalsaaudio died so we have to forking fork
                     if comms["vol"] != last_volume:
                         log.broca_shuttlecraft.debug("Setting volume to %s", comms["vol"])
-                        os.system(f'amixer -q cset numid=1 {comms["vol"]}%')
+                        if not remote_audio_enabled:
+                            os.system(f'amixer -q cset numid=1 {comms["vol"]}%')
                         last_volume = comms["vol"]
 
                     # DIRECT WERNICKE COORDINATION - SHARED MEMORY
@@ -604,13 +648,29 @@ class Broca(threading.Thread):
 
                     # stop stream, open new wav file, and start the stream back up
                     log.broca_shuttlecraft.info("Play %s", comms["wavfile"])
-                    pya_stream.stop_stream()
-                    wav_data = wave.open(comms["wavfile"])
-                    pya_stream.start_stream()
+                    if remote_audio_enabled:
+                        try:
+                            with open(comms["wavfile"], "rb") as wav_file:
+                                response = requests.post(
+                                    remote_play_url,
+                                    data=wav_file.read(),
+                                    headers={
+                                        "Content-Type": "audio/wav",
+                                        "X-Volume": str(comms["vol"]),
+                                    },
+                                    timeout=remote_audio_timeout,
+                                )
+                            response.raise_for_status()
+                        except Exception as ex:
+                            log.broca_shuttlecraft.exception("Remote playback failed for %s: %s", comms["wavfile"], ex)
+                    else:
+                        pya_stream.stop_stream()
+                        wav_data = wave.open(comms["wavfile"])
+                        pya_stream.start_stream()
 
-                    # wait until the stream flips to not active which means the sound is done
-                    while pya_stream.is_active():
-                        time.sleep(0.2)
+                        # wait until the stream flips to not active which means the sound is done
+                        while pya_stream.is_active():
+                            time.sleep(0.2)
 
                     # DIRECT WERNICKE COORDINATION - SHARED MEMORY
                     # if we paused wernicke, clear shared memory flag now
@@ -644,16 +704,33 @@ class Broca(threading.Thread):
 
                         # breaths get played at 100 max volume
                         if last_volume != 100:
-                            os.system('amixer -q cset numid=1 100%')
+                            if not remote_audio_enabled:
+                                os.system('amixer -q cset numid=1 100%')
                             last_volume = 100
 
-                        pya_stream.stop_stream()
-                        wav_data = wave.open(breath.file_path)
-                        pya_stream.start_stream()
+                        if remote_audio_enabled:
+                            try:
+                                with open(breath.file_path, "rb") as wav_file:
+                                    response = requests.post(
+                                        remote_play_url,
+                                        data=wav_file.read(),
+                                        headers={
+                                            "Content-Type": "audio/wav",
+                                            "X-Volume": "100",
+                                        },
+                                        timeout=remote_audio_timeout,
+                                    )
+                                response.raise_for_status()
+                            except Exception as ex:
+                                log.broca_shuttlecraft.warning("Remote breathing playback failed: %s", ex)
+                        else:
+                            pya_stream.stop_stream()
+                            wav_data = wave.open(breath.file_path)
+                            pya_stream.start_stream()
 
-                        # wait until the stream flips to not active which means the sound is done
-                        while pya_stream.is_active():
-                            time.sleep(0.25)
+                            # wait until the stream flips to not active which means the sound is done
+                            while pya_stream.is_active():
+                                time.sleep(0.25)
 
                         log.broca_shuttlecraft.debug("Breathing END")
                         seconds_idle = 0.0

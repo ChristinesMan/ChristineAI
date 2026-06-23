@@ -18,6 +18,10 @@ class Config:
     """Centralized configuration loaded from environment variables."""
 
     broca_tts_concurrency: int
+    audio_output_mode: str
+    remote_audio_host: str
+    remote_audio_port: int
+    remote_audio_timeout_seconds: float
     
     def __init__(self):
         """Load and validate all configuration from environment variables."""
@@ -72,6 +76,12 @@ class Config:
         # Initialization timeout settings (in seconds)
         self.wernicke_timeout = int(os.getenv('CHRISTINE_WERNICKE_TIMEOUT', '30'))
         self.broca_tts_concurrency = int(os.getenv('CHRISTINE_BROCA_TTS_CONCURRENCY', '2'))
+
+        # Broca output mode settings
+        self.audio_output_mode = os.getenv('CHRISTINE_AUDIO_OUTPUT_MODE', 'local').strip().lower()
+        self.remote_audio_host = os.getenv('CHRISTINE_REMOTE_AUDIO_HOST', '').strip()
+        self.remote_audio_port = int(os.getenv('CHRISTINE_REMOTE_AUDIO_PORT', '3002'))
+        self.remote_audio_timeout_seconds = float(os.getenv('CHRISTINE_REMOTE_AUDIO_TIMEOUT_SECONDS', '30'))
 
         self.http_security_token = os.getenv('CHRISTINE_HTTP_SECURITY_TOKEN', 'christine_lovely_2025')
 
@@ -134,6 +144,25 @@ class Config:
             errors.append(
                 f"CHRISTINE_BROCA_TTS_CONCURRENCY must be positive, got {self.broca_tts_concurrency}"
             )
+
+        if self.audio_output_mode not in ['local', 'remote']:
+            errors.append(
+                f"CHRISTINE_AUDIO_OUTPUT_MODE must be 'local' or 'remote', got '{self.audio_output_mode}'"
+            )
+
+        if self.audio_output_mode == 'remote' and not self.remote_audio_host:
+            errors.append("CHRISTINE_REMOTE_AUDIO_HOST is required when CHRISTINE_AUDIO_OUTPUT_MODE is 'remote'")
+
+        if self.remote_audio_port <= 0 or self.remote_audio_port > 65535:
+            errors.append(
+                f"CHRISTINE_REMOTE_AUDIO_PORT must be between 1 and 65535, got {self.remote_audio_port}"
+            )
+
+        if self.remote_audio_timeout_seconds <= 0:
+            errors.append(
+                f"CHRISTINE_REMOTE_AUDIO_TIMEOUT_SECONDS must be positive, got {self.remote_audio_timeout_seconds}"
+            )
+
         
         if errors:
             error_msg = "Configuration validation failed:\n" + "\n".join(f"  - {error}" for error in errors)
