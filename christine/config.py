@@ -61,6 +61,10 @@ class Config:
         self.openrouter_model = os.getenv('CHRISTINE_OPENROUTER_MODEL', 'anthropic/claude-3.5-sonnet')
         self.openrouter_site_url = os.getenv('CHRISTINE_OPENROUTER_SITE_URL', '')
         self.openrouter_site_name = os.getenv('CHRISTINE_OPENROUTER_SITE_NAME', 'ChristineAI')
+        self.openrouter_stt_url = os.getenv('CHRISTINE_OPENROUTER_STT_URL', 'https://openrouter.ai/api/v1/audio/transcriptions')
+        self.openrouter_stt_model = os.getenv('CHRISTINE_OPENROUTER_STT_MODEL', 'mistralai/voxtral-mini-transcribe')
+        self.openrouter_stt_language = os.getenv('CHRISTINE_OPENROUTER_STT_LANGUAGE', '').strip()
+        self.openrouter_stt_timeout_seconds = int(os.getenv('CHRISTINE_OPENROUTER_STT_TIMEOUT_SECONDS', '60'))
         
         self.chub_api_key = os.getenv('CHRISTINE_CHUB_API_KEY', '')
         
@@ -74,7 +78,7 @@ class Config:
         self.ollama_whisper_model = os.getenv('CHRISTINE_OLLAMA_WHISPER_MODEL', 'whisper')
 
         # Initialization timeout settings (in seconds)
-        self.wernicke_timeout = int(os.getenv('CHRISTINE_WERNICKE_TIMEOUT', '30'))
+        self.wernicke_timeout = int(os.getenv('CHRISTINE_WERNICKE_TIMEOUT', '60'))
         self.broca_tts_concurrency = int(os.getenv('CHRISTINE_BROCA_TTS_CONCURRENCY', '2'))
 
         # Broca output mode settings
@@ -126,6 +130,8 @@ class Config:
                 errors.append("CHRISTINE_OPENAI_API_KEY is required when whisper STT is enabled")
             elif stt == 'chub' and not self.chub_api_key:
                 errors.append("CHRISTINE_CHUB_API_KEY is required when chub STT is enabled")
+            elif stt == 'openrouter' and not self.openrouter_api_key:
+                errors.append("CHRISTINE_OPENROUTER_API_KEY is required when openrouter STT is enabled")
         
         # Validate that enabled TTSs have required configuration
         for tts in self.enabled_ttss:
@@ -163,6 +169,10 @@ class Config:
                 f"CHRISTINE_REMOTE_AUDIO_TIMEOUT_SECONDS must be positive, got {self.remote_audio_timeout_seconds}"
             )
 
+        if self.openrouter_stt_timeout_seconds <= 0:
+            errors.append(
+                f"CHRISTINE_OPENROUTER_STT_TIMEOUT_SECONDS must be positive, got {self.openrouter_stt_timeout_seconds}"
+            )
         
         if errors:
             error_msg = "Configuration validation failed:\n" + "\n".join(f"  - {error}" for error in errors)

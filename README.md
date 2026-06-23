@@ -33,6 +33,11 @@ Christine's software is designed as a distributed system with multiple component
 - **OpenAI**: Direct integration with GPT and Whisper
 - **Testing**: Simple repeat-what-I-say mode for debugging
 
+### Supported STT Providers
+- **Whisper**: OpenAI Whisper speech recognition
+- **OpenRouter**: OpenRouter transcription models (for example `mistralai/voxtral-mini-transcribe`)
+- **Chub.ai**: Chub speech recognition endpoint
+
 ## Configuration
 
 Christine uses **environment variables** for all configuration.
@@ -52,6 +57,9 @@ CHRISTINE_CHAR_NAME=HerName
 # LLM configuration
 CHRISTINE_ENABLED_LLMS=openrouter
 CHRISTINE_OPENROUTER_API_KEY=sk-or-v1-your-api-key-here
+
+# STT configuration (choose one or multiple, comma-separated for failover order)
+CHRISTINE_ENABLED_STTS=whisper,openrouter
 ```
 
 ### Optional Configuration
@@ -66,12 +74,18 @@ CHRISTINE_OPENROUTER_MODEL=anthropic/claude-3.5-sonnet
 CHRISTINE_OPENROUTER_SITE_URL=
 CHRISTINE_OPENROUTER_SITE_NAME=ChristineAI
 
+# OpenRouter STT model selection
+CHRISTINE_OPENROUTER_STT_URL=https://openrouter.ai/api/v1/audio/transcriptions
+CHRISTINE_OPENROUTER_STT_MODEL=mistralai/voxtral-mini-transcribe
+CHRISTINE_OPENROUTER_STT_LANGUAGE=en
+CHRISTINE_OPENROUTER_STT_TIMEOUT_SECONDS=60
+
 # Additional API keys (only needed if corresponding LLMs enabled)
 CHRISTINE_CHUB_API_KEY=your-chub-key
 CHRISTINE_OPENAI_API_KEY=sk-proj-your-openai-key
 ```
 
-See `christine.service` for a complete example of environment variable configuration.
+Use `.env.example` as the template for your local `.env` file. The systemd unit reads `/root/ChristineAI/.env` via `EnvironmentFile`.
 
 ## Hardware
 
@@ -240,23 +254,29 @@ root@christine:~/ChristineAI#
 root@christine:~/ChristineAI# cp ./christine-docker/adafruit_mpr121.py ./venv/lib/python3.11/site-packages/adafruit_mpr121.py
 ```
 
-8. **Configure environment variables**. Edit the systemd service file to set all required environment variables for your setup:
+8. **Configure environment variables**. Copy the environment template and edit your local `.env` file:
+
+```
+root@christine:~/ChristineAI# cp .env.example .env
+root@christine:~/ChristineAI# vim .env
+```
+
+Set your actual hostnames, model choices, and API keys in `.env`.
+
+9. Install/update the systemd service file:
 
 ```
 root@christine:~/ChristineAI# cp christine.service /lib/systemd/system/
-root@christine:~/ChristineAI# vim /lib/systemd/system/christine.service
 ```
 
-Make sure to update all the `Environment=` lines with your actual server hostnames and API keys.
-
-9. Enable and start the service:
+10. Enable and start the service:
 
 ```
 root@christine:~/ChristineAI# systemctl daemon-reload
 root@christine:~/ChristineAI# systemctl enable christine.service --now
 ```
 
-10. Next comes the setup of the servers that will handle Speech to Text, Text to Speech, and the vector database. Check the `christine-server` directory for the TTS/STT servers, and see [Weaviate documentation](https://weaviate.io/developers/weaviate) for setting up the vector database server. 
+11. Next comes the setup of the servers that will handle Speech to Text, Text to Speech, and the vector database. Check the `christine-server` directory for the TTS/STT servers, and see [Weaviate documentation](https://weaviate.io/developers/weaviate) for setting up the vector database server. 
 
 Eventually when this is all dockerized, this will be made much simpler.
 
