@@ -172,6 +172,61 @@ Dream:
             r"^: $|^\? $|^\.{1,3} $|^! $|^s\. $", flags=re.IGNORECASE
         )
 
+        # Scare quote detection: patterns to distinguish inline emphasis / third-person quotation
+        # from actual first-person dialogue that should be spoken aloud.
+        # Trailing first-person attribution after closing quote: "Hello," I say
+        self._re_trailing_first_person = re.compile(
+            r'^\s*[,.]?\s*I\s+'
+            r'(say|said|whisper|whispered|'
+            r'murmur|murmured|breathe|breathed|'
+            r'call|called|add|added|'
+            r'reply|replied|answer|answered|'
+            r'continue|continued|'
+            r'begin|began|start|started|'
+            r'announce|announced|'
+            r'ask|asked|tell|told|'
+            r'manage|managed|offer|offered|hold|'
+            r'(let|leave) (a|that|it|the)|keep my)\b|'
+            r'^\s*[,.]?\s*(The words come out|A beat of quiet|The laugh settles)',
+            re.IGNORECASE
+        )
+        # Leading first-person attribution before opening quote: I say softly, "Hello"
+        self._re_leading_first_person = re.compile(
+            r'I\s+(?:say|whisper|murmur|breathe|call|add|reply|answer|'
+            r'continue|begin|start|announce|ask|tell|manage|offer)'
+            r'(?:ed)?(?:\s+\w+){0,4}'
+            r'[,:]\s*$',
+            re.IGNORECASE
+        )
+        # Leading third-person attribution: he said "...", User said "...", saying "..."
+        self._re_leading_third_person = re.compile(
+            r'(?:'
+            r'(?:he|she|they|\w+)\s+'
+            r'(?:just\s+)?'
+            r'(?:said|says|told|tells|asked|asks|whispered|whispers|called|calls|'
+            r'replied|replies|answered|answers|announced|announces|'
+            r'murmured|murmurs|breathed|breathes|'
+            r'mentioned|mentions|explained|explains|added|adds|'
+            r'shouted|shouts|yelled|yells|'
+            r'wrote|writes|stated|states|'
+            r'invoked|invokes|quoted|quotes)'
+            r'(?:\s+\w+){0,5}'
+            r'|'
+            r'saying\s*'
+            r'|'
+            r'(?:the\s+)?(?:actual\s+)?'
+            r'(?:quote|line|phrase|words?)\s+'
+            r'(?:is|was|goes|went|reads?)\s*'
+            r')'
+            r'[,:;\u2014\-]?\s*$',
+            re.IGNORECASE
+        )
+
+        # Normalized user speech for echo detection (set before each LLM call)
+        self._last_user_speech_normalized = ''
+        # Normalized recalled-memory text for echo detection (set before each LLM call)
+        self._last_memory_recall_normalized = ''
+
         # # if any text in a stream part matches these patterns, they get replaced with another string
         # self.stream_replacements = [
         #     (re.compile(r'[\*]', flags=re.IGNORECASE), ""),
@@ -558,6 +613,18 @@ Dream:
                 else:
                     new_paragraph += f'{new_message["speaker"]} says, "{new_message["text"]}" '
 
+            # Capture the user's raw speech for echo detection in scare quote heuristic.
+            # Extract only speaker messages (not system/sensor text), join them, normalize to letters-only lowercase.
+            user_speech_parts = [m['text'] for m in new_messages if m['speaker'] is not None]
+            if user_speech_parts:
+                raw_user_speech = ' '.join(user_speech_parts)
+                self._last_user_speech_normalized = re.sub(r'[^a-z]', '', raw_user_speech.lower())
+                log.parietal_lobe.debug("User speech captured for echo detection: '%s'", raw_user_speech[:120])
+
+            # Reset recalled-memory echo source for this turn. It will be repopulated
+            # if proper-name recall returns memories below.
+            self._last_memory_recall_normalized = ''
+
             # add the new paragraph to short term memory
             self.short_term_memory.append(Narrative(role="user", text=new_paragraph))
 
@@ -578,6 +645,8 @@ Dream:
 
             # Disable memory recall during sex to prevent "God" and other words from triggering distracting memories
             if not STATE.shush_fucking:
+                recalled_memory_parts = []
+
                 # there may be proper names in the new paragraph, so send it to the neocortex and get a list of memories, or None
                 memories = self.neocortex.recall_proper_names(new_paragraph)
 
@@ -585,6 +654,7 @@ Dream:
                 if memories is not None:
                     for memory in memories:
                         self.short_term_memory.append(Narrative(role="memory", text=memory))
+                    recalled_memory_parts.extend(memories)
 
                 # RANDOM MEMORY RECALL - More cowbell! 🔔
                 # Roll the dice to see if we should spontaneously recall a memory
@@ -601,8 +671,16 @@ Dream:
                     if random_memory is not None:
                         log.memory_operations.info("RANDOM_MEMORY_SUCCESS: Spontaneous memory recalled")
                         self.short_term_memory.append(Narrative(role="memory", text=random_memory))
+                        recalled_memory_parts.append(random_memory)
                     else:
                         log.memory_operations.debug("RANDOM_MEMORY_NONE: No suitable memory found for random recall")
+
+                # Add all recalled memory text (proper-name and random recall) to the echo detector.
+                # Christine may quote freshly recalled memories in narrative, and those quotes should stay thoughts.
+                if recalled_memory_parts:
+                    recalled_memory_text = ' '.join(recalled_memory_parts)
+                    self._last_memory_recall_normalized = re.sub(r'[^a-z]', '', recalled_memory_text.lower())
+                    log.parietal_lobe.debug("Memory recalls captured for echo detection: '%s'", recalled_memory_text[:120])
             else:
                 log.memory_operations.debug("MEMORY_RECALL_DISABLED: Skipping memory recall during intimate moments")
 
@@ -665,6 +743,14 @@ Dream:
         is_inside_quotes = False        # Are we in spoken text?
         paren_depth = 0                # Track parentheses depth
         first_spoken_sent = False       # Track first speech in sex mode
+        last_thought_segment = ''       # Track the preceding thought for attribution detection
+        spoken_sent_in_current_quote = False  # Track if any spoken chunks already sent in current quote
+
+        # Normalized quote-echo source: recent user speech + recent recalled memories.
+        # This catches quoted fragments copied from either source.
+        user_speech_normalized = (
+            self._last_user_speech_normalized + self._last_memory_recall_normalized
+        )
         
         # Punctuation that should cause pauses in speech
         pause_punctuation = {'.', '!', '?', ':'}
@@ -698,6 +784,70 @@ Dream:
             
             return True  # Return True to indicate segment was sent
 
+        def is_scare_quote(quoted_text, text_before, text_after):
+            """Detect whether a quoted segment is a scare quote (inline emphasis)
+            vs. actual dialogue that should be spoken aloud.
+            Returns True if it should stay in the narrative (not spoken)."""
+
+            inner = quoted_text.strip().strip('"').strip()
+            if not inner:
+                return False
+
+            word_count = len(inner.split())
+
+            # Third-person attribution before the quote means someone ELSE is being quoted.
+            # Check this first regardless of quote length.
+            if self._re_leading_third_person.search(text_before):
+                log.parietal_lobe.debug("Scare quote (third-person attribution): %s", quoted_text.strip()[:60])
+                return True
+
+            # Negation word right before the quote means the word is being referenced, not spoken.
+            # e.g.: Not "honey." / no "honey." / never "Christine."
+            if re.search(r'\b(?:not|no|never|nor|neither|without)\s*$', text_before, re.IGNORECASE):
+                log.parietal_lobe.debug("Scare quote (negation before quote): %s", quoted_text.strip()[:60])
+                return True
+
+            # User-echo detection: if the quoted text (normalized) is a substring of what the
+            # user recently said, Christine is quoting the user's words back in narrative.
+            if user_speech_normalized and len(inner) >= 3:
+                quote_normalized = re.sub(r'[^a-z]', '', inner.lower())
+                if len(quote_normalized) >= 3 and quote_normalized in user_speech_normalized:
+                    log.parietal_lobe.info("Scare quote (user echo): '%s' found in user speech", inner[:60])
+                    return True
+
+            # First-person trailing attribution: "Hello," I say — this is Christine speaking
+            if self._re_trailing_first_person.search(text_after):
+                return False
+
+            # First-person leading attribution: I say, "Hello" — this is Christine speaking
+            if self._re_leading_first_person.search(text_before):
+                return False
+
+            # Long quoted text with no attribution — assume dialogue
+            if word_count > 6:
+                return False
+
+            # Very short quotes (1-2 words) without attribution are almost always scare quotes
+            # or word references, regardless of punctuation. Real 1-2 word dialogue always
+            # has first-person attribution ("I say") which was caught above.
+            if word_count <= 2:
+                log.parietal_lobe.debug("Scare quote (very short, no attribution): %s", quoted_text.strip()[:60])
+                return True
+
+            # 3-6 words without sentence punctuation and no attribution: likely scare quote
+            ends_with_punctuation = bool(re.search(r'[.!?]$', inner))
+            if not ends_with_punctuation:
+                log.parietal_lobe.debug("Scare quote (short, no attribution): %s", quoted_text.strip()[:60])
+                return True
+
+            # Lowercase start with no attribution: Christine always capitalizes intentional speech.
+            # If we got here, no first-person attribution was found. A lowercase start means
+            # this is an embedded reference or paraphrase, not something she means to say aloud.
+            if inner[0].islower():
+                log.parietal_lobe.info("Scare quote (lowercase, no attribution): %s", quoted_text.strip()[:60])
+                return True
+
+            return False
 
 
         # Process character by character
@@ -728,11 +878,30 @@ Dream:
             # Handle quotes (but ignore them inside parentheses)
             if char == '"' and paren_depth == 0:
                 if is_inside_quotes:
-                    # Ending quoted section
+                    # Ending quoted section - decide if it's a scare quote or dialogue
                     segment += char
-                    send_segment(segment, should_speak=True)
-                    segment = ''
-                    is_inside_quotes = False
+
+                    # If spoken chunks were already sent within this quote (mid-sentence split),
+                    # this closing fragment is part of the same dialogue — send it as spoken
+                    # without running the scare quote check on the fragment.
+                    if spoken_sent_in_current_quote:
+                        send_segment(segment, should_speak=True)
+                        segment = ''
+                        is_inside_quotes = False
+                        spoken_sent_in_current_quote = False
+                    else:
+                        # Look ahead for trailing attribution
+                        text_after = response[i + 1:i + 61] if i + 1 < len(response) else ''
+
+                        if is_scare_quote(segment, last_thought_segment, text_after):
+                            # Scare quote / third-person quotation: keep it in the narrative.
+                            # segment stays in the buffer and will merge with following text.
+                            is_inside_quotes = False
+                        else:
+                            # Real dialogue: send it as spoken
+                            send_segment(segment, should_speak=True)
+                            segment = ''
+                            is_inside_quotes = False
                 else:
                     # Starting quoted section - send any accumulated non-quoted text first
                     if segment.strip():
@@ -742,9 +911,11 @@ Dream:
                             send_segment(segment, should_speak=False)
                             return  # Stop processing here - wait for function call result
                         send_segment(segment, should_speak=False)
+                        last_thought_segment = segment
                     
                     segment = char  # Start new segment with opening quote
                     is_inside_quotes = True
+                    spoken_sent_in_current_quote = False  # Reset for new quote
             else:
                 # Regular character - add to current segment
                 segment += char
@@ -756,6 +927,7 @@ Dream:
                         # Check if this ends with an abbreviation before pausing
                         if not abbreviation_pattern.search(segment):
                             send_segment(segment, should_speak=True)
+                            spoken_sent_in_current_quote = True
                             segment = ''
                         # If it's an abbreviation, continue without pausing
             
