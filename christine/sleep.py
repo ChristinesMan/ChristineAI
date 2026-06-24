@@ -43,8 +43,6 @@ class Sleep(threading.Thread):
 
     def run(self):
 
-        from christine.wernicke import wernicke
-
         while True:
 
             try:
@@ -131,24 +129,22 @@ class Sleep(threading.Thread):
                         np.clip(STATE.breath_intensity, 0.0, 1.0)
                     )
 
-                # if we're below a certain wakefulness, I want to give the wernicke a break
-                # help prevent long term buildup of heat
-                # Use hysteresis here too to prevent wernicke start/stop cycling
+                # Track a low-wakefulness state for observability.
+                # Keep Wernicke processing active so VAD can still detect speech activity
+                # and gently wake Christine without paying STT costs while sleeping/blocked.
                 if (
                     STATE.wakefulness < STATE.sleep_wakefulness_fall_asleep
                     and STATE.wernicke_sleeping is False
                 ):
                     STATE.wernicke_sleeping = True
-                    log.sleep.info('Wernicke stopped')
-                    wernicke.audio_processing_stop()
+                    log.sleep.info('Wernicke low-power mode: VAD active, STT gating handles cost control')
                     STATE.wakefulness -= 0.02
                 if (
                     STATE.wakefulness >= STATE.sleep_wakefulness_wake_up
                     and STATE.wernicke_sleeping is True
                 ):
                     STATE.wernicke_sleeping = False
-                    log.sleep.info('Wernicke started')
-                    wernicke.audio_processing_start()
+                    log.sleep.info('Wernicke active mode: normal speech processing resumed')
                     STATE.wakefulness += 0.02
 
                 time.sleep(66)

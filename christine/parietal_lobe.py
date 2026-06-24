@@ -1567,12 +1567,12 @@ Horniness: {horniness_text}.
         if STATE.is_sleeping is True:
             log.parietal_lobe.info('Blocked for sleep: %s', new_perception)
             log.conversation_flow.debug("PERCEPTION_BLOCKED_SLEEP: Perception blocked due to sleep state")
-            return
+            return False
 
         if STATE.perceptions_blocked is True:
             log.parietal_lobe.info('Blocked for reasons: %s', new_perception)
             log.conversation_flow.debug("PERCEPTION_BLOCKED_STATE: Perception blocked due to system state")
-            return
+            return False
 
         log.parietal_lobe.info("Perception: %s", new_perception)
         
@@ -1587,6 +1587,7 @@ Horniness: {horniness_text}.
 
         # add the perception to the queue
         self.perception_queue.put_nowait(new_perception)
+        return True
 
     def _save_recovery_prompt(self, prompt: str, timestamp: int):
         """Save the base prompt for potential recovery."""

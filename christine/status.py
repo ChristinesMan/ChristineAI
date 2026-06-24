@@ -157,6 +157,9 @@ class Status(threading.Thread):
         # Wakefulness boost when Broca starts spoken output
         self.speech_wakefulness_boost = 0.03
 
+        # Wakefulness boost when incoming speech activity is detected by VAD
+        self.speech_activity_wakefulness_boost = 0.01
+
         # this is the threshold for how long user's spoken text should be before it is allowed to interrupt char
         self.user_interrupt_char_threshold = 20
 
@@ -283,6 +286,11 @@ class Status(threading.Thread):
                 'type': 'f', 'min': 0.0, 'max': 0.2, 'default': 0.03,
                 'desc': 'Wake boost per speech start',
                 'help': 'How much wakefulness increases each time Broca starts spoken output. Higher values make conversation wake Christine more strongly.'
+            },
+            'speech_activity_wakefulness_boost': {
+                'type': 'f', 'min': 0.0, 'max': 0.2, 'default': 0.01,
+                'desc': 'Wake boost per speech activity',
+                'help': 'How much wakefulness increases when incoming speech activity is detected by VAD, even if STT is skipped while sleeping or perceptions are blocked.'
             },
             'sleep_wakefulness_avg_window': {
                 'type': 'f', 'min': 1.0, 'max': 80.0, 'default': 10.0,

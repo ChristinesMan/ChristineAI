@@ -1005,6 +1005,20 @@
                         </div>
                         <div class="setting-item">
                             <label>
+                                Wake boost per speech activity:
+                                <div class="tooltip">
+                                    <span class="setting-help">?</span>
+                                    <span class="tooltiptext">
+                                        How much wakefulness rises when incoming speech activity is detected by VAD. This applies even if STT is skipped while sleeping or perceptions are blocked.
+                                        <span class="tooltip-default">Default: 0.01</span>
+                                    </span>
+                                </div>
+                            </label>
+                            <input type="range" class="setting-range" id="speech_activity_wakefulness_boost" min="0" max="0.2" step="0.001" value="0.01">
+                            <span class="setting-value" id="speech_activity_wakefulness_boost_value">0.01</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>
                                 Light ADC minimum:
                                 <div class="tooltip">
                                     <span class="setting-help">?</span>

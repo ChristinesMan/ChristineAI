@@ -92,6 +92,10 @@ class Wernicke(threading.Thread):
         from christine.touch import touch
         # from christine.light import light
         from christine.parietal_lobe import parietal_lobe
+        from christine.sleep import sleep
+
+        # Tracks the currently active speech perception from speaking_start until utterance end.
+        new_perception = None
 
         # The subprocess starts off just spinning it's wheels, chucking away any audio data it gets
         # Because it seemed like having everything happen all at once caused high cpu, then it would have to catch up
@@ -122,6 +126,11 @@ class Wernicke(threading.Thread):
                 if comm["class"] == "speaking_start":
                     log.conversation_flow.info("USER_SPEECH_START: User began speaking - blocking Christine's speech")
 
+                    # Any detected speech activity should gently raise wakefulness,
+                    # even if perceptions are currently blocked or sleeping.
+                    if STATE.speech_activity_wakefulness_boost > 0.0:
+                        sleep.wake_up(STATE.speech_activity_wakefulness_boost)
+
                     if STATE.shush_fucking is False:
                         # set this to True so that broca waits until I'm done speaking
                         # unless we're fucking (trying this, might not work)
@@ -135,7 +144,9 @@ class Wernicke(threading.Thread):
                     # it is important to get the perception object in the queue as soon as possible
                     # even before the audio data is received
                     # to prevent wife from speaking before I have finished
-                    parietal_lobe.new_perception(new_perception)
+                    accepted = parietal_lobe.new_perception(new_perception)
+                    if not accepted:
+                        new_perception = None
 
                     log.broca_main.debug("SpeakingStart")
 
@@ -154,12 +165,40 @@ class Wernicke(threading.Thread):
                     audio_data = self.to_away_team_audio.recv_bytes()
                     log.conversation_flow.debug("AUDIO_RECEIVED: Audio data size: %d bytes", len(audio_data))
 
+                    # If this utterance has no accepted perception placeholder,
+                    # or if hearing is currently blocked/sleeping, skip STT API usage.
+                    if (
+                        new_perception is None
+                        or STATE.is_sleeping is True
+                        or STATE.perceptions_blocked is True
+                    ):
+                        log.conversation_flow.info(
+                            "STT_SKIPPED: Skipping transcription (sleeping=%s, perceptions_blocked=%s, perception_accepted=%s)",
+                            STATE.is_sleeping,
+                            STATE.perceptions_blocked,
+                            new_perception is not None,
+                        )
+
+                        # If user speaking was set but we're dropping this utterance,
+                        # clear it immediately so Broca doesn't remain blocked.
+                        if STATE.shush_fucking is False:
+                            STATE.user_is_speaking = False
+
+                        if new_perception is not None:
+                            # Mark placeholder complete without any user message.
+                            new_perception.audio_data = None
+                            new_perception.audio_result = ""
+
+                        new_perception = None
+                        continue
+
                     # add the new audio data to the perception object created earlier
                     new_perception.audio_data = audio_data
 
                     # start the new perception's thread to get the speech-to-text going
                     new_perception.start()
                     log.conversation_flow.info("STT_PROCESSING: Speech-to-text processing started")
+                    new_perception = None
 
                 # The wernicke is not fucked up, yay
                 elif comm["class"] == "wernicke_ok":
