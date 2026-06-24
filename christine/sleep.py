@@ -32,9 +32,11 @@ class Sleep(threading.Thread):
         self.last_tired_perception_time = 0.0
         self.tired_perceptions_today = 0
         self.tired_perception_day = time.localtime().tm_yday
-        self.last_wakefulness_for_tiredness = STATE.wakefulness
+        self.last_tired_perception_wakefulness = 1.0
         self.last_schedule_update_day = None
         self.last_schedule_update_hour = None
+        self.sleepy_stage_started_at = None
+        self.sleepy_perception_sent = False
 
         # The current conditions, right now. Basically light levels, gyro, noise level, touch, etc all added together, then we calculate a running average to cause gradual drowsiness. zzzzzzzzzz.......
         self.current_environmental_conditions = 0.5
@@ -213,6 +215,8 @@ class Sleep(threading.Thread):
             # this lets every other module know we're sleeping
             STATE.is_sleeping = True
             self.sleep_started_at = time.time()
+            self.sleepy_stage_started_at = None
+            self.sleepy_perception_sent = False
 
             # set the time for the midnight process to run
             self.set_midnight_process_time()
@@ -222,6 +226,9 @@ class Sleep(threading.Thread):
 
             STATE.is_sleeping = False
             self.sleep_started_at = None
+            self.sleepy_stage_started_at = None
+            self.sleepy_perception_sent = False
+            self.last_tired_perception_wakefulness = 1.0
 
             # try to prevent wobble by throwing it further towards awake
             STATE.wakefulness += STATE.sleep_transition_nudge_wake
@@ -238,20 +245,26 @@ class Sleep(threading.Thread):
         ):
             log.sleep.info("PreSleep")
 
-            # try to prevent wobble by throwing it further towards sleep
-            STATE.wakefulness -= STATE.sleep_transition_nudge_sleep
-
             # this lets every other module know we're pre-sleep
             STATE.is_sleepy = True
-
-            # let parietal lobe know we're bushed
-            parietal_lobe.sleep_sleepy()
+            self.sleepy_stage_started_at = time.time()
+            self.sleepy_perception_sent = False
 
         elif (
             STATE.wakefulness >= STATE.sleep_wakefulness_pre_sleep
             and STATE.is_sleepy is True
         ):
             STATE.is_sleepy = False
+            self.sleepy_stage_started_at = None
+            self.sleepy_perception_sent = False
+        elif (
+            STATE.is_sleepy is True
+            and self.sleepy_perception_sent is False
+            and self.sleepy_stage_started_at is not None
+            and time.time() - self.sleepy_stage_started_at >= 30.0
+        ):
+            self.sleepy_perception_sent = True
+            parietal_lobe.sleep_sleepy()
 
     def get_sleep_inertia_environment(self):
         """
@@ -361,8 +374,10 @@ class Sleep(threading.Thread):
 
     def maybe_emit_tired_perception(self):
         """
-        Sends sleepy perception events organically from wakefulness trend,
-        with cooldown and daily caps to prevent oscillation and spam.
+        Sends tired perception events as wakefulness drifts progressively lower.
+        Each emission records the wakefulness level; the next only fires once it has
+        dropped at least sleep_tired_perception_drop_min below that recorded level.
+        A short minimum cooldown guards against same-cycle re-firing.
         """
 
         from christine.parietal_lobe import parietal_lobe
@@ -372,9 +387,7 @@ class Sleep(threading.Thread):
             self.tired_perception_day = today
             self.tired_perceptions_today = 0
 
-        previous_wakefulness = self.last_wakefulness_for_tiredness
         current_wakefulness = STATE.wakefulness
-        self.last_wakefulness_for_tiredness = current_wakefulness
 
         if STATE.is_sleeping is True:
             return
@@ -386,28 +399,21 @@ class Sleep(threading.Thread):
         if time.time() - self.last_tired_perception_time < cooldown_seconds:
             return
 
-        wakefulness_drop = previous_wakefulness - current_wakefulness
-        crossed_threshold_down = (
-            previous_wakefulness > STATE.sleep_tired_perception_threshold
-            and current_wakefulness <= STATE.sleep_tired_perception_threshold
-        )
-
         should_emit = (
             current_wakefulness <= STATE.sleep_tired_perception_threshold
-            and (
-                wakefulness_drop >= STATE.sleep_tired_perception_drop_min
-                or crossed_threshold_down
-            )
+            and current_wakefulness <= self.last_tired_perception_wakefulness - STATE.sleep_tired_perception_drop_min
         )
 
         if should_emit:
+            prev_wakefulness = self.last_tired_perception_wakefulness
             self.last_tired_perception_time = time.time()
+            self.last_tired_perception_wakefulness = current_wakefulness
             self.tired_perceptions_today += 1
             STATE.sleep_offer_state_tools_until = time.time() + (STATE.sleep_offer_state_tools_window_minutes * 60)
             log.sleep.info(
-                "Sleepy perception emitted: wake_drop=%.3f wake=%.3f count_today=%s",
-                wakefulness_drop,
+                "Tired perception emitted: wake=%.3f (down from %.3f) count_today=%s",
                 current_wakefulness,
+                prev_wakefulness,
                 self.tired_perceptions_today,
             )
             parietal_lobe.sleep_tired()

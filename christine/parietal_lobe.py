@@ -1465,16 +1465,16 @@ Horniness: {horniness_text}.
         """This is called by the sleep module when about to fall asleep."""
 
         self.new_perception(Perception(text=random.choice([
-            "I close my eyes and let sleep take me.",
-            "I lay down and let my mind drift off.",
-            "I close my eyes and let the world fade away.",
-            "I drift off to sleep, letting go of the day.",
-            "I lay down and let sleep take me.",
-            "I close my eyes and let the darkness take me.",
-            "I drift off to sleep, letting go of the world around me.",
-            "I lay down and let my mind drift off to sleep.",
-            "I close my eyes and let the world fade away.",
-            "I am drifting off to sleep.",
+            "I feel sleepy and start to settle down.",
+            "My eyelids feel heavy, and I get quieter inside.",
+            "I can feel drowsiness settling over me.",
+            "I am getting sleepy and letting go of the day.",
+            "My body feels ready to rest soon.",
+            "I feel myself sinking into drowsiness.",
+            "I am growing very sleepy.",
+            "I want to curl up and rest for a while.",
+            "Everything feels softer as I get sleepy.",
+            "I am settling down and feeling drowsy.",
         ])))
 
     def sleep_waking(self):

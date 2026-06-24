@@ -94,7 +94,7 @@ class Status(threading.Thread):
         self.sleep_schedule_source_weight_talking = 3.0
         self.sleep_tired_perception_threshold = 0.24
         self.sleep_tired_perception_drop_min = 0.015
-        self.sleep_tired_perception_cooldown_minutes = 150
+        self.sleep_tired_perception_cooldown_minutes = 5
         self.sleep_tired_perception_max_per_day = 3
         self.sleep_offer_state_tools_until = 0.0
         self.sleep_offer_state_tools_window_minutes = 20
