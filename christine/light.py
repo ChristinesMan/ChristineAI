@@ -25,6 +25,11 @@ class Light:
         # so keep track of the time
         self.time_of_last_body_message = time.time()
 
+        # Guardrails so tiny low-light sensor drift does not look like a sudden event.
+        self.event_min_delta = 0.04
+        self.dark_event_min_baseline = 0.08
+        self.bright_event_min_level = 0.08
+
     def new_data(self, light_adc_raw):
         """
         called to deliver new data point
@@ -53,6 +58,9 @@ class Light:
         # clip it
         light_level = float(np.clip(light_level, 0.0, 1.0))
 
+        # Keep the previous smoothed level before updating it.
+        previous_light_level = float(np.clip(STATE.light_level, 0.0, 1.0))
+
         # calculate the rolling average
         light_avg_window = max(0.0, float(STATE.light_avg_window))
         STATE.light_level = ((STATE.light_level * light_avg_window) + light_level) / (light_avg_window + 1)
@@ -60,10 +68,18 @@ class Light:
         # calculate the trend.
         # Did the lights suddenly turn on? Maybe that should be slightly annoying if I'm trying to sleep.
         # Who turned out the lights? Maybe it's time to sleep?
-        light_trend = light_level / STATE.light_level
+        light_trend = light_level / max(previous_light_level, 0.0001)
+        light_delta = light_level - previous_light_level
+
+        # Ignore event checks when the sample shift is too small to be meaningful.
+        has_meaningful_delta = abs(light_delta) >= self.event_min_delta
 
         # What to do when there's sudden light, wake up fast
-        if light_trend > 6.0:
+        if (
+            light_trend > 6.0
+            and has_meaningful_delta
+            and light_level >= self.bright_event_min_level
+        ):
             log.sleep.debug("LightTrend: %s waking up fast", light_trend)
             if time.time() > self.time_of_last_body_message + 300.0:
                 parietal_lobe.light_sudden_bright()
@@ -71,7 +87,11 @@ class Light:
             sleep.wake_up(0.03)
 
         # And what to do if the lights go out
-        if light_trend < 0.4:
+        if (
+            light_trend < 0.4
+            and has_meaningful_delta
+            and previous_light_level >= self.dark_event_min_baseline
+        ):
             log.sleep.debug("LightTrend: %s who turned out the lights?", light_trend)
             if time.time() > self.time_of_last_body_message + 300.0:
                 parietal_lobe.light_sudden_dark()
