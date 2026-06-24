@@ -8,7 +8,6 @@ import threading
 from christine import log
 from christine.status import STATE
 from christine.broca import broca
-from christine.sleep import sleep
 from christine.parietal_lobe import parietal_lobe
 from christine.figment import Figment
 
@@ -209,8 +208,8 @@ class Sex(threading.Thread):
         if STATE.shush_please_honey is True:
             return
 
-        # Stay awake
-        sleep.wake_up(0.001)
+        # Spike the touch environmental level; it will decay when touch activity stops
+        STATE.touch_level = min(1.0, STATE.touch_level + STATE.touch_spike)
 
         if sensor_data["msg"] in ["touch", "release"]:
 

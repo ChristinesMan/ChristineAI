@@ -59,12 +59,24 @@ class Sleep(threading.Thread):
                 self.update_adaptive_sleep_schedule()
                 schedule_value = STATE.sleep_schedule_profile[self.current_hour]
 
+                # Decay talking and touch levels toward zero each cycle (event-driven spikes drift down in silence).
+                talking_decay = max(0.1, float(STATE.talking_decay_window))
+                STATE.talking_level = float(np.clip(
+                    STATE.talking_level * talking_decay / (talking_decay + 1), 0.0, 1.0
+                ))
+                touch_decay = max(0.1, float(STATE.touch_decay_window))
+                STATE.touch_level = float(np.clip(
+                    STATE.touch_level * touch_decay / (touch_decay + 1), 0.0, 1.0
+                ))
+
                 # Compute total dynamic weight, guard against divide-by-zero if user sets everything to zero
                 weights_total = (
                     STATE.sleep_weight_light
                     + STATE.sleep_weight_gyro
                     + STATE.sleep_weight_time
                     + STATE.sleep_weight_inertia
+                    + STATE.sleep_weight_talking
+                    + STATE.sleep_weight_touch
                 )
                 if weights_total <= 0.0:
                     weights_total = 1.0
@@ -77,6 +89,8 @@ class Sleep(threading.Thread):
                     + (STATE.sleep_weight_gyro * STATE.jostled_level)
                     + (STATE.sleep_weight_time * schedule_value)
                     + (STATE.sleep_weight_inertia * sleep_inertia_environment)
+                    + (STATE.sleep_weight_talking * STATE.talking_level)
+                    + (STATE.sleep_weight_touch * STATE.touch_level)
                 ) / weights_total
 
                 # clip it, can't go below 0 or higher than 1
@@ -100,11 +114,13 @@ class Sleep(threading.Thread):
 
                 # log it
                 log.sleep.info(
-                    "Light=%.2f  Jostled=%.2f  Schedule=%.2f  Inertia=%.2f  Env=%.2f  Wake=%.2f",
+                    "Light=%.2f  Jostled=%.2f  Schedule=%.2f  Inertia=%.2f  Talk=%.2f  Touch=%.2f  Env=%.2f  Wake=%.2f",
                     STATE.light_level,
                     STATE.jostled_level,
                     schedule_value,
                     sleep_inertia_environment,
+                    STATE.talking_level,
+                    STATE.touch_level,
                     self.current_environmental_conditions,
                     STATE.wakefulness,
                 )

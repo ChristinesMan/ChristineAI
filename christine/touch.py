@@ -8,7 +8,6 @@ from collections import deque
 from christine import log
 from christine.status import STATE
 from christine.parietal_lobe import parietal_lobe
-from christine.sleep import sleep
 
 
 class Touch:
@@ -97,8 +96,8 @@ class Touch:
             # Update kiss timing for LLM rate limiting
             self.time_of_last_kiss = timestamp
 
-        # Wake up Christine if she's sleeping
-        sleep.wake_up(0.05)
+        # Spike the touch environmental level; it will decay when touch activity stops
+        STATE.touch_level = min(1.0, STATE.touch_level + STATE.touch_spike)
 
     def _handle_touch_end(self, sensor_index, timestamp):
         """

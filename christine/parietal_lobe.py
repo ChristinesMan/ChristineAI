@@ -1318,9 +1318,9 @@ Horniness: {horniness_text}.
     def broca_figment_was_processed(self, figment: Figment):
         """This is called by the broca module when any speech or sound is starting to be played. This is done this way so the LLM can be interrupted mid-speech."""
 
-        # spoken output itself should wake Christine up
-        if figment.should_speak is True and STATE.speech_wakefulness_boost > 0.0:
-            sleep.wake_up(STATE.speech_wakefulness_boost)
+        # spoken output spikes the talking environmental level; it decays gradually in silence
+        if figment.should_speak is True:
+            STATE.talking_level = min(1.0, STATE.talking_level + STATE.talking_spike)
 
         # log it
         if figment.should_speak is True:

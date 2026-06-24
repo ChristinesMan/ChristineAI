@@ -66,6 +66,18 @@ class Status(threading.Thread):
         self.sleep_weight_gyro = 5.0
         self.sleep_weight_time = 3.0
         self.sleep_weight_inertia = 4.0
+        self.sleep_weight_talking = 2.0
+        self.sleep_weight_touch = 2.0
+
+        # Talking and touch environmental condition levels (0.0-1.0).
+        # Spike up on events; decay each sleep loop cycle.
+        self.talking_level = 0.0
+        self.talking_decay_window = 3.0
+        self.talking_spike = 0.15
+        self.touch_level = 0.0
+        self.touch_decay_window = 5.0
+        self.touch_spike = 0.15
+
         self.sleep_wakefulness_pre_sleep = 0.15
         self.sleep_wakefulness_fall_asleep = 0.08
         self.sleep_wakefulness_wake_up = 0.12
