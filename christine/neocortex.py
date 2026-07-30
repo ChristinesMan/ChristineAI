@@ -12,6 +12,7 @@ The neocortex is what sets humans apart from other animals and is what allows us
 It is also what allows us to store and retrieve memories, which is why we are using the name for this class."""
 
 import os
+import sys
 import time
 import re
 import random
@@ -874,31 +875,51 @@ Consolidated memory:"""
         collection_object.data.insert_many(stuff)
 
 
-if __name__ == "__main__":
+def run_cli(argv=None):
+    """Run neocortex maintenance operations from the command line."""
     import argparse
-    import sys
-    
+
     # Add the parent directory to the path so we can import christine modules
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    
+
     parser = argparse.ArgumentParser(description='Neocortex maintenance operations')
-    parser.add_argument('--recover-borked', action='store_true', 
+    parser.add_argument('--recover-borked', action='store_true',
                         help='Recover memories from borked_*.json files (requires full Christine setup)')
     parser.add_argument('--cleanup-duplicates', action='store_true',
                         help='Clean up duplicate proper names (requires full Christine setup)')
     parser.add_argument('--backup', choices=['all', 'memories', 'proper_names'],
-                        default=None, help='Create backup of specified collection(s) (requires full Christine setup)')
-    
-    args = parser.parse_args()
-    
+                        default=None, help='Create backup of the specified collection(s)')
+
+    args = parser.parse_args(argv)
+
     if not any([args.recover_borked, args.cleanup_duplicates, args.backup]):
         parser.print_help()
         print("\nNOTE: For borked file recovery without full Christine setup, use:")
         print("  python recover_borked.py")
         print("  python import_recovered.py")
-        sys.exit(1)
-    
-    print("This requires full Christine configuration. Use the standalone scripts instead:")
-    print("  python recover_borked.py --help")
-    print("  python import_recovered.py --help")
-    sys.exit(1)
+        return 1
+
+    print('Connecting to the neocortex service...')
+    neocortex = Neocortex()
+    if not neocortex.connect():
+        print('Failed to connect to the neocortex service.', file=sys.stderr)
+        return 2
+
+    if args.recover_borked:
+        neocortex.recover_borked_files()
+        return 0
+
+    if args.cleanup_duplicates:
+        neocortex.cleanup_duplicate_proper_names()
+        return 0
+
+    if args.backup:
+        neocortex.backup(args.backup)
+        print(f'Backup completed for {args.backup}.')
+        return 0
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(run_cli())
