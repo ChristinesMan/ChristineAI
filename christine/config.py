@@ -94,10 +94,12 @@ class Config:
         # failover/current-pointer config here, just which ones are turned on.
         self.enabled_channels = self._parse_service_list(os.getenv('CHRISTINE_ENABLED_CHANNELS', ''))
 
-        # Dora channel (christine/channel/dora.py) - one-way notes to the OpenClaw assistant
-        # via its Gateway hooks endpoint.
-        self.dora_hook_url = os.getenv('CHRISTINE_DORA_HOOK_URL', 'https://dora-openclaw.lan')
-        self.dora_hook_token = os.getenv('CHRISTINE_DORA_HOOK_TOKEN', '')
+        # Dora channel (christine/channel/dora.py) - one-way notes to the Hermes agent
+        # via its Gateway webhook endpoint (HMAC-SHA256 signed).
+        self.dora_hook_url = os.getenv('CHRISTINE_DORA_HOOK_URL', 'http://dora.lan:8644/webhooks/christine')
+        self.dora_hook_secret = os.getenv('CHRISTINE_DORA_HOOK_SECRET', '')
+        # Legacy token (OpenClaw era) — still accepted for backward compatibility
+        self.dora_hook_token = os.getenv('CHRISTINE_DORA_HOOK_TOKEN', self.dora_hook_secret)
 
     def _parse_service_list(self, service_string: str) -> List[str]:
         """Parse comma-separated list of enabled services (LLMs, STTs, TTSs)."""
@@ -153,8 +155,8 @@ class Config:
 
         # Validate that enabled channels have required configuration
         for channel in self.enabled_channels:
-            if channel == 'dora' and not self.dora_hook_token:
-                errors.append("CHRISTINE_DORA_HOOK_TOKEN is required when dora channel is enabled")
+            if channel == 'dora' and not self.dora_hook_secret:
+                errors.append("CHRISTINE_DORA_HOOK_SECRET is required when dora channel is enabled")
         
         # Validate VAD setting
         if self.wernicke_vad not in ['pvcobra', 'webrtcvad']:
