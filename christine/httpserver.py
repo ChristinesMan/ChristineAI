@@ -22,6 +22,14 @@ TEMPLATE_PATH.append("./httpserver/")
 # Store chat messages in memory
 chat_messages = []
 
+# Names (lowercased) of contacts who have taken part in today's web chat - either by
+# sending a message themselves or by having a
+# message addressed with their name as sender. Used so that when someone new posts in the
+# chat room, everyone else who's recently been part of the conversation gets a copy pushed
+# out to their own channel too, instead of only the two original participants staying in
+# sync. Reset at midnight along with the chat log itself - see clear_chat_messages().
+_recent_chat_participants = set()
+
 # Simple security token
 SECURITY_TOKEN = CONFIG.http_security_token
 
@@ -317,17 +325,21 @@ def api_chat_post():
             
         # Add user message to chat
         timestamp = datetime.now().strftime("%H:%M:%S")
-        chat_messages.append({
+        new_entry = {
             "type": "user",
             "message": user_message,
             "timestamp": timestamp,
             "sender": user_sender
-        })
+        }
+        chat_messages.append(new_entry)
         
         # Keep only last 50 messages to prevent memory issues
         if len(chat_messages) > 50:
             chat_messages.pop(0)
-            
+
+        # Let anyone else who's recently been part of today's chat know a new message landed
+        _broadcast_new_chat_message(new_entry)
+
         # Send to parietal lobe for processing
         log.main.info("Chat message received from %s: %s", user_sender, user_message)
         parietal_lobe.web_chat_message(user_message, user_sender)
@@ -401,34 +413,91 @@ def get_disk_usage():
     except (subprocess.SubprocessError, IndexError):
         return "Unknown"
 
+def clear_chat_messages():
+    """Wipe the in-memory web chat log. Called during midnight processing so the chat room
+    doesn't show yesterday's conversation the next day."""
+    chat_messages.clear()
+    _recent_chat_participants.clear()
+    log.main.info("Web chat message log cleared (midnight processing)")
+
+
+def _broadcast_new_chat_message(entry):
+    """Push a copy of a newly-posted chat message out to anyone else who's recently been
+    part of today's web chat conversation (besides whoever just posted it), so people
+    don't have to keep the chat room open to notice a reply. Runs until midnight clears
+    the participant list; after that the room starts quiet again and has to build back up
+    from scratch, same as the chat log itself.
+
+    This only pushes to contacts (see prefrontal_cortex.Contact / channel_selector) whose
+    name matches a recent participant - it can't invent a delivery address for someone
+    who was only ever a plain web chat sender name with no configured channel."""
+    try:
+        sender_name = (entry.get('sender') or '').strip()
+        sender_lower = sender_name.lower()
+
+        # Anyone who posts becomes a recent participant, so a later reply reaches them too.
+        if sender_lower:
+            _recent_chat_participants.add(sender_lower)
+
+        recipients = [name for name in _recent_chat_participants if name != sender_lower]
+        if not recipients:
+            return
+
+        from christine.prefrontal_cortex import prefrontal_cortex
+        from christine.channel_selector import channel_selector
+
+        preview = entry.get('message', '')
+        who = sender_name or ('Christine' if entry.get('type') == 'christine' else 'Someone')
+        broadcast_text = f"{who} just posted in the web chat room: {preview}"
+
+        for recipient_name in recipients:
+            contact = prefrontal_cortex.find_contact(recipient_name)
+            if contact is None or contact.status != "active":
+                continue
+
+            channel = channel_selector.get_channel(contact.channel)
+            if channel is None or not channel.is_available():
+                continue
+
+            channel.send_message(contact.to_dict(), broadcast_text)
+            log.main.info("Broadcast new chat message to recent participant %s via %s", contact.name, contact.channel)
+    except Exception as e:
+        log.main.debug("Could not broadcast new chat message: %s", str(e))
+
 # Add Christine's responses to chat
 def add_christine_response(message):
     """Add Christine's response to chat messages"""
     timestamp = datetime.now().strftime("%H:%M:%S")
-    chat_messages.append({
+    new_entry = {
         "type": "christine",
         "message": message,
         "timestamp": timestamp,
         "sender": "Christine"
-    })
+    }
+    chat_messages.append(new_entry)
     
     # Keep only last 50 messages
     if len(chat_messages) > 50:
         chat_messages.pop(0)
 
+    _broadcast_new_chat_message(new_entry)
+
 def add_user_message(message):
     """Add user's spoken message to chat messages"""
     timestamp = datetime.now().strftime("%H:%M:%S")
-    chat_messages.append({
+    new_entry = {
         "type": "user",
         "message": message,
         "timestamp": timestamp,
         "sender": parietal_lobe.user_name  # Default to user for spoken messages
-    })
+    }
+    chat_messages.append(new_entry)
     
     # Keep only last 50 messages
     if len(chat_messages) > 50:
         chat_messages.pop(0)
+
+    _broadcast_new_chat_message(new_entry)
 
 # run the server in a thread
 # don't start the thread; that is done from __main__

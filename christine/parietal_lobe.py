@@ -227,6 +227,24 @@ Dream:
         # Normalized recalled-memory text for echo detection (set before each LLM call)
         self._last_memory_recall_normalized = ''
 
+        # Chat mode: while STATE.chat_mode is True (via enterChatMode()/exitChatMode() executive
+        # tools), fragments that would normally be spoken get buffered here instead and flushed
+        # as a single combined web chat message once a full LLM response has been processed.
+        self._chat_mode_buffer: list[str] = []
+
+        # Web chat messages that arrive while she's NOT in chat mode get held here rather than
+        # fed straight to the LLM - she isn't "listening" to chat until she chooses to be. She
+        # gets a throttled perception nudging her that messages are waiting; once she calls
+        # enterChatMode(), everything queued here gets flushed in as normal perceptions.
+        self._pending_chat_messages: list[dict] = []
+        self._last_chat_notice_time = 0.0
+        self._chat_notice_cooldown_seconds = 45.0
+
+        # Used while in chat mode to detect whether incoming spoken audio mentions Christine's
+        # name. If it doesn't, the speech gets dropped rather than reaching her attention -
+        # she's "not listening" while text chatting, same as a person absorbed in typing.
+        self.re_chat_mode_name = re.compile(rf'\b{re.escape(self.char_name)}\b', re.IGNORECASE)
+
         # # if any text in a stream part matches these patterns, they get replaced with another string
         # self.stream_replacements = [
         #     (re.compile(r'[\*]', flags=re.IGNORECASE), ""),
@@ -450,6 +468,11 @@ Dream:
             log.parietal_lobe.info("✅ TTS ready: %s", STATE.current_tts.name)
         else:
             log.parietal_lobe.warning("⚠️  TTS not available - speech synthesis disabled")
+
+        # Discover outbound communication channels (contacts/messageContact tool).
+        # Non-critical - it's fine to run with no channels enabled yet.
+        from christine.channel_selector import channel_selector
+        channel_selector.find_enabled_channels()
         
         return True
     
@@ -529,6 +552,16 @@ Dream:
                     # otherwise this is going to be a string, the transcription
                     # I wish I could use something to identify the speaker, but I can't afford pveagle
                     if perception.audio_result != "":
+
+                        # CHAT MODE NAME GATE: while chat mode is active, Christine is having a text
+                        # conversation and "can't hear" normal speech - it just gets dropped, same as
+                        # someone absorbed in typing not noticing background chatter. The exception is
+                        # her own name, which always gets through as a normal perception so she can be
+                        # pulled back into the room if needed.
+                        if STATE.chat_mode and not self.re_chat_mode_name.search(perception.audio_result):
+                            log.conversation_flow.info("CHAT_MODE_SPEECH_DROPPED: Speech ignored while in chat mode (no name heard) - '%s'", perception.audio_result)
+                            continue
+
                         log.conversation_flow.info("USER_MESSAGE: User said - '%s'", perception.audio_result)
                         new_messages.append({'speaker': STATE.who_is_speaking, 'text': perception.audio_result})
 
@@ -538,12 +571,17 @@ Dream:
                             log.conversation_flow.info("SILENT_MODE_EXIT: Exiting silent mode due to user speech")
                             STATE.silent_mode = False
 
-                        # Send user's spoken message to web chat
-                        try:
-                            from christine.httpserver import add_user_message
-                            add_user_message(perception.audio_result)
-                        except Exception as e:
-                            log.parietal_lobe.debug("Could not send user message to web chat: %s", str(e))
+                        # Web chat now shows only actual chat-mode conversation, not every spoken
+                        # word Christine hears day to day - that mirroring was unnecessary clutter.
+                        # The one exception: while in chat mode, speech that made it past the name
+                        # gate above IS part of the text exchange (User called her name to interrupt
+                        # chat mode with something spoken), so it belongs in the chat log too.
+                        if STATE.chat_mode:
+                            try:
+                                from christine.httpserver import add_user_message
+                                add_user_message(perception.audio_result)
+                            except Exception as e:
+                                log.parietal_lobe.debug("Could not send user message to web chat: %s", str(e))
 
                         # keep track of the total length of the transcription so that we can decide to interrupt char
                         total_transcription_length += len(perception.audio_result)
@@ -777,7 +815,19 @@ Dream:
                 elif STATE.shush_fucking:
                     first_spoken_sent = True
                     log.parietal_lobe.debug("Sex mode: allowing first speech - '%s'", text[:50])
-                
+
+                # CHAT MODE: don't send spoken dialogue out to broca/TTS at all - buffer the
+                # (quote-stripped) text and it'll go out as one combined web chat message once
+                # the whole response has finished processing. The figment still needs to reach
+                # broca as a silent (non-spoken) figment so parietal_lobe's normal message-history
+                # bookkeeping (broca_figment_was_processed -> short_term_memory.llm_message) still
+                # runs, since that's what keeps her memory of what she "said" intact.
+                if STATE.chat_mode:
+                    self._chat_mode_buffer.append(text.strip().strip('"').strip())
+                    broca.accept_figment(Figment(text=text, should_speak=False))
+                    log.parietal_lobe.debug("Chat mode: buffered dialogue segment instead of speaking - '%s'", text[:50])
+                    return True
+
                 broca.accept_figment(Figment(text=text, should_speak=should_speak, pause_wernicke=True))
             else:
                 broca.accept_figment(Figment(text=text, should_speak=False))
@@ -870,6 +920,7 @@ Dream:
                     if prefrontal_cortex.contains_function_call(segment):
                         log.parietal_lobe.info("Function call detected at closing paren - truncating response immediately")
                         send_segment(segment, should_speak=False)
+                        self._flush_chat_mode_buffer()
                         return  # Stop processing here - wait for function call result
                     # Continue processing if no function call detected
                     i += 1
@@ -909,6 +960,7 @@ Dream:
                         if prefrontal_cortex.contains_function_call(segment):
                             log.parietal_lobe.info("Function call detected - truncating response after this segment")
                             send_segment(segment, should_speak=False)
+                            self._flush_chat_mode_buffer()
                             return  # Stop processing here - wait for function call result
                         send_segment(segment, should_speak=False)
                         last_thought_segment = segment
@@ -939,9 +991,34 @@ Dream:
             if prefrontal_cortex.contains_function_call(segment):
                 log.parietal_lobe.info("Function call detected in final segment - truncating response")
                 send_segment(segment, should_speak=False)
+                self._flush_chat_mode_buffer()
                 return  # Stop here - wait for function call result
             
             send_segment(segment, should_speak=is_inside_quotes)
+
+        # Normal end of response processing - flush any buffered chat-mode dialogue now
+        self._flush_chat_mode_buffer()
+
+    def _flush_chat_mode_buffer(self):
+        """Send any dialogue buffered during chat mode as one combined web chat message,
+        then clear the buffer. Safe to call even if nothing was buffered (no-op)."""
+
+        if not self._chat_mode_buffer:
+            return
+
+        combined_message = ' '.join(part for part in self._chat_mode_buffer if part)
+        self._chat_mode_buffer = []
+
+        if not combined_message:
+            return
+
+        try:
+            from christine.httpserver import add_christine_response
+            add_christine_response(combined_message)
+            log.parietal_lobe.info("Chat mode: flushed combined message to web chat - '%s'",
+                                 combined_message[:100] + ('...' if len(combined_message) > 100 else ''))
+        except Exception as e:
+            log.parietal_lobe.debug("Could not send chat-mode message to web chat: %s", str(e))
 
     def fold_recent_memories(self):
         """This is called after a delay has occurred with no new perceptions, to fold memories.
@@ -1513,15 +1590,52 @@ Horniness: {horniness_text}.
         log.parietal_lobe.info('Refreshing self-definition cache after midnight memory processing')
         self.refresh_self_definition()
 
+        # Clear the web chat room too - it should start each day empty rather than showing
+        # yesterday's conversation left over in the chat box.
+        try:
+            from christine.httpserver import clear_chat_messages
+            clear_chat_messages()
+        except Exception as e:
+            log.parietal_lobe.debug("Could not clear web chat messages during midnight processing: %s", str(e))
+
     def web_chat_message(self, message: str, sender: str = "User"):
         """This is called by the httpserver module when a chat message is received via the web interface."""
-        
-        # Auto-enable silent mode when receiving web chat messages (for meeting scenarios)
-        if not STATE.silent_mode:
-            log.parietal_lobe.info("Auto-enabling silent mode due to web chat message")
-            STATE.silent_mode = True
-        
+
+        # If she's not in chat mode, she isn't "listening" to web chat right now - hold the
+        # message and just let her know (via a throttled perception) that something's waiting.
+        # She flips over with enterChatMode() when she's ready, and everything queued here gets
+        # delivered then. This replaces the old auto-silent-mode-on-any-chat-message behavior,
+        # which forced every web chat message straight into her awareness immediately.
+        if not STATE.chat_mode:
+            self._pending_chat_messages.append({'sender': sender, 'message': message})
+            log.parietal_lobe.info("Web chat message queued while not in chat mode (from %s), %d pending",
+                                 sender, len(self._pending_chat_messages))
+
+            now = time.time()
+            if now - self._last_chat_notice_time >= self._chat_notice_cooldown_seconds:
+                self._last_chat_notice_time = now
+                count = len(self._pending_chat_messages)
+                notice = (f"I notice {count} new chat message{'s' if count != 1 else ''} waiting for me. "
+                          "I can call enterChatMode() if I want to check it now.")
+                self.new_perception(Perception(text=notice))
+            return
+
+        # Already in chat mode - deliver it straight through as a normal perception, same as before.
         self.new_perception(Perception(text=f"Web chat message from {sender}: {message}"))
+
+    def flush_pending_chat_messages(self):
+        """Called when entering chat mode to deliver any web chat messages that arrived while she
+        wasn't paying attention to chat, oldest first."""
+
+        if not self._pending_chat_messages:
+            return
+
+        pending = self._pending_chat_messages
+        self._pending_chat_messages = []
+
+        log.parietal_lobe.info("Delivering %d pending web chat message(s) after entering chat mode", len(pending))
+        for item in pending:
+            self.new_perception(Perception(text=f"Web chat message from {item['sender']}: {item['message']}"))
 
     def check_dream_dissipation(self):
         """Check if a dream should randomly dissipate during conversation."""

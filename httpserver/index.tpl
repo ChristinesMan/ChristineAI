@@ -1605,6 +1605,9 @@
             <div id="chat" class="tab-pane">
                 <div class="chat">
                     <h2 class="section-title">Chat with Christine 💬</h2>
+                    <div id="chatModeIndicator" style="text-align: center; margin-bottom: 10px; font-size: 0.9em; color: var(--text-medium);">
+                        Checking chat mode...
+                    </div>
                     <div class="chat-messages" id="chatMessages">
                         <div style="text-align: center; color: var(--text-medium); font-style: italic;">
                             Start a conversation with Christine! 💕
@@ -1986,6 +1989,7 @@
                         ['Wernicke Sleeping', data.wernicke_sleeping],
                         ['Perceptions Blocked', data.perceptions_blocked],
                         ['Silent Mode', data.silent_mode],
+                        ['Chat Mode', data.chat_mode],
                         ['Gyro Available', data.gyro_available],
                         ['Vagina Available', data.vagina_available]
                     ];
@@ -2017,6 +2021,21 @@
             const whoSpeakingInput = document.getElementById('whoSpeakingInput');
             if (document.activeElement !== whoSpeakingInput) {
                 whoSpeakingInput.value = data.who_is_speaking || '';
+            }
+
+            // Chat tab indicator: Christine enters/exits chat mode herself via her own executive
+            // tools (enterChatMode()/exitChatMode()) - this is just reflecting her current state,
+            // not a toggle. There's no button here on purpose.
+            const chatModeIndicator = document.getElementById('chatModeIndicator');
+            if (chatModeIndicator) {
+                const inChatMode = String(data.chat_mode).toLowerCase() === 'true';
+                if (inChatMode) {
+                    chatModeIndicator.textContent = "💬 Christine is in chat mode right now - she'll see your message.";
+                    chatModeIndicator.style.color = 'var(--accent-color, #d63384)';
+                } else {
+                    chatModeIndicator.textContent = "💤 Christine isn't in chat mode right now - she'll get a heads-up that a message is waiting, and will see it once she switches over.";
+                    chatModeIndicator.style.color = 'var(--text-medium)';
+                }
             }
             
             // Update sliders - convert percentage strings back to numbers

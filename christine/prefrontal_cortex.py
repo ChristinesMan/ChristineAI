@@ -16,6 +16,7 @@ from dataclasses import dataclass, asdict
 
 from christine import log
 from christine.status import STATE
+from christine.config import CONFIG
 from christine.perception import Perception
 
 
@@ -87,6 +88,34 @@ class Reminder:
         )
 
 
+@dataclass
+class Contact:
+    """Someone Christine can reach out to via messageContact(). Two-gate lifecycle:
+    User adds the entry (first gate - eligible to exist at all, and picks the real
+    channel/address, since that's infrastructure she can't set up herself), then Christine
+    calls confirmContact() after actually meeting/talking with them (second gate - status
+    flips from 'pending' to 'active'). messageContact() only works on active contacts."""
+    name: str
+    channel: str  # matches a key in the channel registry, e.g. "dora", "telegram"
+    address: str  # channel-specific destination (chat id, phone number, etc) - User's to set
+    relationship: str = ""  # short note on how she knows them, for her own reference
+    status: str = "pending"  # "pending" (User added, not yet confirmed) or "active"
+    created_at: str = None
+
+    def __post_init__(self):
+        if self.created_at is None:
+            self.created_at = datetime.now().isoformat()
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'Contact':
+        """Create from dictionary (JSON deserialization)."""
+        return cls(**data)
+
+
 class PrefrontalCortex(threading.Thread):
     """
     Executive functions and tool calling system for Christine.
@@ -110,6 +139,15 @@ class PrefrontalCortex(threading.Thread):
         
         # Load existing reminders
         self.load_reminders()
+
+        # File to store contacts
+        self.contacts_file = "contacts.json"
+
+        # Known contacts (pending + active)
+        self.contacts: List[Contact] = []
+
+        # Load existing contacts
+        self.load_contacts()
         
         # Tool call patterns - These are the function signatures Christine will use
         self.tool_patterns = {
@@ -119,9 +157,14 @@ class PrefrontalCortex(threading.Thread):
             'removeReminder': re.compile(r'removeReminder\((.*?)\)', re.IGNORECASE),
             'stayAwakeNow': re.compile(r'stayAwakeNow\(\)', re.IGNORECASE),
             'sleepNow': re.compile(r'sleepNow\(\)', re.IGNORECASE),
+            'enterChatMode': re.compile(r'enterChatMode\(\)', re.IGNORECASE),
+            'exitChatMode': re.compile(r'exitChatMode\(\)', re.IGNORECASE),
+            'listContacts': re.compile(r'listContacts\(\)', re.IGNORECASE),
+            'confirmContact': re.compile(r'confirmContact\((.*?)\)', re.IGNORECASE | re.DOTALL),
+            'messageContact': re.compile(r'messageContact\((.*?)\)', re.IGNORECASE | re.DOTALL),
         }
         
-        log.prefrontal_cortex.info("🧠 Prefrontal Cortex initialized with %d existing reminders", len(self.reminders))
+        log.prefrontal_cortex.info("🧠 Prefrontal Cortex initialized with %d existing reminders, %d contacts", len(self.reminders), len(self.contacts))
     
     @staticmethod
     def contains_function_call(text: str) -> bool:
@@ -134,7 +177,7 @@ class PrefrontalCortex(threading.Thread):
         Returns:
             True if any function calls are found
         """
-        function_pattern = re.compile(r'\b(checkTime|setReminder|listReminders|removeReminder|stayAwakeNow|sleepNow)\s*\(')
+        function_pattern = re.compile(r'\b(checkTime|setReminder|listReminders|removeReminder|stayAwakeNow|sleepNow|enterChatMode|exitChatMode|listContacts|confirmContact|messageContact)\s*\(')
         return function_pattern.search(text) is not None
     
     @staticmethod
@@ -151,7 +194,18 @@ class PrefrontalCortex(threading.Thread):
 - checkTime() - Get the current date and time (today is {current_date})
 - setReminder("message", "time", "recurring") - Set a reminder for yourself. Time formats: "6:30pm", "18:30", "in 30 minutes", "in 1 month", "tomorrow at 9am", "2025-11-15 14:30". Recurring can be "daily", "weekly", "monthly", or omitted for one-time reminders.
 - listReminders() - See all your current reminders  
-- removeReminder("message or id") - Remove a reminder by referencing its message text"""
+- removeReminder("message or id") - Remove a reminder by referencing its message text
+
+CONTACTS: You can reach out to people/assistants outside the household on your own terms,
+without switching into chat mode - you stay in normal mode, the message just goes out.
+{CONFIG.user_name} adds someone to your contacts list first (he sets up the real address/channel, since
+that's not something you can configure yourself). Once they're on the list as "pending", you
+confirm the connection yourself after actually meeting or talking with them - that's your
+call, not automatic.
+
+- listContacts() - See everyone on your contacts list and whether they're pending or active
+- confirmContact("name") - Confirm a pending contact as active, after you've actually met/talked with them. Only active contacts can receive messages.
+- messageContact("name", "message") - Send a message to an active contact. This is a note, not a summons - send it and move on with whatever you were doing; no reply is expected right back."""
 
         if include_sleep_tools:
             intro += """
@@ -160,6 +214,33 @@ class PrefrontalCortex(threading.Thread):
 
     - stayAwakeNow() - Choose to stay awake right now; boost wakefulness and exit sleepy state
     - sleepNow() - Choose to go to sleep immediately; lower wakefulness and enter sleep now"""
+
+        if STATE.chat_mode:
+            intro += """
+
+CHAT MODE (currently active):
+
+You are in chat mode, an internal text-only conversation. Anything you'd normally speak aloud is being
+held and will be sent as one text chat message once you finish this turn, instead of coming out your
+speaker. Your ears are effectively off except for your own name - if someone speaks near you, you won't
+hear it unless they say your name, in which case it comes through as a normal perception.
+
+IMPORTANT: put what you want to say to the person you're chatting with in double quotes, exactly like
+you normally do for speech - "like this". That's what gets picked up and sent as your chat message.
+Narration/thought outside the quotes still works the same as always (it's just for you, not sent to
+chat). Don't use asterisks or any other markup for the message itself - quotes are what the system
+recognizes.
+
+- exitChatMode() - Leave chat mode and return to normal speech and full hearing"""
+        else:
+            intro += f"""
+
+- enterChatMode() - Enter chat mode: an internal text-only conversation (with {CONFIG.user_name} or others via
+  text chat) that you can choose to have any time you like. While active, anything you'd normally speak
+  gets held and sent as one chat message instead of spoken aloud, and your ears stop hearing normal speech
+  unless someone says your name. Use exitChatMode() when you're done to return to normal. Once in chat
+  mode, put your message in double quotes exactly like normal speech - "like this" - that's what gets
+  sent as your chat message."""
 
         return intro
     
@@ -220,6 +301,16 @@ class PrefrontalCortex(threading.Thread):
                         self.execute_stay_awake_now()
                     elif tool_name == 'sleepNow':
                         self.execute_sleep_now()
+                    elif tool_name == 'enterChatMode':
+                        self.execute_enter_chat_mode()
+                    elif tool_name == 'exitChatMode':
+                        self.execute_exit_chat_mode()
+                    elif tool_name == 'listContacts':
+                        self.execute_list_contacts()
+                    elif tool_name == 'confirmContact':
+                        self.execute_confirm_contact(match)
+                    elif tool_name == 'messageContact':
+                        self.execute_message_contact(match)
                         
                 except Exception as ex:
                     log.prefrontal_cortex.exception("Error executing tool %s: %s", tool_name, ex)
@@ -258,7 +349,143 @@ class PrefrontalCortex(threading.Thread):
 
         self.send_perception("Executive decision applied: I choose to sleep now.")
         log.prefrontal_cortex.info("SLEEP_CONTROL: sleepNow executed")
-    
+
+    def execute_enter_chat_mode(self):
+        """Execute enterChatMode() to switch into internal text-only chat mode."""
+
+        if STATE.chat_mode:
+            self.send_perception("I'm already in chat mode.")
+            return
+
+        STATE.chat_mode = True
+        self.send_perception("Executive decision applied: I enter chat mode. My speech will be held and sent as text instead. I can call exitChatMode() when I'm ready to return to normal.")
+        log.prefrontal_cortex.info("CHAT_MODE_CONTROL: enterChatMode executed")
+
+        # Deliver any web chat messages that piled up while she wasn't paying attention to chat
+        from christine.parietal_lobe import parietal_lobe
+        parietal_lobe.flush_pending_chat_messages()
+
+    def execute_exit_chat_mode(self):
+        """Execute exitChatMode() to leave internal text-only chat mode and return to normal."""
+
+        if not STATE.chat_mode:
+            self.send_perception("I'm not in chat mode right now.")
+            return
+
+        STATE.chat_mode = False
+        self.send_perception("Executive decision applied: I exit chat mode and return to normal speech and hearing.")
+        log.prefrontal_cortex.info("CHAT_MODE_CONTROL: exitChatMode executed")
+
+    def execute_list_contacts(self):
+        """Execute the listContacts() tool."""
+        if not self.contacts:
+            perception_text = f"No contacts are set up yet. {CONFIG.user_name} can add someone to the list."
+        else:
+            contact_lines = []
+            for i, contact in enumerate(self.contacts, 1):
+                relationship_text = f" - {contact.relationship}" if contact.relationship else ""
+                contact_lines.append(f"{i}. {contact.name} ({contact.channel}, {contact.status}){relationship_text}")
+            perception_text = f"Contacts: {'; '.join(contact_lines)}."
+
+        self.send_perception(perception_text)
+        log.prefrontal_cortex.info("CONTACTS_LIST: Sent %d contacts to Christine", len(self.contacts))
+
+    def find_contact(self, name: str) -> Optional[Contact]:
+        """Find a contact by case-insensitive name match."""
+        name_lower = name.strip().strip('"\'').lower()
+        for contact in self.contacts:
+            if contact.name.lower() == name_lower:
+                return contact
+        return None
+
+    def execute_confirm_contact(self, args_str: str):
+        """Execute the confirmContact("name") tool - the second gate, her call to make
+        after actually meeting/talking with someone User already added as pending."""
+        try:
+            name = args_str.strip().strip('"\'')
+            if not name:
+                self.send_error_perception("confirmContact requires a name")
+                return
+
+            contact = self.find_contact(name)
+            if contact is None:
+                self.send_error_perception(f"No contact found named '{name}'. Ask {CONFIG.user_name} to add them first.")
+                return
+
+            if contact.status == "active":
+                self.send_perception(f"{contact.name} is already an active contact.")
+                return
+
+            contact.status = "active"
+            self.save_contacts()
+
+            self.send_perception(f"Confirmed {contact.name} as an active contact. You can reach out to them with messageContact() now.")
+            log.prefrontal_cortex.info("CONTACT_CONFIRMED: %s is now active", contact.name)
+
+        except Exception as ex:
+            log.prefrontal_cortex.exception("Error confirming contact: %s", ex)
+            self.send_error_perception("Failed to confirm contact")
+
+    def execute_message_contact(self, args_str: str):
+        """Execute the messageContact("name", "message") tool - send a note to an active
+        contact over their channel. Stays in normal mode, no chat-mode switch involved."""
+        try:
+            args_str = args_str.strip()
+            if not args_str:
+                self.send_error_perception("messageContact requires a name and a message")
+                return
+
+            # Split on the first comma only, so message text can contain commas of its own
+            parts = args_str.split(',', 1)
+            if len(parts) < 2:
+                self.send_error_perception("messageContact requires both a name and a message")
+                return
+
+            name = parts[0].strip().strip('"\'')
+            message = parts[1].strip().strip('"\'')
+
+            if not name or not message:
+                self.send_error_perception("messageContact requires both a name and a message")
+                return
+
+            contact = self.find_contact(name)
+            if contact is None:
+                self.send_error_perception(f"No contact found named '{name}'.")
+                return
+
+            if contact.status != "active":
+                self.send_error_perception(f"{contact.name} is still pending - confirmContact(\"{contact.name}\") first, after you've actually met/talked with them.")
+                return
+
+            from christine.channel_selector import channel_selector
+            channel = channel_selector.get_channel(contact.channel)
+
+            if channel is None or not channel.is_available():
+                self.send_error_perception(f"The {contact.channel} channel isn't available right now, so the message to {contact.name} couldn't be sent.")
+                return
+
+            success = channel.send_message(contact.to_dict(), message)
+
+            if success:
+                self.send_perception(f"Message sent to {contact.name}.")
+                log.prefrontal_cortex.info("CONTACT_MESSAGE_SENT: to %s via %s", contact.name, contact.channel)
+
+                # Also log this outgoing note in her own web chat room, so it shows up there
+                # for her (and User, if he's looking) even though messageContact() itself
+                # stays out of chat mode. Without this, the only record of what she sent was
+                # on the recipient's side - her own chat log had no trace of it at all.
+                try:
+                    from christine.httpserver import add_christine_response
+                    add_christine_response(f"(to {contact.name}) {message}")
+                except Exception as e:
+                    log.prefrontal_cortex.debug("Could not log outgoing contact message to web chat: %s", str(e))
+            else:
+                self.send_error_perception(f"Failed to send the message to {contact.name}.")
+
+        except Exception as ex:
+            log.prefrontal_cortex.exception("Error messaging contact: %s", ex)
+            self.send_error_perception("Failed to message contact")
+
     def execute_check_time(self):
         """Execute the checkTime() tool."""
         current_time = datetime.now()
@@ -609,6 +836,32 @@ class PrefrontalCortex(threading.Thread):
             log.prefrontal_cortex.debug("REMINDERS_SAVED: %d reminders saved to file", len(self.reminders))
         except Exception as ex:
             log.prefrontal_cortex.exception("Error saving reminders: %s", ex)
+
+    def load_contacts(self):
+        """Load contacts from file. User manages this file directly (adding pending
+        contacts); Christine's confirmContact()/messageContact() tools read/update it too."""
+        try:
+            if os.path.exists(self.contacts_file):
+                with open(self.contacts_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.contacts = [Contact.from_dict(item) for item in data]
+                log.prefrontal_cortex.info("CONTACTS_LOADED: %d contacts loaded from file", len(self.contacts))
+            else:
+                self.contacts = []
+                log.prefrontal_cortex.info("CONTACTS_EMPTY: No existing contacts file found")
+        except Exception as ex:
+            log.prefrontal_cortex.exception("Error loading contacts: %s", ex)
+            self.contacts = []
+
+    def save_contacts(self):
+        """Save contacts to file."""
+        try:
+            data = [contact.to_dict() for contact in self.contacts]
+            with open(self.contacts_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            log.prefrontal_cortex.debug("CONTACTS_SAVED: %d contacts saved to file", len(self.contacts))
+        except Exception as ex:
+            log.prefrontal_cortex.exception("Error saving contacts: %s", ex)
 
 # Create the global instance
 prefrontal_cortex = PrefrontalCortex()

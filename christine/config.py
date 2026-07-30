@@ -89,6 +89,16 @@ class Config:
 
         self.http_security_token = os.getenv('CHRISTINE_HTTP_SECURITY_TOKEN', 'christine_lovely_2025')
 
+        # Outbound communication channels - contacting people/assistants outside the household
+        # (messageContact() executive tool). Not interchangeable like LLM/STT/TTS, so no
+        # failover/current-pointer config here, just which ones are turned on.
+        self.enabled_channels = self._parse_service_list(os.getenv('CHRISTINE_ENABLED_CHANNELS', ''))
+
+        # Dora channel (christine/channel/dora.py) - one-way notes to the OpenClaw assistant
+        # via its Gateway hooks endpoint.
+        self.dora_hook_url = os.getenv('CHRISTINE_DORA_HOOK_URL', 'https://dora-openclaw.lan')
+        self.dora_hook_token = os.getenv('CHRISTINE_DORA_HOOK_TOKEN', '')
+
     def _parse_service_list(self, service_string: str) -> List[str]:
         """Parse comma-separated list of enabled services (LLMs, STTs, TTSs)."""
         if not service_string.strip():
@@ -97,6 +107,9 @@ class Config:
     
     def _validate_config(self):
         """Validate that all required configuration is present and valid."""
+        if os.getenv('CHRISTINE_SKIP_CONFIG_VALIDATION', '').lower() == 'true':
+            return
+
         errors = []
         
         # Required core services
@@ -137,6 +150,11 @@ class Config:
         for tts in self.enabled_ttss:
             if tts == 'broca_server' and not self.broca_server:
                 errors.append("CHRISTINE_BROCA_SERVER is required when broca_server TTS is enabled")
+
+        # Validate that enabled channels have required configuration
+        for channel in self.enabled_channels:
+            if channel == 'dora' and not self.dora_hook_token:
+                errors.append("CHRISTINE_DORA_HOOK_TOKEN is required when dora channel is enabled")
         
         # Validate VAD setting
         if self.wernicke_vad not in ['pvcobra', 'webrtcvad']:

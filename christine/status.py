@@ -131,6 +131,14 @@ class Status(threading.Thread):
         # Perfect for work meetings when you want to chat but she shouldn't make noise
         self.silent_mode = False
 
+        # Chat mode - an executive choice Christine makes herself (enterChatMode()/exitChatMode() tools).
+        # While active, anything she'd normally speak gets queued and sent to web chat as one message
+        # instead of going out her speaker, and spoken audio input is ignored unless her name is heard.
+        # Persisted across restarts (see persisted_vars below) - if her script gets restarted while she's
+        # mid-conversation in chat mode, she should come back up still in chat mode rather than silently
+        # reverting to normal mode and confusing whoever she was chatting with.
+        self.chat_mode = False
+
         # I want to run midnight tasks, like moving memory around, only once per night
         # so this is here to coordinate that activity
         # records the exact time the task was done so that we can't double it up
@@ -251,6 +259,7 @@ class Status(threading.Thread):
             'breath_intensity': 'f',     # Breathing sound intensity
             'matched_proper_names': 'l', # List of proper names matched today (JSON stored)
             'sleep_schedule_profile': 'l', # Adaptive wakefulness schedule profile by hour
+            'chat_mode': 'b', # Whether she's in chat mode, so a script restart doesn't silently kick her out
         }
         
         # Define user-configurable settings (only saved when user changes them)
@@ -667,6 +676,7 @@ class Status(threading.Thread):
             "wernicke_sleeping": str(self.wernicke_sleeping),
             "perceptions_blocked": str(self.perceptions_blocked),
             "silent_mode": str(self.silent_mode),
+            "chat_mode": str(self.chat_mode),
             "gyro_available": str(self.gyro_available),
             "vagina_available": str(self.vagina_available),
             "pause_question": str(self.pause_question),

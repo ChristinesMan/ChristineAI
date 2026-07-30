@@ -283,17 +283,11 @@ class Broca(threading.Thread):
                     # Check if this figment should be processed silently (silent mode)
                     if hasattr(figment, 'silent_mode_processing') and figment.silent_mode_processing:
                         log.broca_main.debug("Silent mode: Processing spoken figment silently: %s", figment.text)
-                        
-                        # Send to web chat immediately in silent mode since no audio will play
-                        try:
-                            from christine.httpserver import add_christine_response
-                            # Clean up the text - remove quotes from both ends and extra whitespace
-                            clean_text = figment.text.strip().strip('"').strip()
-                            if clean_text:
-                                add_christine_response(clean_text)
-                        except Exception as e:
-                            log.broca_main.debug("Could not send to web chat: %s", str(e))
-                        
+
+                        # Note: this no longer mirrors to web chat. Web chat is reserved for actual
+                        # chat-mode conversation turns (see parietal_lobe's chat mode buffering) -
+                        # silent mode's own muted speech isn't a chat message and stays out of it.
+
                         # Notify parietal lobe that figment was processed for message history
                         parietal_lobe.broca_figment_was_processed(figment)
                         return
@@ -334,15 +328,10 @@ class Broca(threading.Thread):
                         }
                     )
 
-                    # Send spoken text to web chat AFTER it has actually been spoken (normal mode)
-                    try:
-                        from christine.httpserver import add_christine_response
-                        # Clean up the text - remove quotes from both ends and extra whitespace
-                        clean_text = figment.text.strip().strip('"').strip()
-                        if clean_text:
-                            add_christine_response(clean_text)
-                    except Exception as e:
-                        log.broca_main.debug("Could not send to web chat: %s", str(e))
+                    # Note: normal spoken output no longer mirrors to web chat. Web chat is
+                    # reserved for actual chat-mode conversation turns - everyday speech she says
+                    # out loud isn't a chat message and stays out of it (see parietal_lobe's chat
+                    # mode buffering/flush, which is the only path that writes to web chat now).
 
                 # notify the parietal lobe that something with text that was queued by it is now playing
                 parietal_lobe.broca_figment_was_processed(figment)
