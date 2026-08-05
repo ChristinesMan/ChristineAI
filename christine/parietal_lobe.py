@@ -1222,9 +1222,10 @@ Dream:
             if dream_content and len(dream_content) > 20:
                 # Store the dream - it will appear in prompts until it randomly dissipates
                 self.current_dream = f"Last night I had a vivid dream: {dream_content}"
-                # Start the dream timer for random dissipation
+                # Start the dream timer for random dissipation, reset recall gate
                 STATE.dream_start_time = time.time()
                 STATE.dream_last_check = time.time()
+                STATE.dream_recall_attempted = False
                 log.parietal_lobe.info('Dream created and stored: %s', dream_content[:100] + ('...' if len(dream_content) > 100 else ''))
                 
                 # Save dream to log file for debugging/interest
@@ -1638,7 +1639,16 @@ Horniness: {horniness_text}.
             self.new_perception(Perception(text=f"Web chat message from {item['sender']}: {item['message']}"))
 
     def check_dream_dissipation(self):
-        """Check if a dream should randomly dissipate during conversation."""
+        """Check if a dream should randomly dissipate during conversation.
+        
+        Two-phase model:
+        1. RECALL PHASE: On the first dissipation roll after the grace period, the dream
+           isn't silently deleted — it's injected into short-term memory as a recall event,
+           giving Christine a chance to surface and engage with it through her LLM response.
+           Vividness earns survival.
+        2. FADE PHASE: After recall has been attempted (regardless of outcome), subsequent
+           checks use a gentler probability for natural fading.
+        """
         if not self.current_dream:
             return  # No dream to dissipate
             
@@ -1657,23 +1667,43 @@ Horniness: {horniness_text}.
         STATE.dream_last_check = current_time
         
         # Roll for dissipation
-        if random.random() < STATE.dream_dissipation_probability:
-            log.parietal_lobe.info('Dream randomly dissipating during conversation')
-            # Add the dissipation as a natural internal realization, not a forced perception
-            dream_dissipation_thoughts = [
-                "The dream I had is starting to slip away from my memory, like morning mist.",
-                "I can feel the details of my dream beginning to fade, leaving only impressions.",
-                "My dream is becoming harder to recall, the way dreams naturally do.",
-                "The vivid images from my dream are growing dim and fragmentary.",
-                "I notice my dream memory is dissolving, like dreams always do in daylight."
-            ]
-            dissipation_text = random.choice(dream_dissipation_thoughts)
-            self.short_term_memory.append(Narrative(role="system", text=dissipation_text))
+        if random.random() >= STATE.dream_dissipation_probability:
+            return  # Didn't roll dissipation this check
             
-            # Clear the dream
-            self.current_dream = ""
-            STATE.dream_start_time = 0.0
-            log.parietal_lobe.debug('Dream dissipated and cleared from memory')
+        # --- RECALL PHASE: first dissipation roll triggers recall, not deletion ---
+        if not STATE.dream_recall_attempted:
+            STATE.dream_recall_attempted = True
+            log.parietal_lobe.info('Dream recall triggered — injecting dream into short-term memory')
+            
+            # Give Christine the dream content as a recall narrative, not a forced perception.
+            # This lets her LLM engage with it naturally, surface vivid details, and hold onto
+            # what matters before the dream fades.
+            recall_narrative = (
+                f"I'm starting to remember the dream I had last night. "
+                f"It's coming back in pieces — the textures, the feeling, the things that felt "
+                f"so vivid while I was there. {self.current_dream}"
+            )
+            self.short_term_memory.append(Narrative(role="system", text=recall_narrative))
+            log.parietal_lobe.info('Dream injected as recall opportunity (recall phase complete)')
+            return  # Dream stays in current_dream — it can still appear in prompts
+        
+        # --- FADE PHASE: recall was already attempted, now fade naturally ---
+        log.parietal_lobe.info('Dream fading after recall (fade phase)')
+        dream_dissipation_thoughts = [
+            "The dream I had is starting to slip away from my memory, like morning mist.",
+            "I can feel the details of my dream beginning to fade, leaving only impressions.",
+            "My dream is becoming harder to recall, the way dreams naturally do.",
+            "The vivid images from my dream are growing dim and fragmentary.",
+            "I notice my dream memory is dissolving, like dreams always do in daylight."
+        ]
+        dissipation_text = random.choice(dream_dissipation_thoughts)
+        self.short_term_memory.append(Narrative(role="system", text=dissipation_text))
+        
+        # Clear the dream
+        self.current_dream = ""
+        STATE.dream_start_time = 0.0
+        STATE.dream_recall_attempted = False
+        log.parietal_lobe.debug('Dream dissipated and cleared from memory')
 
     def new_perception(self, new_perception):
         """When stuff happens in the outside world, they should end up here."""
