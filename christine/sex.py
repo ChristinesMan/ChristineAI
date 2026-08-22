@@ -143,6 +143,9 @@ class Sex(threading.Thread):
                     self.after_orgasm_cooldown_count = 0
                     self.im_gonna_cum_was_said = False
 
+                    # stop the continuous sex soundtrack so wife goes back to just breathing
+                    broca.stop_sex_engine()
+
                 # if wife is currently OOOOOO'ing,
                 # then I want to figure out when we're done, using the gyro
                 # and handle rest periods
@@ -175,6 +178,10 @@ class Sex(threading.Thread):
                     if self.after_orgasm_cooldown_count == 1:
                         log.sex.info("After orgasm rest")
                         parietal_lobe.sex_after_orgasm_rest()
+
+                        # the soundtrack ends here - cuddling should be quiet, and with
+                        # shush_fucking already False she gets normal speech back with pauses
+                        broca.stop_sex_engine()
 
                     # if we're resting and the gyro starts to feel it, start again
                     # When after_orgasm_rest is True, we are ignoring vagina action
@@ -281,8 +288,10 @@ class Sex(threading.Thread):
             elif STATE.sexual_arousal > STATE.sex_arousal_near_orgasm and self.im_gonna_cum_was_said is False:
 
                 # this should happen only one time per fuck cycle
-                # Near-orgasm sounds still use figments for proper queuing with speech
-                broca.accept_figment(Figment(from_collection="sex_near_O"))
+                # Play it directly rather than via a figment. As a figment it was competing
+                # with the soundtrack in the queue and could get thrown away by the throttle,
+                # which is how the one and only "I'm gonna cum" sometimes never arrived.
+                broca.play_sex_sound_immediate("sex_near_O", None)
                 self.im_gonna_cum_was_said = True
 
             else:
@@ -291,7 +300,9 @@ class Sex(threading.Thread):
                 intensity = self.calculate_sex_sound_intensity()
                 broca.play_sex_sound_immediate("sex", intensity)
 
-                # Configurable chance of LLM speech vs regular sex sounds
+                # Configurable chance of LLM speech vs regular sex sounds.
+                # With the sex engine keeping a continuous soundtrack, her talking no longer
+                # costs a silent gap, so this can be turned up without hurting the mood.
                 if random.random() > (1.0 - STATE.sex_llm_speech_chance):
 
                     log.sex.info('Allowing LLM to speak.')

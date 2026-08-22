@@ -71,6 +71,24 @@ class Broca(threading.Thread):
         self.pending_sex_sound = None
         self.pending_sex_sound_lock = threading.Lock()
 
+        # --- sex mode continuous sound engine ---
+        # During active sex (STATE.shush_fucking), sex sounds stop being interruptible
+        # one-offs that get suppressed the moment anything lands in the figment queue.
+        # Instead Broca keeps a continuous stream of sex sounds going, and slips speech
+        # in among them only once the TTS audio is actually ready. Nothing ever blocks
+        # the stream waiting on the LLM or on TTS, so wife talking during sex no longer
+        # punches a hole of silence in the soundtrack.
+        self.sex_engine_collection = 'sex'
+        self.sex_engine_intensity = None
+        self.sex_engine_last_activity = 0.0
+        self.sex_engine_lock = threading.Lock()
+
+        # safety valve: if a spoken figment sits at the head of the queue unready for this
+        # long, dispatch it anyway rather than letting the soundtrack starve it forever.
+        # Covers the edge case of a TTS request lost to a generation flush race.
+        self.sex_engine_speech_wait_started = 0.0
+        self.sex_engine_speech_wait_max = 20.0
+
         # setup the separate process with pipe that we're going to be fucking
         # lol I put the most insane things in code omg, but this will help keep it straight!
         # The enterprise sent out a shuttlecraft with Data at the helm.
@@ -192,8 +210,15 @@ class Broca(threading.Thread):
                         # this user_is_speaking flag is set by the wernicke when it's time to shut up
                         if STATE.user_is_speaking is False:
 
+                            # SEX MODE: while the sex engine is running, the soundtrack takes
+                            # priority over blocking on the figment queue. Ready figments get
+                            # slipped in between sounds; unready ones (TTS still cooking) wait
+                            # while sex sounds keep playing instead of dead air.
+                            if STATE.shush_fucking is True and self.sex_engine_is_active():
+                                self.play_next_sex_mode_item()
+
                             # if there's something in the queue, play it
-                            if self.figment_queue.qsize() > 0:
+                            elif self.figment_queue.qsize() > 0:
                                 self.play_next_figment()
                             else:
                                 self.play_pending_sex_sound_if_any()
@@ -234,7 +259,10 @@ class Broca(threading.Thread):
             elif figment.from_collection is not None:
 
                 # smarter sex sound management: prevent rapid-fire sex sounds by using timing
-                if "sex" in figment.from_collection:
+                # During sex mode the engine drives playback from the idle loop, which is already
+                # strictly sequential - throttling there would just drop sounds (including the
+                # one-shot sex_near_O) and reopen gaps, so the throttle is skipped.
+                if "sex" in figment.from_collection and not STATE.shush_fucking:
                     current_time = time.time()
                     
                     # only allow one sex sound every 2 seconds to prevent pileup
@@ -382,7 +410,11 @@ class Broca(threading.Thread):
         log.broca_main.debug("Queued: %s", figment)
 
         # if the text is spoken and ends with certain punctuation, a pause is inserted after to allow time for interruption.
-        if figment.should_speak is True and not STATE.silent_mode:
+        # EXCEPT during sex: a pause figment is literal silence in the shuttlecraft, and 1.5s-4.5s
+        # of nothing right after she speaks is exactly the hole we're trying to close. During sex
+        # the sex engine fills that space with sounds instead, which also gives just as much room
+        # for interruption.
+        if figment.should_speak is True and not STATE.silent_mode and not STATE.shush_fucking:
 
             if self.re_question.search(figment.text):
                 self.figment_queue.put_nowait(Figment(pause_duration=STATE.pause_question))
@@ -727,13 +759,164 @@ class Broca(threading.Thread):
                     # set cycles_to_breathe to a random number of seconds between 0.5 and 1.5 for the next time
                     seconds_to_breathe = 0.5 + random.random()
 
-    def _store_pending_sex_sound(self, collection_name: str, intensity: float = None):
+    def sex_engine_is_active(self):
+        """True while we're recently enough into active sex that Broca should keep a
+        continuous sex soundtrack running instead of falling silent between figments."""
+
+        with self.sex_engine_lock:
+            last_activity = self.sex_engine_last_activity
+
+        if last_activity == 0.0:
+            return False
+
+        timeout = getattr(STATE, 'sex_engine_idle_timeout', 8.0)
+        return (time.time() - last_activity) < timeout
+
+    def note_sex_activity(self, collection_name: str, intensity=None):
+        """Record that sex is happening, and what the soundtrack should sound like right now.
+        This does not play anything itself - the idle loop pulls from here."""
+
+        with self.sex_engine_lock:
+            self.sex_engine_collection = collection_name
+            self.sex_engine_intensity = intensity
+            self.sex_engine_last_activity = time.time()
+
+    def stop_sex_engine(self):
+        """Shut the continuous sex soundtrack off. Called when sex ends or rest begins,
+        so wife drops back to normal breathing instead of moaning at the ceiling."""
+
+        with self.sex_engine_lock:
+            if self.sex_engine_last_activity == 0.0:
+                return
+            self.sex_engine_last_activity = 0.0
+            self.sex_engine_intensity = None
+            self.sex_engine_collection = 'sex'
+
+        self.sex_engine_speech_wait_started = 0.0
+
+        with self.pending_sex_sound_lock:
+            self.pending_sex_sound = None
+
+        log.broca_main.info('Sex engine stopped')
+
+    def _sex_mode_queue_head_ready(self):
+        """Peek the figment queue and decide whether the next item can play RIGHT NOW
+        without stalling the soundtrack.
+
+        The whole point: a spoken figment whose TTS wav isn't back yet must not be
+        dispatched, because play_next_figment() would sit there sleeping in 0.2s
+        increments and the speaker would go dead. Same for the inhalation figment that
+        gets queued immediately before speech - playing that early would strand a lonely
+        gasp in the middle of the moaning."""
+
+        queue_snapshot = self.figment_queue.queue
+
+        if len(queue_snapshot) == 0:
+            return False
+
+        def speech_is_ready(figment: Figment):
+            if getattr(figment, 'silent_mode_processing', False):
+                return True
+            return figment.wav_file is not None
+
+        def waited_too_long():
+            """Safety valve. If speech has been stuck unready at the head of the queue for
+            too long, let it through so a lost TTS request can't strand it permanently."""
+            if self.sex_engine_speech_wait_started == 0.0:
+                self.sex_engine_speech_wait_started = time.time()
+                return False
+            if (time.time() - self.sex_engine_speech_wait_started) > self.sex_engine_speech_wait_max:
+                log.broca_main.warning(
+                    'Sex engine: speech figment unready for over %.0fs, dispatching anyway',
+                    self.sex_engine_speech_wait_max)
+                self.sex_engine_speech_wait_started = 0.0
+                return True
+            return False
+
+        head: Figment = queue_snapshot[0]
+
+        # a spoken figment is only ready once its audio exists
+        if head.should_speak is True and head.text is not None:
+            if speech_is_ready(head):
+                self.sex_engine_speech_wait_started = 0.0
+                return True
+            return waited_too_long()
+
+        # the inhalation that precedes speech waits on that speech
+        if head.from_collection == 'inhalation' and len(queue_snapshot) > 1:
+            next_figment: Figment = queue_snapshot[1]
+            if next_figment.should_speak is True and next_figment.text is not None:
+                if speech_is_ready(next_figment):
+                    self.sex_engine_speech_wait_started = 0.0
+                    return True
+                return waited_too_long()
+
+        # pauses, sounds and silent thoughts are always ready
+        self.sex_engine_speech_wait_started = 0.0
+        return True
+
+    def play_next_sex_mode_item(self):
+        """Sex mode dispatcher. Either slip a ready figment in among the sounds,
+        or play another sex sound so there is never a hole in the soundtrack."""
+
+        if self._sex_mode_queue_head_ready():
+            self.play_next_figment()
+            return
+
+        self._play_sex_engine_sound()
+
+    def _play_sex_engine_sound(self):
+        """Play one sound from the current sex collection. Called from the idle loop only,
+        so playback is naturally sequential - no throttle needed beyond an optional gap."""
+
+        if self.to_shuttlecraft is None:
+            return
+
+        with self.sex_engine_lock:
+            collection_name = self.sex_engine_collection
+            intensity = self.sex_engine_intensity
+
+        min_gap = getattr(STATE, 'sex_engine_min_gap', 0.0)
+        if min_gap > 0.0 and (time.time() - self.last_sex_sound_time) < min_gap:
+            return
+
+        sound = sounds_db.get_random_sound(collection_name=collection_name, intensity=intensity)
+
+        # fall back to the generic sex collection if the specific one came up dry
+        if sound is None and collection_name != 'sex':
+            sound = sounds_db.get_random_sound(collection_name='sex', intensity=intensity)
+
+        # last resort: any intensity at all rather than silence
+        if sound is None:
+            sound = sounds_db.get_random_sound(collection_name='sex')
+
+        if sound is None:
+            log.broca_main.warning('Sex engine found no playable sound in collection %s', collection_name)
+            return
+
+        if not os.path.isfile(sound.file_path):
+            log.broca_main.warning('Sex engine sound file %s does not exist', sound.file_path)
+            return
+
+        log.broca_main.debug('Sex engine playing %s (collection=%s intensity=%s)',
+                             sound.file_path, collection_name, intensity)
+
+        self.to_shuttlecraft.send({
+            "action": "playwav",
+            "wavfile": sound.file_path,
+            "vol": 100,
+            "pause_wernicke": sound.pause_wernicke if sound.pause_wernicke else False,
+        })
+
+        self.last_sex_sound_time = time.time()
+
+    def _store_pending_sex_sound(self, collection_name: str, intensity=None):
         """Store the latest sex sound to play once Broca is idle."""
         with self.pending_sex_sound_lock:
             self.pending_sex_sound = (collection_name, intensity)
         log.broca_main.debug("Deferred sex sound while busy: %s", collection_name)
 
-    def _play_sex_sound_direct(self, collection_name: str, intensity: float = None):
+    def _play_sex_sound_direct(self, collection_name: str, intensity=None):
         """Try to play a sex sound immediately via shuttlecraft. Returns True if played."""
         if self.to_shuttlecraft is None:
             return False
@@ -781,10 +964,21 @@ class Broca(threading.Thread):
                 if self.pending_sex_sound == pending:
                     self.pending_sex_sound = None
 
-    def play_sex_sound_immediate(self, collection_name: str, intensity: float = None):
+    def play_sex_sound_immediate(self, collection_name: str, intensity=None):
         """
         Play a sex sound immediately if possible; if Broca is busy, defer the latest one.
         """
+        # Always tell the sex engine what's going on, so it knows the current collection
+        # and intensity and knows sex is still happening.
+        self.note_sex_activity(collection_name, intensity)
+
+        # SEX MODE: the idle loop owns the soundtrack now. Don't fire a sound from this
+        # thread - that's what used to get suppressed the instant a speech figment landed
+        # in the queue, producing the silence. The idle loop will pick this up within a
+        # quarter second and keep going continuously.
+        if STATE.shush_fucking is True:
+            return
+
         # If Broca is busy with queued playback or user is speaking, keep latest deferred sex sound.
         if self.figment_queue.qsize() > 0 or STATE.user_is_speaking is True:
             self._store_pending_sex_sound(collection_name, intensity)

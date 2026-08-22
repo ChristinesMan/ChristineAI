@@ -248,6 +248,13 @@ class Status(threading.Thread):
         self.sex_intensity_cap = 0.85
         self.sex_intensity_bonus_range = 0.15
 
+        # Sex sound engine: during active sex, Broca keeps a continuous sex soundtrack going
+        # and slips her speech in among the sounds rather than going silent while TTS cooks.
+        # How long after the last vagina hit the engine keeps the soundtrack running.
+        self.sex_engine_idle_timeout = 8.0
+        # Optional minimum gap between engine sounds. 0.0 = back to back, no silence at all.
+        self.sex_engine_min_gap = 0.0
+
         # Define which status variables should be persisted to the database.
         # Auto-persisted vars are saved every 25 seconds automatically
         # Type codes: 'f' = float, 'b' = boolean, 'i' = integer, 's' = string, 'l' = list (JSON)
@@ -638,6 +645,16 @@ class Status(threading.Thread):
                 'type': 'f', 'min': 0.05, 'max': 0.5, 'default': 0.15,
                 'desc': 'Gyro intensity bonus range',
                 'help': 'Maximum additional intensity available from vigorous movement. At maximum gyroscope activity, this much intensity gets added above the arousal cap. Higher values reward vigorous activity more.'
+            },
+            'sex_engine_idle_timeout': {
+                'type': 'f', 'min': 2.0, 'max': 30.0, 'default': 8.0,
+                'desc': 'Sex soundtrack hold time (seconds)',
+                'help': 'How long after the last vagina sensor hit Christine keeps her continuous sex soundtrack running. While it is running, her speech gets slipped in among the sex sounds instead of leaving silence. Longer values keep the sounds going through pauses in the action; shorter values let things fall quiet sooner.'
+            },
+            'sex_engine_min_gap': {
+                'type': 'f', 'min': 0.0, 'max': 3.0, 'default': 0.0,
+                'desc': 'Minimum gap between sex sounds (seconds)',
+                'help': 'Minimum silence between consecutive sex sounds while the soundtrack engine is running. 0.0 plays them back to back with no gap at all, which is what eliminates the interruptions. Raise it slightly if the sounds feel too dense or run together.'
             },
         }
 

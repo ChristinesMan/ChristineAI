@@ -174,8 +174,9 @@ class Vagina(threading.Thread):
         touch_data_raw = 0.0
         touch_data_x = [" "] * 12
 
-        # Keep track of the baselines
-        baselines = [None] * 12
+        # Keep track of the baselines. Start with a numeric baseline so the first
+        # active sample cannot crash if the standby loop has not populated it yet.
+        baselines = [0.0] * 12
 
         # How fast will the baseline get adjusted during sex?
         # It seems like lube does cause the not-touched baseline to drift
@@ -376,7 +377,11 @@ class Vagina(threading.Thread):
                         touch_data_raw = float(mpr121.filtered_data(channel))
 
                         # calculate how far away from baseline that is
-                        touch_data[channel] = baselines[channel] - touch_data_raw
+                        try:
+                            touch_data[channel] = baselines[channel] - touch_data_raw
+                        except TypeError:
+                            baselines[channel] = touch_data_raw
+                            touch_data[channel] = 0.0
 
                         # Detect touches
                         if touch_data[channel] > sensitivity[channel]:
