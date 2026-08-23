@@ -1,7 +1,7 @@
 """Base class for outbound communication channels (contacting people outside the household).
 
-Channels are NOT interchangeable like LLM/STT/TTS backends - a message meant for Openclaw
-can't "fail over" to Telegram, it has to reach Openclaw specifically. So unlike api_selector's
+Channels are NOT interchangeable like LLM/STT/TTS backends - a message meant for Dora
+can't "fail over" to Telegram, it has to reach Dora specifically. So unlike api_selector's
 current-pointer + failover pattern, channels are looked up by name from a flat registry
 (see channel_selector.py) and dispatched directly based on which channel a contact uses.
 """

@@ -96,10 +96,8 @@ class Config:
 
         # Dora channel (christine/channel/dora.py) - one-way notes to the Hermes agent
         # via its Gateway webhook endpoint (HMAC-SHA256 signed).
-        self.dora_hook_url = os.getenv('CHRISTINE_DORA_HOOK_URL', 'http://dora.lan:8644/webhooks/christine')
+        self.dora_hook_url = os.getenv('CHRISTINE_DORA_HOOK_URL', 'http://dora.lan:8650/christine')
         self.dora_hook_secret = os.getenv('CHRISTINE_DORA_HOOK_SECRET', '')
-        # Legacy token (OpenClaw era) — still accepted for backward compatibility
-        self.dora_hook_token = os.getenv('CHRISTINE_DORA_HOOK_TOKEN', self.dora_hook_secret)
 
     def _parse_service_list(self, service_string: str) -> List[str]:
         """Parse comma-separated list of enabled services (LLMs, STTs, TTSs)."""

@@ -19,7 +19,7 @@ class ChannelSelector:
     """Holds all enabled outbound channels in a name -> instance registry."""
 
     def __init__(self):
-        # name -> ChannelAPI instance, e.g. {"dora": OpenclawChannel(), "telegram": TelegramChannel()}
+        # name -> ChannelAPI instance, e.g. {"dora": DoraChannel(), "telegram": TelegramChannel()}
         self.channels: dict[str, ChannelAPI] = {}
 
     def find_enabled_channels(self):
