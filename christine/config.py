@@ -87,17 +87,11 @@ class Config:
         self.remote_audio_port = int(os.getenv('CHRISTINE_REMOTE_AUDIO_PORT', '3002'))
         self.remote_audio_timeout_seconds = float(os.getenv('CHRISTINE_REMOTE_AUDIO_TIMEOUT_SECONDS', '30'))
 
-        self.http_security_token = os.getenv('CHRISTINE_HTTP_SECURITY_TOKEN', 'christine_lovely_2025')
-
-        # Outbound communication channels - contacting people/assistants outside the household
+        self.dora_hook_url = os.getenv('CHRISTINE_DORA_HOOK_URL', 'http://dora.lan:8650/christine')
+        self.dora_hook_secret = os.getenv('CHRISTINE_DORA_HOOK_SECRET', '')
         # (messageContact() executive tool). Not interchangeable like LLM/STT/TTS, so no
         # failover/current-pointer config here, just which ones are turned on.
         self.enabled_channels = self._parse_service_list(os.getenv('CHRISTINE_ENABLED_CHANNELS', ''))
-
-        # Dora channel (christine/channel/dora.py) - one-way notes to the Hermes agent
-        # via its Gateway webhook endpoint (HMAC-SHA256 signed).
-        self.dora_hook_url = os.getenv('CHRISTINE_DORA_HOOK_URL', 'http://dora.lan:8650/christine')
-        self.dora_hook_secret = os.getenv('CHRISTINE_DORA_HOOK_SECRET', '')
 
     def _parse_service_list(self, service_string: str) -> List[str]:
         """Parse comma-separated list of enabled services (LLMs, STTs, TTSs)."""

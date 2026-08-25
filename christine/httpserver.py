@@ -8,11 +8,10 @@ import json
 from datetime import datetime
 
 # pylint: disable=missing-function-docstring,no-member
-from bottle import TEMPLATE_PATH, route, run, template, request, debug, response, abort, install
+from bottle import TEMPLATE_PATH, route, run, template, request, debug, response
 
 from christine import log
 from christine.status import STATE
-from christine.config import CONFIG
 from christine.parietal_lobe import parietal_lobe
 
 debug(True)
@@ -30,42 +29,9 @@ chat_messages = []
 # sync. Reset at midnight along with the chat log itself - see clear_chat_messages().
 _recent_chat_participants = set()
 
-# Simple security token
-SECURITY_TOKEN = CONFIG.http_security_token
-
-def auth_middleware(callback):
-    """Simple token-based authentication middleware"""
-    def wrapper(*args, **kwargs):
-        # Get token from URL parameter or form data
-        token = request.query.get('token') or request.forms.get('token')
-        
-        # For API calls, also check for token in POST body (JSON)
-        if not token and request.content_type == 'application/json':
-            try:
-                json_data = request.json
-                if json_data is not None:
-                    token = json_data.get('token')
-            except: #pylint: disable=bare-except
-                pass
-        
-        # Check if token matches
-        if token == SECURITY_TOKEN:
-            return callback(*args, **kwargs)
-        else:
-            log.main.warning("Unauthorized access attempt from %s to %s", 
-                           request.environ.get('REMOTE_ADDR'), request.path)
-            abort(403, "Access denied")
-    
-    return wrapper
-
-# Install the authentication middleware
-install(auth_middleware)
-
 @route("/")
 def index():
-    # Get the token from URL parameter to pass to template
-    token = request.query.get('token', '')
-    return template("index", token=token)
+    return template("index", token="")
 
 @route("/api/status")
 def api_status():
@@ -502,5 +468,5 @@ def add_user_message(message):
 # run the server in a thread
 # don't start the thread; that is done from __main__
 httpserver = threading.Thread(
-    target=run, daemon=True, name="httpserver", kwargs=dict(host="0.0.0.0", port=80)
+    target=run, daemon=True, name="httpserver", kwargs=dict(host="0.0.0.0", port=6942)
 )
