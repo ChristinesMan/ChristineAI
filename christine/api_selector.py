@@ -23,7 +23,7 @@ class APISelector:
     def find_enabled_llms(self):
         """This is called once at startup to populate the list of enabled LLM APIs."""
 
-        # Get the list of enabled LLMs from config (just service names like 'openrouter', 'chub')
+        # Get the list of enabled LLMs from config (just service names like 'openrouter', 'ollama')
         enabled_llm_names = CONFIG.enabled_llms
         
         # for each enabled LLM, try to import and instantiate it
@@ -51,7 +51,7 @@ class APISelector:
     def find_enabled_stts(self):
         """This is called once at startup to populate the list of enabled STT APIs."""
         
-        # Get the list of enabled STTs from config (just service names like 'whisper', 'chub')
+        # Get the list of enabled STTs from config (just service names like 'whisper', 'openrouter')
         enabled_stt_names = CONFIG.enabled_stts
         
         # for each enabled STT, try to import and instantiate it

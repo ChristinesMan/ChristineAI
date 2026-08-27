@@ -159,14 +159,21 @@ Manages multiple LLM providers with failover.
 - **Active APIs**: 
   - OpenRouter - Primary LLM in production use
   - Ollama - Local LLM for testing/development or high-end setups 🦙
-  - Character.AI (Chub) - Secondary option
   - Repeat/Test mode - For development and testing
 - **Features**: Automatic failover, availability checking
 
-#### **LLM Classes** (`llm_*.py`)
-Individual implementations for each AI provider.
-- **Standard Interface**: Audio processing, text generation, memory folding
-- **Customization**: Provider-specific optimizations and workarounds
+#### **LLM Classes** (`llm/*.py`)
+Individual implementations for each AI provider, loaded by name from
+`CHRISTINE_ENABLED_LLMS` and discovered via introspection.
+- **Message-based interface**: `call_api(messages=[...])` where each message is
+  `{role, content, cache}`. Roles are `system` / `user` / `assistant`. The legacy
+  single-string concatenated prompt is gone, along with the deprecated
+  `/completions` endpoint it was built for.
+- **Prompt caching**: the stable system block (identity, self-definition, tools,
+  yesterday, earlier today, sensor snapshot) carries a cache breakpoint, so it's
+  billed at the cheap cache-read rate instead of full price every turn.
+- **One-shot helper**: `LLMAPI.single(content, system=...)` builds the message list
+  for memory folding, dreams, name merges, and recovery replay.
 - **Ollama Support**: Local inference with tiny models for cost-effective testing
 
 ### Infrastructure Systems ⚙️

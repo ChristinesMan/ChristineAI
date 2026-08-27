@@ -1,4 +1,4 @@
-"""This handles the API for OpenRouter"""
+"""This handles the API for OpenRouter, via /chat/completions with prompt caching."""
 import time
 import re
 from requests import post
@@ -20,7 +20,9 @@ class OpenRouter(LLMAPI):
         self.is_available_interval = 60.0
 
         # How to connect to the LLM api. The api key comes from config.ini file
-        self.openrouter_url = 'https://openrouter.ai/api/v1/completions'
+        # The legacy /completions endpoint is deprecated and cannot be prompt-cached,
+        # so everything goes through /chat/completions now.
+        self.openrouter_url = 'https://openrouter.ai/api/v1/chat/completions'
         self.api_key = CONFIG.openrouter_api_key
 
         # check the config for a valid looking api key and if it's not correct-looking set it to None
@@ -34,6 +36,13 @@ class OpenRouter(LLMAPI):
         self.site_url = CONFIG.openrouter_site_url
         self.site_name = CONFIG.openrouter_site_name
 
+        # prompt caching settings
+        self.cache_enabled = CONFIG.openrouter_cache_enabled
+        self.cache_ttl = CONFIG.openrouter_cache_ttl
+
+        # OpenRouter/Anthropic allows a limited number of cache breakpoints per request
+        self.max_cache_breakpoints = 4
+
     def is_available(self):
         """Returns True if the LLM API is available, False otherwise. Assumes that the API is available if the API key is set."""
 
@@ -44,7 +53,26 @@ class OpenRouter(LLMAPI):
         else:
             return True
 
-    def call_api_implementation(self, prompt, stop_sequences = None, max_tokens = 600, temperature = 0.4, top_p = 1.0, expects_json = False):
+    def _build_content(self, message, breakpoints_left):
+        """Build the content field for one message.
+
+        Plain string unless this message is a cache breakpoint, in which case it
+        becomes a single-element content array carrying cache_control. Returns
+        (content, breakpoint_used).
+        """
+
+        text = message['content']
+
+        if not (self.cache_enabled and message.get('cache') and breakpoints_left > 0):
+            return text, False
+
+        cache_control = {'type': 'ephemeral'}
+        if self.cache_ttl:
+            cache_control['ttl'] = self.cache_ttl
+
+        return [{'type': 'text', 'text': text, 'cache_control': cache_control}], True
+
+    def call_api_implementation(self, messages, stop_sequences = None, max_tokens = 600, temperature = 0.4, top_p = 1.0, expects_json = False):
         """This function will call the llm api and return the response."""
 
         headers = {
@@ -58,20 +86,31 @@ class OpenRouter(LLMAPI):
         if self.site_name:
             headers['X-Title'] = self.site_name
 
+        # build the api messages, converting cache flags into cache_control blocks
+        api_messages = []
+        breakpoints_left = self.max_cache_breakpoints
+        for message in messages:
+            content, breakpoint_used = self._build_content(message, breakpoints_left)
+            if breakpoint_used:
+                breakpoints_left -= 1
+            api_messages.append({'role': message['role'], 'content': content})
+
         payload = {
             "model": self.model,
-            "prompt": prompt,
+            "messages": api_messages,
             "max_tokens": max_tokens,
             "temperature": temperature,
             "top_p": top_p,
             "stream": False,
+            "usage": {"include": True},
         }
 
         # add stop sequences if provided
         if stop_sequences is not None:
             payload["stop"] = stop_sequences
 
-        log.llm_stream.info('Start api call.')
+        log.llm_stream.info('Start api call. %d messages, %d cache breakpoints.',
+                            len(api_messages), self.max_cache_breakpoints - breakpoints_left)
         start_time = time.time()
         # send the api call
         response = post(
@@ -89,8 +128,38 @@ class OpenRouter(LLMAPI):
         # log the response
         log.llm_stream.debug("Response: %s", response)
 
-        # get the text of the response - OpenRouter /completions endpoint returns choices with 'text' field
-        response_text = response['choices'][0]['text'].strip()
+        # log cache performance so the savings are visible in the logs
+        self._log_cache_usage(response)
+
+        # get the text of the response from the chat completions shape
+        choice = response['choices'][0]
+        response_text = (choice.get('message', {}).get('content') or '').strip()
+
+        # some models put their answer in reasoning only; fall back rather than returning nothing
+        if response_text == '':
+            log.llm_stream.warning('Empty content in response, finish_reason=%s', choice.get('finish_reason'))
 
         # return the text of the response
         return response_text
+
+    def _log_cache_usage(self, response):
+        """Log prompt cache hit/write counts from the usage block, if present."""
+
+        try:
+            usage = response.get('usage') or {}
+            details = usage.get('prompt_tokens_details') or {}
+            prompt_tokens = usage.get('prompt_tokens', 0)
+            cached_tokens = details.get('cached_tokens', 0)
+            completion_tokens = usage.get('completion_tokens', 0)
+
+            if prompt_tokens:
+                hit_pct = (cached_tokens / prompt_tokens) * 100.0
+            else:
+                hit_pct = 0.0
+
+            log.llm_stream.info(
+                'Tokens: prompt=%d cached=%d (%.1f%% hit) completion=%d',
+                prompt_tokens, cached_tokens, hit_pct, completion_tokens
+            )
+        except Exception as ex:  # pylint: disable=broad-exception-caught
+            log.llm_stream.debug('Could not log cache usage: %s', ex)

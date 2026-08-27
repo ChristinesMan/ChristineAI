@@ -64,10 +64,13 @@ class TestingLLM(LLMAPI):
         """Testing LLM is always available"""
         return True
 
-    def call_api_implementation(self, prompt: str, stop_sequences=None, max_tokens=600, temperature=0.4, top_p=1.0, expects_json=False) -> str:
+    def call_api_implementation(self, messages, stop_sequences=None, max_tokens=600, temperature=0.4, top_p=1.0, expects_json=False) -> str:
         """
         Generate deterministic responses based on prompt content and current state
         """
+        # join the message contents so the existing keyword heuristics keep working
+        prompt = '\n\n'.join(m['content'] for m in messages)
+
         log.parietal_lobe.debug("TestingLLM received prompt (length: %d chars)", len(prompt))
         
         # Simulate API call delay

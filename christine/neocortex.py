@@ -444,7 +444,7 @@ Please write a single, consolidated memory about {name} that incorporates inform
 Consolidated memory:"""
 
             log.neocortex.debug('Merging two memories for proper name: %s', name)
-            merged_memory = STATE.current_llm.call_api(prompt=merge_prompt, max_tokens=1000, temperature=0.6)
+            merged_memory = STATE.current_llm.call_api(messages=STATE.current_llm.single(merge_prompt), max_tokens=1000, temperature=0.6)
             
             if merged_memory and len(merged_memory.strip()) > 10:
                 return merged_memory.strip()

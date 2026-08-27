@@ -205,6 +205,12 @@ class Status(threading.Thread):
         # maximum delay before forced folding (regardless of message count)
         self.memory_folding_max_delay = 20 * 60  # 20 minutes maximum
 
+        # How long a sensor snapshot (time of day, light, wakefulness, horniness) stays
+        # valid. It normally refreshes when memory folds, but a long unbroken conversation
+        # may never fold, so this backstop keeps her from reporting stale body state.
+        # Keeping it static between refreshes is what lets the prompt cache survive.
+        self.situational_awareness_max_age_seconds = 30 * 60  # 30 minutes
+
         # after a memory has emerged from the neocortex, it is not allowed to come up again for a while (10 days)
         self.neocortex_recall_interval = 10 * 24 * 60 * 60
         
@@ -515,6 +521,11 @@ class Status(threading.Thread):
                 'desc': 'Maximum memory folding delay (seconds)',
                 'help': 'Maximum time to wait before forcing memory folding, regardless of activity level. This ensures memories never get too stale before processing. Prevents memory buildup during very long conversations or if the base delay calculation goes wrong.'
             },
+            'situational_awareness_max_age_seconds': {
+                'type': 'i', 'min': 60, 'max': 7200, 'default': 1800,
+                'desc': 'Sensor snapshot lifetime (seconds)',
+                'help': 'Christine\'s sensor readout (time of day, light, wakefulness, horniness) is a snapshot rather than a live per-turn reading, which is what allows prompt caching to work and keeps API costs down. It refreshes when memories fold or when she wakes; this is the backstop for long conversations that never fold. Lower values make her body state more responsive but cost more.'
+            },
             'neocortex_recall_interval': {
                 'type': 'i', 'min': 3600, 'max': 2592000, 'default': 864000,
                 'desc': 'Memory recall cooldown (seconds)',
@@ -705,6 +716,7 @@ class Status(threading.Thread):
             "memory_folding_min_narratives": str(self.memory_folding_min_narratives),
             "memory_folding_base_delay": str(self.memory_folding_base_delay),
             "memory_folding_max_delay": str(self.memory_folding_max_delay),
+            "situational_awareness_max_age_seconds": str(self.situational_awareness_max_age_seconds),
             "random_memory_recall_chance": f"{self.random_memory_recall_chance:.2f}",
             "random_memory_recall_min_messages": str(self.random_memory_recall_min_messages),
             "wernicke_ok": str(self.wernicke_ok),

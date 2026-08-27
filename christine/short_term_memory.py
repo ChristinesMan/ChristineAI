@@ -33,6 +33,12 @@ class ShortTermMemory:
         # the llm module decides to fold or not
         self.recent_messages: int = 0
 
+        # Index into self.memory marking where the unfolded "recent" narratives begin.
+        # Everything before this index has already been summarized into earlier_today,
+        # so sending it again would duplicate it. Everything from here on is the live
+        # conversation that gets sent as individual role-tagged chat messages.
+        self.folded_index: int = 0
+
         # to allow the LLM to be interrupted mid-speech, the response from the LLM will only be
         # added to the message history as it is spoken. So when anything is spoken or thought,
         # this variable is extended, and then added to the message history when we next send to LLM.
@@ -53,6 +59,46 @@ class ShortTermMemory:
             return self.earlier_today
 
         return self.earlier_today + '### Most recent events (still today):\n\n' + self.recent
+
+    def get_stable_prefix(self) -> str:
+        """Returns only the already-folded portion of memory (earlier today).
+
+        This is the part that does NOT change from turn to turn, so it belongs in the
+        cacheable prefix rather than the live conversation tail.
+        """
+
+        return self.earlier_today
+
+    def get_recent_messages(self) -> list[dict]:
+        """Returns the unfolded recent narratives as role-tagged chat messages.
+
+        Narratives Christine produced herself ('char') become assistant turns.
+        Everything else - user speech, sensor perceptions ('system'), recalled
+        memories ('memory') - is something arriving from outside her, so it becomes
+        a user turn. Note the deliberate choice NOT to emit chat-role 'system' here:
+        a narrative tagged 'system' is a sensor event inside the story, not context,
+        and the real system block is built separately by the parietal lobe.
+
+        Consecutive same-role messages get merged by the LLM layer, which keeps her
+        sensor stream reading like one continuous paragraph rather than a stack of
+        fragments.
+        """
+
+        messages = []
+
+        for narrative in self.memory[self.folded_index:]:
+            text = narrative.text.strip()
+            if text == '':
+                continue
+            role = 'assistant' if narrative.role == 'char' else 'user'
+            messages.append({'role': role, 'content': text})
+
+        # Anything spoken but not yet committed to memory still needs to be in context,
+        # otherwise she loses track of what she just said mid-response.
+        if self.last_response.strip() != '':
+            messages.append({'role': 'assistant', 'content': self.last_response.strip()})
+
+        return messages
 
     def append(self, narrative: Narrative):
         """Accepts a narrative and appends it to the memory."""
@@ -114,8 +160,12 @@ class ShortTermMemory:
         # clear recent
         self.recent = ''
         self.recent_messages = 0
-        log.memory_operations.debug("MEMORY_FOLD_COMPLETE: Cleared recent memory, now have %d chars in earlier_today", 
-                                   len(self.earlier_today))
+
+        # everything currently in memory is now represented by earlier_today,
+        # so the live conversation tail restarts from the end of the list
+        self.folded_index = len(self.memory)
+        log.memory_operations.debug("MEMORY_FOLD_COMPLETE: Cleared recent memory, now have %d chars in earlier_today, folded_index=%d",
+                                   len(self.earlier_today), self.folded_index)
 
         # save the memory to a file
         self.save()
@@ -144,6 +194,10 @@ class ShortTermMemory:
         # also save recent memory
         with open(file='memory_recent.txt', mode='w', encoding='utf-8') as recent_file:
             recent_file.write(self.recent)
+
+        # persist the fold boundary so a restart doesn't re-send already-folded narratives
+        with open(file='memory_folded_index.txt', mode='w', encoding='utf-8') as folded_index_file:
+            folded_index_file.write(str(self.folded_index))
 
     def load(self):
         """Loads short term memory from files."""
@@ -211,6 +265,22 @@ class ShortTermMemory:
         except FileNotFoundError:
             log.parietal_lobe.warning('memory_recent.txt not found. Starting fresh.')
 
+        try:
+
+            # load the fold boundary so already-summarized narratives aren't re-sent
+            with open(file='memory_folded_index.txt', mode='r', encoding='utf-8') as folded_index_file:
+                self.folded_index = int(folded_index_file.read().strip() or 0)
+
+        except (FileNotFoundError, ValueError):
+            # No saved boundary. If earlier_today has content, everything currently
+            # loaded is already summarized in it, so start the tail at the end.
+            # Otherwise nothing has been folded and the whole list is live.
+            self.folded_index = len(self.memory) if self.earlier_today else 0
+            log.parietal_lobe.warning('memory_folded_index.txt missing or bad. Inferred folded_index=%d', self.folded_index)
+
+        # never let a stale index point past the end of the list
+        self.folded_index = max(0, min(self.folded_index, len(self.memory)))
+
     def llm_message(self, text:str):
         """This is called to add on to the text that has been spoken by llm so far.
         It is done this way so the LLM can be interrupted mid-speech."""
@@ -254,6 +324,7 @@ class ShortTermMemory:
         self.earlier_today = ''
         self.recent = ''
         self.recent_messages = 0
+        self.folded_index = 0
 
         # persist the cleared state so stale previous-day text cannot be reloaded after restart
         self.save()

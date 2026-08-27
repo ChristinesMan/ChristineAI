@@ -65,8 +65,14 @@ class Config:
         self.openrouter_stt_model = os.getenv('CHRISTINE_OPENROUTER_STT_MODEL', 'mistralai/voxtral-mini-transcribe')
         self.openrouter_stt_language = os.getenv('CHRISTINE_OPENROUTER_STT_LANGUAGE', '').strip()
         self.openrouter_stt_timeout_seconds = int(os.getenv('CHRISTINE_OPENROUTER_STT_TIMEOUT_SECONDS', '60'))
-        
-        self.chub_api_key = os.getenv('CHRISTINE_CHUB_API_KEY', '')
+
+        # Prompt caching. The big stable prefix (context + yesterday + earlier today) gets a
+        # cache breakpoint so it's billed at the cheap cache-read rate instead of full price.
+        # TTL of '1h' costs more to write but survives the gaps between conversations. Set
+        # CHRISTINE_OPENROUTER_CACHE_TTL to '5m' for the cheaper short window, or empty for
+        # the provider default.
+        self.openrouter_cache_enabled = os.getenv('CHRISTINE_OPENROUTER_CACHE_ENABLED', 'true').lower() == 'true'
+        self.openrouter_cache_ttl = os.getenv('CHRISTINE_OPENROUTER_CACHE_TTL', '1h').strip()
         
         self.openai_api_key = os.getenv('CHRISTINE_OPENAI_API_KEY', '')
         
@@ -118,14 +124,12 @@ class Config:
         
         # At least one LLM must be enabled
         if not self.enabled_llms:
-            errors.append("CHRISTINE_ENABLED_LLMS must specify at least one LLM (openrouter, chub, ollama, repeat_what_i_say, testing)")
+            errors.append("CHRISTINE_ENABLED_LLMS must specify at least one LLM (openrouter, ollama, repeat_what_i_say, testing)")
         
         # Validate that enabled LLMs have required API keys
         for llm in self.enabled_llms:
             if llm == 'openrouter' and not self.openrouter_api_key:
                 errors.append("CHRISTINE_OPENROUTER_API_KEY is required when openrouter LLM is enabled")
-            elif llm == 'chub' and not self.chub_api_key:
-                errors.append("CHRISTINE_CHUB_API_KEY is required when chub LLM is enabled")
             elif llm == 'ollama' and not self.ollama_base_url:
                 errors.append("CHRISTINE_OLLAMA_BASE_URL is required when ollama LLM is enabled")
             elif llm == 'repeat_what_i_say' and not self.openai_api_key:
@@ -135,8 +139,6 @@ class Config:
         for stt in self.enabled_stts:
             if stt == 'whisper' and not self.openai_api_key:
                 errors.append("CHRISTINE_OPENAI_API_KEY is required when whisper STT is enabled")
-            elif stt == 'chub' and not self.chub_api_key:
-                errors.append("CHRISTINE_CHUB_API_KEY is required when chub STT is enabled")
             elif stt == 'openrouter' and not self.openrouter_api_key:
                 errors.append("CHRISTINE_OPENROUTER_API_KEY is required when openrouter STT is enabled")
         

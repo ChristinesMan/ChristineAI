@@ -21,6 +21,7 @@ class Ollama(LLMAPI):
         # How to connect to the Ollama API
         self.base_url = CONFIG.ollama_base_url.rstrip('/')
         self.generate_url = f'{self.base_url}/api/generate'
+        self.chat_url = f'{self.base_url}/api/chat'
         self.transcribe_url = f'{self.base_url}/api/generate'
         
         # Model configurations
@@ -56,12 +57,14 @@ class Ollama(LLMAPI):
             self.last_is_available_time = current_time
             return False
 
-    def call_api_implementation(self, prompt, stop_sequences=None, max_tokens=600, temperature=0.4, top_p=1.0, expects_json=False):
+    def call_api_implementation(self, messages, stop_sequences=None, max_tokens=600, temperature=0.4, top_p=1.0, expects_json=False):
         """This function will call the Ollama API and return the response."""
 
+        # Ollama has a native chat endpoint; it ignores our cache flags, which is fine
+        # since local inference has no per-token cost to save.
         payload = {
             "model": self.model,
-            "prompt": prompt,
+            "messages": [{"role": m["role"], "content": m["content"]} for m in messages],
             "stream": False,
             "options": {
                 "temperature": temperature,
@@ -79,7 +82,7 @@ class Ollama(LLMAPI):
         
         # send the api call
         response = post(
-            self.generate_url,
+            self.chat_url,
             json=payload,
             timeout=300
         )
@@ -93,8 +96,8 @@ class Ollama(LLMAPI):
         # log the response
         log.llm_stream.debug("Ollama Response: %s", response_data)
 
-        # get the text of the response
-        response_text = response_data.get('response', '').strip()
+        # get the text of the response from the chat shape
+        response_text = (response_data.get('message', {}).get('content') or '').strip()
 
         # return the text of the response
         return response_text

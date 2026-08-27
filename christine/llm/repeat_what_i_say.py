@@ -15,10 +15,14 @@ class RepeatWhatISayWithWhisper(LLMAPI):
         """This test LLM is always available."""
         return True
 
-    def call_api_implementation(self, prompt, stop_sequences=None, max_tokens=600, temperature=0.4, top_p=1.0, expects_json=False):
+    def call_api_implementation(self, messages, stop_sequences=None, max_tokens=600, temperature=0.4, top_p=1.0, expects_json=False):
         """This function will just repeat what the user said - this is for testing purposes."""
-        
-        # For the repeat what I say implementation, we just return the last part of the prompt
-        # In a real scenario, the parietal lobe would extract the user message and send it here
-        # For simplicity, we'll just return the prompt as-is with some modification
-        return f'You said: "{prompt[-100:]}"'  # Return last 100 chars as a simple response
+
+        # Echo back the tail of the most recent user message, which is the newest perception
+        last_user = ''
+        for message in reversed(messages):
+            if message['role'] == 'user':
+                last_user = message['content']
+                break
+
+        return f'You said: "{last_user[-100:]}"'

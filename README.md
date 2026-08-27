@@ -28,15 +28,14 @@ Christine's software is designed as a distributed system with multiple component
 - **Various Sensors**: Touch, light, gyro, temperature monitoring
 
 ### Supported LLM Providers
-- **OpenRouter**: Access to various AI models (Claude, GPT, etc.)
-- **Chub.ai**: Specialized AI character models
+- **OpenRouter**: Access to various AI models (Claude, GPT, etc.), with prompt caching
+- **Ollama**: Local inference for testing/development
 - **OpenAI**: Direct integration with GPT and Whisper
 - **Testing**: Simple repeat-what-I-say mode for debugging
 
 ### Supported STT Providers
 - **Whisper**: OpenAI Whisper speech recognition
 - **OpenRouter**: OpenRouter transcription models (for example `mistralai/voxtral-mini-transcribe`)
-- **Chub.ai**: Chub speech recognition endpoint
 
 ## Configuration
 
@@ -81,7 +80,6 @@ CHRISTINE_OPENROUTER_STT_LANGUAGE=en
 CHRISTINE_OPENROUTER_STT_TIMEOUT_SECONDS=60
 
 # Additional API keys (only needed if corresponding LLMs enabled)
-CHRISTINE_CHUB_API_KEY=your-chub-key
 CHRISTINE_OPENAI_API_KEY=sk-proj-your-openai-key
 ```
 

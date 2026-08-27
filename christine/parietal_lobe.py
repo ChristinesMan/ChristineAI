@@ -48,7 +48,7 @@ To interact with the real world, write in a narrative style. Take care to enclos
 
 These tools work through your internal executive functions. Simply think the function call (don't speak it) and you will receive the results as internal perceptions.
 
-I am awake.
+Everything you receive describes what is happening around you and inside you: what {self.user_name} says, what your sensors report, and memories that surface. Reply with the next moment of your narrative, in first person, present tense. Write one continuous passage - do not label it, do not write a heading, and do not narrate for anyone but yourself.
 
 """
 
@@ -156,6 +156,13 @@ Dream:
 
         # Dream state - holds the current dream that appears in prompts until memory folding clears it
         self.current_dream = ""
+
+        # Cached sensor snapshot. Recomputing this every turn used to invalidate the
+        # prompt cache on every single request, since it sits inside the stable context
+        # block. It's now refreshed on the same trigger as memory folding (plus waking
+        # and a staleness backstop), so the cached prefix survives whole conversations.
+        self._situational_awareness_cache = None
+        self._situational_awareness_updated = 0.0
 
         # patterns that should be detected and handled apart from LLM
         self.re_shutdown = re.compile(
@@ -724,29 +731,32 @@ Dream:
 
             # Check for random dream dissipation during conversation
             self.check_dream_dissipation()
-            
-            # start building the prompt
-            dream_text = f"{self.current_dream}\n\n" if self.current_dream else ""
-            
-            prompt = (self.get_dynamic_context() +
-                      self.yesterday_memory_text +
-                      dream_text +
-                      self.situational_awareness_message() +
-                      self.short_term_memory.get()
-            )
 
-            # save a quick log
-            os.makedirs("./logs/prompts/", exist_ok=True)
-            prompt_log = open(f'./logs/prompts/prompt_{int(time.time())}.log', 'w', encoding='utf-8')
-            prompt_log.write(prompt)
-            prompt_log.close()
+            # Refresh the sensor snapshot if it's aged out. Folding is the usual trigger,
+            # but a long unbroken conversation may never fold.
+            if self.situational_awareness_is_stale():
+                self.refresh_situational_awareness('stale snapshot')
 
-            # send the completed prompt to the current LLM
+            # Build the message list for the chat completions API.
+            #
+            # The shape matters for cost. Everything stable goes into ONE system message
+            # that stays byte-identical from turn to turn, so it can carry a prompt-cache
+            # breakpoint and be billed at the cheap cache-read rate. The volatile stuff
+            # (sensor readings, which change every single turn) goes AFTER that boundary,
+            # otherwise it would invalidate the cache on every request and we'd be paying
+            # full price for the whole book again - which is the entire problem we're
+            # trying to solve.
+            messages = self.build_conversation_messages()
+
+            # save a quick log - now a JSON dump of the messages, since it's no longer one string
+            self.log_messages(messages)
+
+            # send the completed messages to the current LLM
             log.parietal_lobe.debug('Sending to api.')
-            log.conversation_flow.info("LLM_REQUEST: Sending prompt to %s (max_tokens=1000, temp=1.2)", STATE.current_llm.name)
+            log.conversation_flow.info("LLM_REQUEST: Sending %d messages to %s (max_tokens=1000, temp=1.2)",
+                                       len(messages), STATE.current_llm.name)
             response = STATE.current_llm.call_api(
-                prompt=prompt,
-                stop_sequences=['\n\n'],
+                messages=messages,
                 max_tokens=1000,
                 temperature=1.2,
             ).translate(self.unicode_fix).strip()
@@ -1024,17 +1034,19 @@ Dream:
         """This is called after a delay has occurred with no new perceptions, to fold memories.
         We fold because when the prompt gets too long, fear and chaos occur. I dunno why."""
 
-        # build the prompt
-        prompt = (self.memory_prompt_top +
-                  self.short_term_memory.earlier_today +
-                  '### Recent dialog:\n\n' +
-                  self.short_term_memory.recent +
-                  self.memory_prompt_recent)
+        # the instruction is the system role; the material to summarize is the user turn
+        messages = STATE.current_llm.single(
+            content=(self.short_term_memory.earlier_today +
+                     '### Recent dialog:\n\n' +
+                     self.short_term_memory.recent +
+                     self.memory_prompt_recent),
+            system=self.memory_prompt_top,
+        )
 
         # process using the current LLM
         log.parietal_lobe.debug('Sending to api for memory folding.')
         log.memory_operations.info("MEMORY_FOLD_REQUEST: Sending recent memories to %s for consolidation", STATE.current_llm.name)
-        folded_memory = STATE.current_llm.call_api(prompt=prompt, max_tokens=5000, temperature=1.2)
+        folded_memory = STATE.current_llm.call_api(messages=messages, max_tokens=5000, temperature=1.2)
         log.parietal_lobe.debug('Sending to api complete.')
 
         # fix chars
@@ -1044,6 +1056,12 @@ Dream:
 
         # send the memory for folding
         self.short_term_memory.fold(folded_memory)
+
+        # Folding is the natural moment to refresh her sense of her own body. earlier_today
+        # just changed, so the cached prefix is being invalidated regardless - piggybacking
+        # the sensor refresh here means both change together and we pay for one cache miss
+        # instead of two.
+        self.refresh_situational_awareness('memory folding')
         
         # Dreams now dissipate randomly during conversation instead of during memory folding
         # This makes the dissipation more natural and unpredictable
@@ -1054,37 +1072,44 @@ Dream:
         timestamp = int(time.time())
         
         try:
-            # start building the prompt to be sent over to the api, starting with the top of the special prompt for memory processing
-            prompt = self.memory_prompt_top
-
-            # add the message history from all of today, but exclude retrieved memories to avoid duplication
-            # only include narratives that represent actual experiences, not recalled memories
+            # gather the day's experiences into one block of material.
+            # Exclude retrieved memories to avoid duplication - only include narratives
+            # that represent actual experiences, not recalled memories.
             total_narratives = len(self.short_term_memory.memory)
             excluded_memories = 0
-            
+            day_material = ''
+
             for narrative in self.short_term_memory.memory:
                 if narrative.role != "memory":
-                    prompt += narrative.text + '\n\n'
+                    day_material += narrative.text + '\n\n'
                 else:
                     excluded_memories += 1
             
             log.parietal_lobe.info('Memory processing: %d total narratives, %d excluded retrieved memories, %d included experiences', 
                                   total_narratives, excluded_memories, total_narratives - excluded_memories)
 
-            # Save the base prompt for recovery purposes
+            def memory_messages(instruction: str) -> list:
+                """System role carries the sleep-mode framing and the task instruction;
+                the user role carries the day's raw material to be processed."""
+                return STATE.current_llm.single(
+                    content=day_material,
+                    system=self.memory_prompt_top + instruction,
+                )
+
+            # Save the base prompt for recovery purposes. Recovery replays it as a
+            # single user message, so keep saving it flat.
+            prompt = self.memory_prompt_top + day_material
             self._save_recovery_prompt(prompt, timestamp)
 
             # Process yesterday's memory first (this usually succeeds)
-            prompt_yesterday = prompt + self.memory_prompt_yesterday
-
             # process using the current LLM
             log.parietal_lobe.debug('Sending to api for yesterday memory processing.')
             try:
-                memory = STATE.current_llm.call_api(prompt=prompt_yesterday, max_tokens=5000, temperature=1.2)
+                memory = STATE.current_llm.call_api(messages=memory_messages(self.memory_prompt_yesterday), max_tokens=5000, temperature=1.2)
                 log.parietal_lobe.debug('Sending to api complete.')
             except Exception as ex:
                 log.parietal_lobe.error('LLM failed to generate yesterday memory: %s', ex)
-                self._save_failed_prompt("yesterday_memory", prompt_yesterday, timestamp)
+                self._save_failed_prompt("yesterday_memory", prompt + self.memory_prompt_yesterday, timestamp)
                 self._trigger_shutdown("LLM failed to generate yesterday memory")
                 return
 
@@ -1100,15 +1125,13 @@ Dream:
             self.save_yesterday_memory()
 
             # Process neocortex memories
-            prompt_neocortex = prompt + self.memory_prompt_loose_memories
-
             log.parietal_lobe.debug('Sending to api for neocortex memory.')
             try:
-                neocortex_json = STATE.current_llm.call_api(prompt=prompt_neocortex, max_tokens=8192, temperature=0.7, expects_json=True)
+                neocortex_json = STATE.current_llm.call_api(messages=memory_messages(self.memory_prompt_loose_memories), max_tokens=8192, temperature=0.7, expects_json=True)
                 log.parietal_lobe.debug('Sending to api complete.')
             except Exception as ex:
                 log.parietal_lobe.error('LLM failed to generate neocortex memories: %s', ex)
-                self._save_failed_prompt("neocortex_memories", prompt_neocortex, timestamp)
+                self._save_failed_prompt("neocortex_memories", prompt + self.memory_prompt_loose_memories, timestamp)
                 self._trigger_shutdown("LLM failed to generate neocortex memories")
                 return
 
@@ -1131,15 +1154,13 @@ Dream:
                 return
 
             # Process proper names
-            prompt_proper_names = prompt + self.memory_prompt_proper_names
-
             log.parietal_lobe.debug('Sending to api for proper names.')
             try:
-                proper_names_json = STATE.current_llm.call_api(prompt=prompt_proper_names, max_tokens=8192, temperature=0.7, expects_json=True)
+                proper_names_json = STATE.current_llm.call_api(messages=memory_messages(self.memory_prompt_proper_names), max_tokens=8192, temperature=0.7, expects_json=True)
                 log.parietal_lobe.debug('Sending to api complete.')
             except Exception as ex:
                 log.parietal_lobe.error('LLM failed to generate proper names: %s', ex)
-                self._save_failed_prompt("proper_names", prompt_proper_names, timestamp)
+                self._save_failed_prompt("proper_names", prompt + self.memory_prompt_proper_names, timestamp)
                 self._trigger_shutdown("LLM failed to generate proper names")
                 return
 
@@ -1210,8 +1231,8 @@ Dream:
             # Generate the dream with high temperature for creativity and randomness
             log.parietal_lobe.debug('Sending dream generation request to LLM')
             dream_content = STATE.current_llm.call_api(
-                prompt=dream_prompt, 
-                max_tokens=1500, 
+                messages=STATE.current_llm.single('Dream now.', system=dream_prompt),
+                max_tokens=1500,
                 temperature=1.4  # High temperature for dreamlike creativity
             )
             log.parietal_lobe.debug('Dream generation complete')
@@ -1350,7 +1371,27 @@ Dream:
         log.parietal_lobe.debug('Self-definition cache cleared')
 
     def situational_awareness_message(self):
-        """Returns a system message containing the current situation of the outside world."""
+        """Returns the cached sensor snapshot.
+
+        This used to be recomputed every turn, which made it the single most expensive
+        string in the prompt: it sat in the middle of the context and changed on every
+        request, so it invalidated the prompt cache every time and we paid full price
+        for the entire narrative again.
+
+        Now it's a snapshot, refreshed by refresh_situational_awareness() when memory
+        folds, when she wakes, or when it simply gets too old. Because it changes on the
+        same trigger as earlier_today, both live in the cached system block and the cache
+        survives whole conversations. Her body state resolves a little more slowly, which
+        is arguably truer to how a body actually feels than a per-turn readout.
+        """
+
+        if self._situational_awareness_cache is None:
+            self.refresh_situational_awareness()
+
+        return self._situational_awareness_cache
+
+    def refresh_situational_awareness(self, reason: str = 'unspecified'):
+        """Rebuild the sensor snapshot from current STATE and cache it."""
 
         # Get the current hour
         hour = time.localtime().tm_hour
@@ -1384,7 +1425,7 @@ Dream:
                 horniness_text = level['text']
                 break
 
-        return f'''My sensors detect:
+        self._situational_awareness_cache = f'''My sensors detect:
 
 Time of day: {timeofday_text}.
 Ambient light: {ambient_light_text}.
@@ -1392,6 +1433,89 @@ Wakefulness: {wakefulness_text}.
 Horniness: {horniness_text}.
 
 '''
+        self._situational_awareness_updated = time.time()
+        log.parietal_lobe.debug('Situational awareness refreshed (%s): %s / %s / %s / %s',
+                                reason, timeofday_text, ambient_light_text,
+                                wakefulness_text, horniness_text)
+
+    def situational_awareness_is_stale(self) -> bool:
+        """True when the sensor snapshot has aged past its max lifetime.
+
+        Folding is the primary refresh trigger, but a long unbroken conversation may
+        never fold. This backstop keeps her from reporting 'morning' deep into the
+        afternoon.
+        """
+
+        return (time.time() - self._situational_awareness_updated) > STATE.situational_awareness_max_age_seconds
+
+    def build_conversation_messages(self) -> list[dict]:
+        """Assemble the chat messages for one conversational turn.
+
+        Ordering is deliberate, driven by prompt caching:
+
+          1. system  - identity, self-definition, tools, yesterday, earlier today, and
+                       the sensor snapshot. All of it is stable between memory folds, so
+                       this whole block carries the cache breakpoint.
+          2. user    - the dream, if one is active. Stable while the dream lasts.
+          3. assistant/user pairs - the live unfolded conversation.
+
+        The sensor readout lives inside the cached block rather than after it. That's only
+        safe because it's a snapshot now: it changes when memory folds, when she wakes, or
+        when it ages out - the same moments earlier_today changes. If it went back to being
+        recomputed per turn it would have to move back to the very end, or it would
+        invalidate the cache on every single request.
+        """
+
+        messages = []
+
+        # ---- 1. the stable system block, marked as the cache breakpoint ----
+        # Everything here changes only when memory folds (or she wakes), so it stays
+        # byte-identical across turns and the cache holds.
+        system_parts = [
+            self.get_dynamic_context(),
+            self.yesterday_memory_text,
+            self.short_term_memory.get_stable_prefix(),
+            self.situational_awareness_message(),
+        ]
+
+        messages.append({
+            'role': 'system',
+            'content': '\n\n'.join(part.strip() for part in system_parts if part and part.strip()),
+            'cache': True,
+        })
+
+        # ---- 2. the dream, if she's still carrying one ----
+        if self.current_dream:
+            messages.append({'role': 'user', 'content': self.current_dream.strip()})
+
+        # ---- 3. the live conversation, role-separated ----
+        messages.extend(self.short_term_memory.get_recent_messages())
+
+        return messages
+
+    def log_messages(self, messages: list[dict]):
+        """Save the outgoing message list for debugging.
+
+        Two files per turn: a JSON dump with the exact roles and cache flags, and a
+        human-readable transcript, because the book-style read is still the fastest
+        way to tell whether her narrative is holding together.
+        """
+
+        try:
+            timestamp = int(time.time())
+            os.makedirs("./logs/prompts/", exist_ok=True)
+
+            with open(f'./logs/prompts/messages_{timestamp}.json', 'w', encoding='utf-8') as json_file:
+                json.dump(messages, json_file, ensure_ascii=False, indent=2)
+
+            with open(f'./logs/prompts/prompt_{timestamp}.log', 'w', encoding='utf-8') as text_file:
+                for message in messages:
+                    cache_marker = ' [CACHE BREAKPOINT]' if message.get('cache') else ''
+                    text_file.write(f"----- {message['role']}{cache_marker} -----\n")
+                    text_file.write(message['content'].strip() + '\n\n')
+
+        except Exception as ex:  # pylint: disable=broad-exception-caught
+            log.parietal_lobe.warning('Could not log outgoing messages: %s', ex)
 
     def broca_figment_was_processed(self, figment: Figment):
         """This is called by the broca module when any speech or sound is starting to be played. This is done this way so the LLM can be interrupted mid-speech."""
@@ -1557,6 +1681,10 @@ Horniness: {horniness_text}.
 
     def sleep_waking(self):
         """This is called by the sleep module when waking up."""
+
+        # waking up is a real change of bodily state - refresh the snapshot so she
+        # doesn't open her eyes still reporting last night's readings
+        self.refresh_situational_awareness('waking up')
 
         self.new_perception(Perception(text=random.choice([
             "I wake up and stretch.",
@@ -1933,7 +2061,7 @@ Horniness: {horniness_text}.
                         prompt = '\n'.join(line for line in prompt_lines if not line.startswith('#'))
                     
                     # Regenerate and process
-                    neocortex_json = STATE.current_llm.call_api(prompt=prompt, max_tokens=8192, temperature=0.7, expects_json=True)
+                    neocortex_json = STATE.current_llm.call_api(messages=STATE.current_llm.single(prompt), max_tokens=8192, temperature=0.7, expects_json=True)
                     self.neocortex.process_memories_json(neocortex_json)
                     
                 elif 'proper_names' in prompt_file:
@@ -1942,7 +2070,7 @@ Horniness: {horniness_text}.
                         prompt_lines = prompt_content.split('\n')
                         prompt = '\n'.join(line for line in prompt_lines if not line.startswith('#'))
                     
-                    proper_names_json = STATE.current_llm.call_api(prompt=prompt, max_tokens=8192, temperature=0.7, expects_json=True)
+                    proper_names_json = STATE.current_llm.call_api(messages=STATE.current_llm.single(prompt), max_tokens=8192, temperature=0.7, expects_json=True)
                     self.neocortex.process_proper_names_json(proper_names_json)
             
             # Clean up recovery files after successful recovery
