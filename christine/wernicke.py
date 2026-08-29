@@ -1,12 +1,11 @@
 """
-Handles hearing. 
+Handles hearing.
 
-Note: There are two versions of this file for different arduino sketches:
-
-wernicke.py - This version is the current one in active use that includes light sensors. 
-wernicke_new.py - This version is the one that works with the newer version of the arduino sketch that does not include light sensors.
-
-Therefore, when updating one it will be necessary to update the other the same way. 
+Light sensors used to arrive here. The old head embedded photoresistor readings
+in the audio stream and this module unpacked them and pushed them into
+christine.light. The new body has a camera in her forehead instead, and
+christine.light polls christine.vision on its own thread. Do not wire light
+back through the audio path.
 """
 import sys
 import os
@@ -97,7 +96,6 @@ class Wernicke(threading.Thread):
 
         # importing here to avoid circular imports
         from christine.touch import touch
-        # from christine.light import light
         from christine.parietal_lobe import parietal_lobe
         from christine.sleep import sleep
 
@@ -161,7 +159,7 @@ class Wernicke(threading.Thread):
                 elif comm["class"] == "sensor_data":
 
                     touch.new_data(comm["touch"])
-                    # light.new_data(comm["light"])
+                    # Light no longer comes from here; see module docstring.
 
                 # Words from the speech recognition server
                 elif comm["class"] == "utterance":

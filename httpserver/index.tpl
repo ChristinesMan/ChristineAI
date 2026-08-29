@@ -1019,31 +1019,31 @@
                         </div>
                         <div class="setting-item">
                             <label>
-                                Light ADC minimum:
+                                Light calibration: darkness point:
                                 <div class="tooltip">
                                     <span class="setting-help">?</span>
                                     <span class="tooltiptext">
-                                        Lower calibration bound for light normalization.
-                                        <span class="tooltip-default">Default: 100</span>
+                                        The log10 luminance from her forehead camera that reads as 0% light. A lit bedroom measures about -1.7.
+                                        <span class="tooltip-default">Default: -4.0</span>
                                     </span>
                                 </div>
                             </label>
-                            <input type="range" class="setting-range" id="light_adc_min" min="0" max="1024" step="1" value="100">
-                            <span class="setting-value" id="light_adc_min_value">100</span>
+                            <input type="range" class="setting-range" id="light_log_min" min="-8" max="0" step="0.1" value="-4">
+                            <span class="setting-value" id="light_log_min_value">-4.0</span>
                         </div>
                         <div class="setting-item">
                             <label>
-                                Light ADC maximum:
+                                Light calibration: brightness point:
                                 <div class="tooltip">
                                     <span class="setting-help">?</span>
                                     <span class="tooltiptext">
-                                        Upper calibration bound for light normalization.
-                                        <span class="tooltip-default">Default: 300</span>
+                                        The log10 luminance from her forehead camera that reads as 100% light.
+                                        <span class="tooltip-default">Default: -0.3</span>
                                     </span>
                                 </div>
                             </label>
-                            <input type="range" class="setting-range" id="light_adc_max" min="1" max="1025" step="1" value="300">
-                            <span class="setting-value" id="light_adc_max_value">300</span>
+                            <input type="range" class="setting-range" id="light_log_max" min="-6" max="2" step="0.1" value="-0.3">
+                            <span class="setting-value" id="light_log_max_value">-0.3</span>
                         </div>
                         <div class="setting-item">
                             <label>

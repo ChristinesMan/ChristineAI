@@ -93,6 +93,32 @@ class Config:
         self.remote_audio_port = int(os.getenv('CHRISTINE_REMOTE_AUDIO_PORT', '3002'))
         self.remote_audio_timeout_seconds = float(os.getenv('CHRISTINE_REMOTE_AUDIO_TIMEOUT_SECONDS', '30'))
 
+        # Forehead camera. Her first eye. Replaces the photoresistors the older
+        # body had in its eye sockets, and is the input for future object/face
+        # detection and vision-LLM work. See christine/vision.py for why the
+        # light metering is done the way it is.
+        self.camera_enabled = os.getenv('CHRISTINE_CAMERA_ENABLED', 'true').lower() == 'true'
+        self.camera_device = os.getenv('CHRISTINE_CAMERA_DEVICE', '/dev/video0')
+        # Fixed sensor gain during metering. Must stay constant or the light
+        # readings drift for reasons that have nothing to do with the room.
+        self.camera_gain = int(os.getenv('CHRISTINE_CAMERA_GAIN', '32'))
+        # A long exposure in a dark room genuinely takes seconds on this sensor,
+        # so this timeout is generous. It is a deadlock guard, not a latency goal.
+        self.camera_capture_timeout_seconds = float(os.getenv('CHRISTINE_CAMERA_CAPTURE_TIMEOUT_SECONDS', '30'))
+        # How often to take a light reading. Slow on purpose: each reading costs
+        # about 2 seconds of one core, and this Pi is also doing realtime audio.
+        self.light_poll_seconds = float(os.getenv('CHRISTINE_LIGHT_POLL_SECONDS', '20'))
+        # log10 luminance mapped to light_level 0.0 and 1.0 respectively.
+        # Defaults come from measurements on the real camera: a lit bedroom
+        # reads about -1.7, so darkness sits well below and sunlight above.
+        self.light_log_min = float(os.getenv('CHRISTINE_LIGHT_LOG_MIN', '-4.0'))
+        self.light_log_max = float(os.getenv('CHRISTINE_LIGHT_LOG_MAX', '-0.3'))
+        # Snapshots, for detection and vision LLM work.
+        self.camera_snapshot_size = os.getenv('CHRISTINE_CAMERA_SNAPSHOT_SIZE', '640x480')
+        self.camera_snapshot_dir = os.getenv('CHRISTINE_CAMERA_SNAPSHOT_DIR', '/root/ChristineAI/logs/snapshots')
+        # Auto-exposure needs frames to settle; frame 1 is unusable.
+        self.camera_snapshot_warmup_frames = int(os.getenv('CHRISTINE_CAMERA_SNAPSHOT_WARMUP_FRAMES', '12'))
+
         self.dora_hook_url = os.getenv('CHRISTINE_DORA_HOOK_URL', 'http://dora.lan:8650/christine')
         self.dora_hook_secret = os.getenv('CHRISTINE_DORA_HOOK_SECRET', '')
         # (messageContact() executive tool). Not interchangeable like LLM/STT/TTS, so no

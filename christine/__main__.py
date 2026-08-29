@@ -63,6 +63,7 @@ for thread in [
     horny,
     sex,
     gyro,
+    light,
 ]:
     time.sleep(2)
     log.main.info('Starting %s', thread.name)

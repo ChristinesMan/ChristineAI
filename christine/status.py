@@ -7,6 +7,7 @@ import json
 import sys
 
 from christine.database import database
+from christine.config import CONFIG
 
 from christine.llm_class import LLMAPI
 from christine.stt_class import STTAPI
@@ -39,9 +40,17 @@ class Status(threading.Thread):
         # This is a number between 0.0 and 1.0 where 0.0 is absolute darkness and 1.0 is lights on window open with sun shining and flashlight in your face.
         # This is a long running average, changes slowly
         self.light_level = 0.2
-        self.light_adc_min = 100
-        self.light_adc_max = 300
         self.light_avg_window = 10.0
+
+        # Calibration for mapping the forehead camera's log10 luminance onto
+        # light_level. Seeded from config/env so it can be set per-body, but
+        # user-adjustable at runtime from the web UI like the other tunables.
+        self.light_log_min = CONFIG.light_log_min
+        self.light_log_max = CONFIG.light_log_max
+
+        # Whether the forehead camera is answering. Goes False after a run of
+        # failed captures so the web UI can show her eye is out.
+        self.camera_available = True
 
         # A measure of recent movement or vibrations measured by the gyro
         self.jostled_level = 0.0
@@ -302,15 +311,15 @@ class Status(threading.Thread):
                 'desc': 'Wait for additional perceptions (seconds)',
                 'help': 'After receiving input (touch, sound, etc.), Christine waits this long for additional input before responding. This prevents her from interrupting you mid-sentence or reacting to every small input. Longer waits make her more patient but less responsive.'
             },
-            'light_adc_min': {
-                'type': 'i', 'min': 0, 'max': 1024, 'default': 100,
-                'desc': 'Light ADC minimum',
-                'help': 'Lower calibration point for light sensor normalization. Raise this if dark scenes read too bright; lower it if bright scenes compress too early.'
+            'light_log_min': {
+                'type': 'f', 'min': -8.0, 'max': 0.0, 'default': -4.0,
+                'desc': 'Light calibration: darkness point',
+                'help': 'The log10 luminance from the forehead camera that maps to a light level of 0%. Her camera reads about -1.7 in a normally lit bedroom, so this sits well below that. Raise it toward -2 if darkness never reads as fully dark; lower it if dim rooms read too bright.'
             },
-            'light_adc_max': {
-                'type': 'i', 'min': 1, 'max': 1025, 'default': 300,
-                'desc': 'Light ADC maximum',
-                'help': 'Upper calibration point for light sensor normalization. Increase this if full sunlight reads too dim; decrease it if bright conditions saturate too easily.'
+            'light_log_max': {
+                'type': 'f', 'min': -6.0, 'max': 2.0, 'default': -0.3,
+                'desc': 'Light calibration: brightness point',
+                'help': 'The log10 luminance from the forehead camera that maps to a light level of 100%. Lower it if bright daylight never reaches the top of the scale; raise it if ordinary room lighting already reads as full sun.'
             },
             'light_avg_window': {
                 'type': 'f', 'min': 0.0, 'max': 60.0, 'default': 10.0,
