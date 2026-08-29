@@ -1663,6 +1663,16 @@ Horniness: {horniness_text}.
             'I am being kissed.',
         ])))
 
+    def nose_touched(self):
+        """This is called by the touch module when the nose area gets touched."""
+
+        self.new_perception(Perception(text=random.choice([
+            'Someone just booped my nose!',
+            'I feel a gentle touch on my nose.',
+            'My nose is being touched.',
+            'A finger just tapped my nose.',
+        ])))
+
     def sleep_sleepy(self):
         """This is called by the sleep module when about to fall asleep."""
 

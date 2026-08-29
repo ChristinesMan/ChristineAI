@@ -97,7 +97,7 @@ class Wernicke(threading.Thread):
 
         # importing here to avoid circular imports
         from christine.touch import touch
-        from christine.light import light
+        # from christine.light import light
         from christine.parietal_lobe import parietal_lobe
         from christine.sleep import sleep
 
@@ -161,7 +161,7 @@ class Wernicke(threading.Thread):
                 elif comm["class"] == "sensor_data":
 
                     touch.new_data(comm["touch"])
-                    light.new_data(comm["light"])
+                    # light.new_data(comm["light"])
 
                 # Words from the speech recognition server
                 elif comm["class"] == "utterance":
@@ -383,33 +383,27 @@ class Wernicke(threading.Thread):
                         return
 
                     # the arduino sketch is designed to embed into the 2048 bytes of audio data 11 bytes of sensor data at the start
-                    # we read 11 + 2048 = 2086 bytes at a time.
+                    # we read 11 + 2048 = 2059 bytes at a time.
                     # for some reason if I read 11, then do stuff, then read 2048, it never lines up, so, at length, I now read all at once
-                    data = self.serial_port_from_head.read(2086)
+                    data = self.serial_port_from_head.read(2059)
 
                     # if we read the sensor data at the start of data, that means we're lined up
                     if data[0:6] == b"@!#?@!":
 
-                        # but we only want to do stuff with sensor data every 32nd run, the rest of the time it's discarded
-                        if loop_run % 32 == 0:
-                            # extract sensor data from bytes
-                            touch_sensor_data = [0] * 12
-                            for i in range(0, 12):
-                                pos = 6 + (i * 2)
-                                touch_sensor_data[i] = int.from_bytes(
-                                    data[pos : pos + 2], byteorder="little"
-                                )
-                            light_sensor_data = int.from_bytes(
-                                data[30:32], byteorder="little"
-                            )
-                            # send sensor data to main process. Feel like I'm passing a football.
-                            hey_honey(
-                                {
-                                    "class": "sensor_data",
-                                    "light": light_sensor_data,
-                                    "touch": touch_sensor_data,
-                                }
-                            )
+                        # extract sensor data from bytes
+                        # new format: 6 byte header + 5 boolean touch sensors (1 byte each)
+                        touch_sensor_data = [False] * 5
+                        for i in range(0, 5):
+                            pos = 6 + i
+                            touch_sensor_data[i] = bool(data[pos])
+
+                        # send sensor data to main process. Feel like I'm passing a football.
+                        hey_honey(
+                            {
+                                "class": "sensor_data",
+                                "touch": touch_sensor_data,
+                            }
+                        )
 
                     # if we did not encounter sensor data, that means we are not aligned, so read in some shit and flush it
                     else:
@@ -455,7 +449,7 @@ class Wernicke(threading.Thread):
                         try:
 
                             # the audio data will be after the sensor data
-                            buffer_queue.put(data[38:], block=False)
+                            buffer_queue.put(data[11:], block=False)
 
                         # if the queue is full, it's a sign I need to evaluate CPU usage, so full stop
                         # happens every day. I definitely need to pare it down, but also this should just pause for a while not just
