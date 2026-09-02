@@ -125,6 +125,85 @@ class Config:
         # failover/current-pointer config here, just which ones are turned on.
         self.enabled_channels = self._parse_service_list(os.getenv('CHRISTINE_ENABLED_CHANNELS', ''))
 
+        # Body touch sensors on the MCP23017 I2C GPIO expander. This is the growing
+        # sensor network outside her head -- legs now, more later, up to 16 channels.
+        # See christine/skin.py.
+        self.skin_enabled = os.getenv('CHRISTINE_SKIN_ENABLED', 'true').lower() == 'true'
+        self.skin_i2c_address = int(os.getenv('CHRISTINE_SKIN_I2C_ADDRESS', '0x20'), 0)
+        # The Pi GPIO (BCM numbering) the expander's mirrored INT line is wired to.
+        # Two ports exist on the body harness, so this is 22 or 27 depending on which
+        # one is plugged in. Measured empirically -- do not guess.
+        self.skin_irq_pin = int(os.getenv('CHRISTINE_SKIN_IRQ_PIN', '22'))
+        # Fallback poll interval, seconds. The IRQ does the real work; this is a safety
+        # net so a missed interrupt can't leave a touch stuck forever.
+        self.skin_poll_seconds = float(os.getenv('CHRISTINE_SKIN_POLL_SECONDS', '0.05'))
+        # Consecutive agreeing reads required to accept a state change. These sensors
+        # flicker -- observed one bouncing 4 times in 3 seconds on the bench.
+        self.skin_debounce_reads = int(os.getenv('CHRISTINE_SKIN_DEBOUNCE_READS', '3'))
+        # Per-channel re-trigger cooldown, seconds. Stops a hand resting on a sensor
+        # from generating a stream of identical perceptions.
+        self.skin_cooldown_seconds = float(os.getenv('CHRISTINE_SKIN_COOLDOWN_SECONDS', '3.0'))
+        # Which electrical level means "touched". True (default) = a touch pulls the
+        # line LOW, which is how a plain switch-to-ground behaves with a pull-up.
+        # Set false for sensors that drive the line HIGH on contact. Determine this
+        # on real hardware with tools/skin_probe.py rather than guessing -- getting it
+        # backwards means she either feels nothing or feels touched constantly.
+        self.skin_active_low = os.getenv('CHRISTINE_SKIN_ACTIVE_LOW', 'true').lower() == 'true'
+        # Channel map: "pin:Region" pairs, comma separated. Only mapped pins are
+        # watched, so unwired channels cost nothing and adding a sensor is a config
+        # edit. Prefix a region with "intimate:" to route it to the arousal engine
+        # instead of narrating it, e.g. "3:intimate:Vagina_Clitoris".
+        self.skin_channel_map = self._parse_skin_channel_map(
+            os.getenv(
+                'CHRISTINE_SKIN_CHANNEL_MAP',
+                '14:Left Thigh,15:Left Calf,11:Right Thigh,5:Right Calf',
+            )
+        )
+
+    def _parse_skin_channel_map(self, raw: str) -> dict:
+        """Parse 'pin:Region' / 'pin:intimate:Region' into {int: (kind, region)}.
+
+        Bad entries are skipped with a warning rather than killing startup -- a typo
+        in a sensor label should not take her offline.
+        """
+        mapping = {}
+        if not raw.strip():
+            return mapping
+        for entry in raw.split(','):
+            entry = entry.strip()
+            if not entry:
+                continue
+            if ':' not in entry:
+                log.main.warning("CHRISTINE_SKIN_CHANNEL_MAP entry missing ':' - skipped: %r", entry)
+                continue
+            pin_part, label = entry.split(':', 1)
+            label = label.strip()
+            try:
+                pin = int(pin_part.strip())
+            except ValueError:
+                log.main.warning("CHRISTINE_SKIN_CHANNEL_MAP bad pin number - skipped: %r", entry)
+                continue
+            if not 0 <= pin <= 15:
+                log.main.warning("CHRISTINE_SKIN_CHANNEL_MAP pin out of range 0-15 - skipped: %r", entry)
+                continue
+
+            # Optional kind prefix. Only 'intimate' is special; anything else is
+            # treated as part of the region name so labels containing a colon
+            # still work. Kinds are defined in christine/skin.py (KIND_*), but
+            # kept as literals here to avoid importing skin at config load time.
+            kind = 'narrative'
+            if ':' in label:
+                maybe_kind, rest = label.split(':', 1)
+                if maybe_kind.strip().lower() == 'intimate':
+                    kind = 'intimate'
+                    label = rest.strip()
+
+            if not label:
+                log.main.warning("CHRISTINE_SKIN_CHANNEL_MAP empty label - skipped: %r", entry)
+                continue
+            mapping[pin] = (kind, label)
+        return mapping
+
     def _parse_service_list(self, service_string: str) -> List[str]:
         """Parse comma-separated list of enabled services (LLMs, STTs, TTSs)."""
         if not service_string.strip():
@@ -213,7 +292,35 @@ class Config:
             errors.append(
                 f"CHRISTINE_OPENROUTER_STT_TIMEOUT_SECONDS must be positive, got {self.openrouter_stt_timeout_seconds}"
             )
-        
+
+        # Skin (MCP23017 body touch sensors)
+        if self.skin_enabled:
+            if not 0x20 <= self.skin_i2c_address <= 0x27:
+                errors.append(
+                    f"CHRISTINE_SKIN_I2C_ADDRESS must be in the MCP23017 range 0x20-0x27, got {hex(self.skin_i2c_address)}"
+                )
+            if not 0 <= self.skin_irq_pin <= 27:
+                errors.append(
+                    f"CHRISTINE_SKIN_IRQ_PIN must be a valid BCM pin 0-27, got {self.skin_irq_pin}"
+                )
+            if self.skin_poll_seconds <= 0:
+                errors.append(
+                    f"CHRISTINE_SKIN_POLL_SECONDS must be positive, got {self.skin_poll_seconds}"
+                )
+            if self.skin_debounce_reads < 1:
+                errors.append(
+                    f"CHRISTINE_SKIN_DEBOUNCE_READS must be at least 1, got {self.skin_debounce_reads}"
+                )
+            if self.skin_cooldown_seconds < 0:
+                errors.append(
+                    f"CHRISTINE_SKIN_COOLDOWN_SECONDS cannot be negative, got {self.skin_cooldown_seconds}"
+                )
+            if not self.skin_channel_map:
+                errors.append(
+                    "CHRISTINE_SKIN_CHANNEL_MAP must map at least one pin when skin is enabled "
+                    "(format: '5:Left Thigh,11:Left Calf')"
+                )
+
         if errors:
             error_msg = "Configuration validation failed:\n" + "\n".join(f"  - {error}" for error in errors)
             log.main.fatal(error_msg)

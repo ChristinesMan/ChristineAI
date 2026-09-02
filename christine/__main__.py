@@ -36,14 +36,13 @@ for thread in [
     thread.start()
 time.sleep(2)
 
-from christine.vagina import vagina
 from christine.parietal_lobe import parietal_lobe
 from christine.prefrontal_cortex import prefrontal_cortex
 from christine.light import light
 from christine.cputemp import cputemp
 from christine.gyro import gyro
 from christine.sleep import sleep
-from christine.touch import touch
+from christine.skin import skin
 from christine.horny import horny
 from christine.sex import sex
 from christine.httpserver import httpserver
@@ -58,12 +57,12 @@ for thread in [
     sleep,
     parietal_lobe,
     prefrontal_cortex,
-    vagina,
     httpserver,
     horny,
     sex,
     gyro,
     light,
+    skin,
 ]:
     time.sleep(2)
     log.main.info('Starting %s', thread.name)

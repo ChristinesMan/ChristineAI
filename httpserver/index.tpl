@@ -1991,7 +1991,7 @@
                         ['Silent Mode', data.silent_mode],
                         ['Chat Mode', data.chat_mode],
                         ['Gyro Available', data.gyro_available],
-                        ['Vagina Available', data.vagina_available]
+                        ['Skin Available', data.skin_available]
                     ];
 
                     statusItems.forEach(([label, value]) => {

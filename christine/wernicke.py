@@ -95,7 +95,7 @@ class Wernicke(threading.Thread):
         self.push_runtime_settings()
 
         # importing here to avoid circular imports
-        from christine.touch import touch
+        from christine.skin import skin
         from christine.parietal_lobe import parietal_lobe
         from christine.sleep import sleep
 
@@ -158,7 +158,7 @@ class Wernicke(threading.Thread):
                 # the audio data contains embedded sensor data
                 elif comm["class"] == "sensor_data":
 
-                    touch.new_data(comm["touch"])
+                    skin.new_head_data(comm["touch"])
                     # Light no longer comes from here; see module docstring.
 
                 # Words from the speech recognition server

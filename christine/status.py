@@ -159,7 +159,7 @@ class Status(threading.Thread):
 
         # is shit fucked up
         self.gyro_available = False
-        self.vagina_available = False
+        self.skin_available = False
 
         # this is the currently selected and available llm api
         # set to None until the api selector figures it out
@@ -716,7 +716,7 @@ class Status(threading.Thread):
             "silent_mode": str(self.silent_mode),
             "chat_mode": str(self.chat_mode),
             "gyro_available": str(self.gyro_available),
-            "vagina_available": str(self.vagina_available),
+            "skin_available": str(self.skin_available),
             "pause_question": str(self.pause_question),
             "pause_period": str(self.pause_period),
             "pause_comma": str(self.pause_comma),

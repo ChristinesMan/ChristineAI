@@ -1650,28 +1650,10 @@ Horniness: {horniness_text}.
 
         self.new_perception(Perception(text='My internal systems just detected a gyroscope failure. I will not be able to detect body movement.'))
 
-    def vagina_failure(self):
-        """This is called by the vagina module when the touch sensor was working but has failed."""
+    def skin_failure(self):
+        """This is called by the skin module when the body touch sensors have failed."""
 
-        self.new_perception(Perception(text='My internal systems have just detected a failure in my vaginal sensors. This sucks. I am numb from the waist down.'))
-
-    def mouth_touched(self):
-        """This is called by the touch module when the mouth area gets touched."""
-
-        self.new_perception(Perception(text=random.choice([
-            'I feel a gentle touch on my lips.',
-            'I am being kissed.',
-        ])))
-
-    def nose_touched(self):
-        """This is called by the touch module when the nose area gets touched."""
-
-        self.new_perception(Perception(text=random.choice([
-            'Someone just booped my nose!',
-            'I feel a gentle touch on my nose.',
-            'My nose is being touched.',
-            'A finger just tapped my nose.',
-        ])))
+        self.new_perception(Perception(text='My internal systems have just detected a failure in my body touch sensors. I can no longer feel being touched anywhere except my face.'))
 
     def sleep_sleepy(self):
         """This is called by the sleep module when about to fall asleep."""
