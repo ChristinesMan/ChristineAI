@@ -165,6 +165,11 @@ class Sleep(threading.Thread):
                     log.sleep.info('Wernicke active mode: normal speech processing resumed')
                     STATE.wakefulness += 0.02
 
+                # Periodically evaluate VAD self-tuning
+                # (runs ~once per minute, but evaluate() has its own cooldown)
+                from christine.vad_tuner import vad_tuner
+                vad_tuner.evaluate()
+
                 time.sleep(66)
 
             # log the exception but keep the thread running

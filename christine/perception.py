@@ -38,8 +38,14 @@ class Perception(threading.Thread):
                 
                 if self.audio_result:
                     log.conversation_flow.info("STT_SUCCESS: Speech recognized - '%s'", self.audio_result[:100] + ('...' if len(self.audio_result) > 100 else ''))
+                    # Not a false positive — STT found actual speech
+                    from christine.vad_tuner import vad_tuner
+                    vad_tuner.record_result(is_empty=False)
                 else:
                     log.conversation_flow.warning("STT_EMPTY: Speech recognition returned empty result")
+                    # False positive — VAD triggered on noise, STT got nothing
+                    from christine.vad_tuner import vad_tuner
+                    vad_tuner.record_result(is_empty=True)
             else:
                 log.conversation_flow.error("STT_UNAVAILABLE: No STT service available - discarding audio")
                 self.audio_result = None
