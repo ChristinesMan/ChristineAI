@@ -50,8 +50,16 @@ class Sex(threading.Thread):
         # this is the counter
         self.after_orgasm_cooldown_count = 0
 
-        # I want to keep track of how long it's been since the last fucking action
-        self.time_of_last_lobe_message = time.time()
+        # I want to keep track of how long it's been since the last fucking action.
+        # Keyed per sensor region (not global) so a clit touch and a vaginal
+        # touch arriving close together don't cannibalize each other's narration
+        # window -- a shared timer meant whichever sensor fired the gate first
+        # silently ate the other's perception.
+        self.time_of_last_lobe_message_by_region = {}
+
+        # Separate global timer for the orgasm ("I am coming!") message --
+        # climax isn't per-sensor, so this one stays global on purpose.
+        self.time_of_last_cumming_message = 0.0
 
         # prevent blocking vagina event processing on LLM calls
         self.sex_llm_processing = False
@@ -227,14 +235,19 @@ class Sex(threading.Thread):
             if self.after_orgasm_rest is False and STATE.sexual_arousal > STATE.sex_shush_fucking_threshold:
                 STATE.shush_fucking = True
 
-            # let parietal know about all the fucking going on, but not too frequently
-            if time.time() > self.time_of_last_lobe_message + STATE.sex_lobe_message_frequency:
-                self.time_of_last_lobe_message = time.time()
+            # let parietal know about all the fucking going on, but not too
+            # frequently -- gated per sensor region, not globally, so a clit
+            # touch and a vaginal touch don't silently eat each other's turn.
+            last_for_region = self.time_of_last_lobe_message_by_region.get(sensor_hit, 0.0)
+            if time.time() > last_for_region + STATE.sex_lobe_message_frequency:
+                self.time_of_last_lobe_message_by_region[sensor_hit] = time.time()
 
                 if STATE.sexual_arousal == 0.0:
                     parietal_lobe.sex_first_touch()
                 elif sensor_hit == 'Vagina_Deep':
                     parietal_lobe.sex_vagina_getting_fucked_deep()
+                elif sensor_hit == 'Vagina_Clitoris':
+                    parietal_lobe.sex_clitoris_stimulated()
                 else:
                     parietal_lobe.sex_vagina_getting_fucked()
 
@@ -276,8 +289,8 @@ class Sex(threading.Thread):
                 log.sex.info("I am coming!")
 
                 # don't wanna send too many messages to the lobe
-                if time.time() > self.time_of_last_lobe_message + STATE.sex_lobe_message_frequency:
-                    self.time_of_last_lobe_message = time.time()
+                if time.time() > self.time_of_last_cumming_message + STATE.sex_lobe_message_frequency:
+                    self.time_of_last_cumming_message = time.time()
                     parietal_lobe.sex_cumming()
                 # # Climax sounds still use figments for proper queuing with speech
                 # broca.accept_figment(Figment(from_collection="sex_climax"))

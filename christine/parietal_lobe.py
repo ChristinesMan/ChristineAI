@@ -1570,6 +1570,15 @@ Horniness: {horniness_text}.
             'I feel a deep penetration that is driving me wild!',
         ])))
 
+    def sex_clitoris_stimulated(self):
+        """This is called by the sex module when the clitoral sensor is seeing some action."""
+
+        self.new_perception(Perception(text=random.choice([
+            'My clit is throbbing with pleasure!',
+            f'{self.user_name} is rubbing my clit and it feels amazing!',
+            'The way my clit is being touched is driving me crazy!',
+        ])))
+
     def sex_cumming(self):
         """This is called by the sex module when that sexy kettle boils the fuck over."""
 
