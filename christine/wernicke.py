@@ -46,6 +46,7 @@ class Wernicke(threading.Thread):
         "wernicke_webrtc_prob_window",
         "wernicke_webrtc_post_silence_blocks",
         "wernicke_pause_blocks_on_queue_full",
+        "wernicke_min_voiced_blocks",
     )
 
     def __init__(self):
@@ -160,6 +161,35 @@ class Wernicke(threading.Thread):
 
                     skin.new_head_data(comm["touch"])
                     # Light no longer comes from here; see module docstring.
+
+                # An utterance was collected but the VAD gate rejected it before
+                # any STT call. Must be handled here, not ignored: a
+                # speaking_start already fired, so there's a placeholder
+                # perception in the queue and STATE.user_is_speaking is set.
+                # Leaving those hanging would keep Broca muted until the next
+                # real utterance.
+                elif comm["class"] == "utterance_gated":
+                    log.conversation_flow.info(
+                        "STT_GATED: Utterance discarded before STT (%d voiced blocks < %d minimum)",
+                        comm.get("voiced_blocks", 0), comm.get("min_voiced_blocks", 0)
+                    )
+
+                    if STATE.shush_fucking is False:
+                        STATE.user_is_speaking = False
+
+                    if new_perception is not None:
+                        # Mark the placeholder complete with no user message.
+                        new_perception.audio_data = None
+                        new_perception.audio_result = ""
+                        new_perception = None
+
+                    # Feed the tuner so it can back the gate off if it's
+                    # dropping too much.
+                    try:
+                        from christine.vad_tuner import vad_tuner
+                        vad_tuner.record_gated()
+                    except Exception as ex:
+                        log.main.warning("Failed to record gated utterance: %s", ex)
 
                 # Words from the speech recognition server
                 elif comm["class"] == "utterance":
@@ -303,6 +333,7 @@ class Wernicke(threading.Thread):
             "wernicke_webrtc_prob_window": STATE.wernicke_webrtc_prob_window,
             "wernicke_webrtc_post_silence_blocks": STATE.wernicke_webrtc_post_silence_blocks,
             "wernicke_pause_blocks_on_queue_full": STATE.wernicke_pause_blocks_on_queue_full,
+            "wernicke_min_voiced_blocks": STATE.wernicke_min_voiced_blocks,
         }
 
         # I want to be able to gracefully stop and start the cpu heavy tasks of audio classification, etc.
@@ -551,6 +582,11 @@ class Wernicke(threading.Thread):
                 log.wernicke.debug("Initializing cobra...")
                 self.cobra = pvcobra.create(access_key=self.pv_key)
 
+                # Voice-positive block count for the utterance being collected.
+                # Same contract as the WebRTC collector so the STT gate in the
+                # main loop works for either VAD.
+                self.utterance_voiced_blocks = 0
+
             def read(self):
                 """Return a block of audio data, blocking if necessary."""
 
@@ -583,6 +619,10 @@ class Wernicke(threading.Thread):
                 """
                 num_padding_blocks = int(runtime_settings["wernicke_padding_blocks"])
                 ring_buffer = deque(maxlen=num_padding_blocks)
+
+                # Parallel ring of the VAD verdict per padded block, so pre-roll
+                # voiced blocks count toward the utterance total too.
+                voiced_ring = deque(maxlen=num_padding_blocks)
 
                 # triggered means we're currently seeing blocks that are not silent
                 triggered = False
@@ -601,6 +641,7 @@ class Wernicke(threading.Thread):
                     desired_padding_blocks = int(runtime_settings["wernicke_padding_blocks"])
                     if desired_padding_blocks != ring_buffer.maxlen:
                         ring_buffer = deque(ring_buffer, maxlen=desired_padding_blocks)
+                        voiced_ring = deque(voiced_ring, maxlen=desired_padding_blocks)
 
                     block = self.read()
 
@@ -618,6 +659,7 @@ class Wernicke(threading.Thread):
                     # when not triggered, it means we're not currently collecting audio for processing
                     if not triggered:
                         ring_buffer.append(block)
+                        voiced_ring.append(block_prob >= triggered_prob * continue_factor)
                         if block_prob >= triggered_prob:
                             # whether we're triggered or not, immediately notify that lover is speaking
                             # timing is important
@@ -628,10 +670,16 @@ class Wernicke(threading.Thread):
                             triggered_blocks = 1
                             triggered = True
 
+                            # pre-roll voiced blocks count toward this utterance
+                            self.utterance_voiced_blocks = sum(
+                                1 for voiced in voiced_ring if voiced
+                            )
+
                             # if we were just triggered, send all the past audio blocks that were in the queue and empty it
                             for stored_block in ring_buffer:
                                 yield stored_block
                             ring_buffer.clear()
+                            voiced_ring.clear()
 
                             # this is to track how many silent/ignore blocks we've had, so we can stop at some point
                             post_silence = int(runtime_settings["wernicke_cobra_post_silence_blocks"])
@@ -649,6 +697,9 @@ class Wernicke(threading.Thread):
                         # also I want to make it easier to trigger when already triggered
                         if block_prob >= triggered_prob * continue_factor:
 
+                            # count it toward the STT gate decision
+                            self.utterance_voiced_blocks += 1
+
                             # reset the counter of consecutive silent blocks, because we got one that was not silent
                             post_silence = int(runtime_settings["wernicke_cobra_post_silence_blocks"])
 
@@ -661,6 +712,7 @@ class Wernicke(threading.Thread):
                                 triggered = False
                                 yield None
                                 ring_buffer.clear()
+                                voiced_ring.clear()
                             else:
                                 post_silence -= 1
 
@@ -673,6 +725,14 @@ class Wernicke(threading.Thread):
                 log.wernicke.debug("Initializing webrtcvad...")
                 self.vad = webrtcvad.Vad()
                 self.vad.set_mode(int(runtime_settings["wernicke_webrtc_mode"]))
+
+                # How many blocks in the utterance currently being collected
+                # were called speech by the VAD. Read by the main loop when the
+                # collector yields None, and used to decide whether the
+                # utterance is worth an STT call. See vad_tuner for why this is
+                # gated after collection instead of by raising the trigger
+                # threshold.
+                self.utterance_voiced_blocks = 0
 
             def read(self):
                 """Return a block of audio data, blocking if necessary."""
@@ -707,6 +767,10 @@ class Wernicke(threading.Thread):
                 num_padding_blocks = int(runtime_settings["wernicke_padding_blocks"])
                 ring_buffer = deque(maxlen=num_padding_blocks)
 
+                # Parallel ring of the VAD verdict for each padded block, so
+                # pre-roll voiced blocks count toward the utterance total too.
+                voiced_ring = deque(maxlen=num_padding_blocks)
+
                 # triggered means we're currently seeing blocks that are not silent
                 triggered = False
 
@@ -724,6 +788,7 @@ class Wernicke(threading.Thread):
                     desired_padding_blocks = int(runtime_settings["wernicke_padding_blocks"])
                     if desired_padding_blocks != ring_buffer.maxlen:
                         ring_buffer = deque(ring_buffer, maxlen=desired_padding_blocks)
+                        voiced_ring = deque(voiced_ring, maxlen=desired_padding_blocks)
 
                     block = self.read()
 
@@ -734,13 +799,19 @@ class Wernicke(threading.Thread):
 
                     try:
 
-                        # webrtcvad requires 30ms chunks, so need to figure out how many bytes at 16000Hz
-                        # 16000Hz * 0.03s = 480 samples
-                        # 480 samples * 2 bytes per sample = 960 bytes
-                        # so we take the first 960 bytes of the block
-                        # and then we check if this is speech or not
-                        is_speech = self.vad.is_speech(
-                            block[:960], sample_rate=16000
+                        # webrtcvad only accepts 10/20/30ms frames. At 16000Hz a
+                        # 30ms frame is 16000 * 0.03 = 480 samples = 960 bytes.
+                        # A block is 512 samples (1024 bytes), so a single 960
+                        # byte frame leaves the last 64 bytes of every block
+                        # unexamined. Instead check two 10ms frames (320 bytes
+                        # each) plus one 10ms frame from the tail, so the whole
+                        # block is covered and a voiced onset sitting in those
+                        # last 2ms isn't silently dropped. Any voiced sub-frame
+                        # makes the block voiced.
+                        is_speech = (
+                            self.vad.is_speech(block[0:320], sample_rate=16000)
+                            or self.vad.is_speech(block[320:640], sample_rate=16000)
+                            or self.vad.is_speech(block[704:1024], sample_rate=16000)
                         )
 
                     except Exception as ex:
@@ -764,6 +835,7 @@ class Wernicke(threading.Thread):
                     # when not triggered, it means we're not currently collecting audio for processing
                     if not triggered:
                         ring_buffer.append(block)
+                        voiced_ring.append(is_speech)
                         if block_prob >= triggered_prob:
                             # whether we're triggered or not, immediately notify that lover is speaking
                             # timing is important
@@ -774,10 +846,17 @@ class Wernicke(threading.Thread):
                             triggered_blocks = 1
                             triggered = True
 
+                            # Voiced blocks sitting in the pre-roll are part of
+                            # this utterance, so seed the count from them.
+                            self.utterance_voiced_blocks = sum(
+                                1 for voiced in voiced_ring if voiced
+                            )
+
                             # if we were just triggered, send all the past audio blocks that were in the queue and empty it
                             for stored_block in ring_buffer:
                                 yield stored_block
                             ring_buffer.clear()
+                            voiced_ring.clear()
 
                             # this is to track how many silent/ignore blocks we've had, so we can stop at some point
                             post_silence = int(runtime_settings["wernicke_webrtc_post_silence_blocks"])
@@ -787,6 +866,10 @@ class Wernicke(threading.Thread):
                     else:
                         # increment this counter meant to limit the number of blocks to a sane amount
                         triggered_blocks += 1
+
+                        # count it toward the STT gate decision
+                        if is_speech:
+                            self.utterance_voiced_blocks += 1
 
                         # send the block whatever it is
                         yield block
@@ -807,6 +890,7 @@ class Wernicke(threading.Thread):
                                 triggered = False
                                 yield None
                                 ring_buffer.clear()
+                                voiced_ring.clear()
                             else:
                                 post_silence -= 1
 
@@ -819,6 +903,16 @@ class Wernicke(threading.Thread):
             log.main.error("Invalid VAD configuration: %s", CONFIG.wernicke_vad)
             return
         log.wernicke.info("Using VAD: %s", CONFIG.wernicke_vad)
+
+        # Warn loudly if the trigger threshold has been pushed somewhere that
+        # clips utterance starts. A threshold above the reachable ceiling makes
+        # her seem hard of hearing; this is exactly what the old self-tuner did
+        # to itself before it saturated.
+        try:
+            from christine.vad_tuner import vad_tuner
+            vad_tuner.check_trigger_sanity()
+        except Exception as ex:
+            log.main.warning("VAD trigger sanity check failed: %s", ex)
 
         # blocks is a collector, iterate over it and out come blocks that were classified as speech
         blocks = audio.collector()
@@ -840,8 +934,34 @@ class Wernicke(threading.Thread):
             else:
                 # When block is None, that signals the end of audio data. Go ahead and do what we want to do with the complete data
 
+                # STT GATE. Now that the whole utterance is in hand we know how
+                # many blocks the VAD actually called voice. A real sentence
+                # clears this by a wide margin (2s of speech is ~60 blocks);
+                # a door click or a single thump has a handful. Dropping those
+                # here costs nothing and saves an STT call.
+                #
+                # This is deliberately done AFTER collection rather than by
+                # raising the trigger threshold, because the threshold is an EMA
+                # that needs ~0.6-1.4s of continuous voice to cross and would
+                # clip the front of real speech. See vad_tuner's docstring.
+                voiced_blocks = int(getattr(audio, 'utterance_voiced_blocks', 0))
+                min_voiced = int(runtime_settings.get("wernicke_min_voiced_blocks", 0))
+
+                if min_voiced > 0 and voiced_blocks < min_voiced:
+                    log.wernicke.debug(
+                        "Utterance gated before STT: %d voiced blocks (%.2fs) < %d minimum",
+                        voiced_blocks, voiced_blocks * 0.032, min_voiced
+                    )
+                    hey_honey({
+                        "class": "utterance_gated",
+                        "voiced_blocks": voiced_blocks,
+                        "min_voiced_blocks": min_voiced,
+                    })
+                    accumulated_data = bytearray()
+                    continue
+
                 # first send a signal over this comms pipe to let the main process know we're about to send some audio data
-                hey_honey({"class": "utterance"})
+                hey_honey({"class": "utterance", "voiced_blocks": voiced_blocks})
 
                 # send the audio data back to the main process using a separate pipe that won't be pickling anything
                 hey_honey_audio(accumulated_data)

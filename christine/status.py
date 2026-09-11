@@ -205,6 +205,11 @@ class Status(threading.Thread):
         self.wernicke_webrtc_prob_window = 32.0
         self.wernicke_webrtc_post_silence_blocks = 60
         self.wernicke_pause_blocks_on_queue_full = 10
+        # Post-collection STT gate: minimum voice-positive blocks in a complete
+        # utterance before it's worth an STT call. Tuned automatically by
+        # vad_tuner. This replaces tuning the trigger threshold, which made her
+        # hard of hearing without rejecting sustained noise.
+        self.wernicke_min_voiced_blocks = 6
 
         # this is the minimum number of narratives before a bunch of old narratives get folded
         self.memory_folding_min_narratives = 25
@@ -512,6 +517,11 @@ class Status(threading.Thread):
                 'type': 'i', 'min': 1, 'max': 120, 'default': 10,
                 'desc': 'Queue-full recovery pause blocks',
                 'help': 'How long audio processing pauses when the mic buffer queue overflows. Higher values recover more gently under CPU spikes.'
+            },
+            'wernicke_min_voiced_blocks': {
+                'type': 'i', 'min': 4, 'max': 40, 'default': 6,
+                'desc': 'Minimum voiced blocks for STT',
+                'help': 'After an utterance is fully collected, this is the minimum number of 0.032s blocks the VAD called speech before it is worth sending to the speech-to-text API. Short thumps, door clicks and single noise spikes fall below it and are discarded for free. This is the safe knob for cutting wasted STT calls: unlike raising the trigger threshold, it never clips the start of a sentence, because the decision is made with the whole utterance in hand. Tuned automatically. Raise it to save more API calls, lower it if brief real speech is being dropped.'
             },
             
             # Memory system settings
