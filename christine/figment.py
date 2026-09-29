@@ -19,7 +19,9 @@ class Figment(threading.Thread):
                  from_collection=None,
                  intensity=None,
                  pause_duration=None,
-                 pause_wernicke=False):
+                 pause_wernicke=False,
+                 volume=None,
+                 voice_register=None):
         super().__init__(daemon=True)
 
         # the narrative text that came from the LLM
@@ -39,6 +41,16 @@ class Figment(threading.Thread):
 
         # if this is true, the wernicke must be paused during playback to avoid wife talking to self
         self.pause_wernicke = pause_wernicke
+
+        # Playback volume 0-100, chosen from the vocal cues in her own narrative
+        # (see voice_volume.py). None means "use the default" and is resolved in
+        # broca rather than here, so a figment built by some other module still
+        # plays at a sane level.
+        self.volume = volume
+
+        # Which register the cue matcher landed on ('whisper', 'soft', 'normal',
+        # 'raised', 'shout'). Carried purely for logging - nothing branches on it.
+        self.voice_register = voice_register
 
         # the audio file path that is ready to be played
         self.wav_file = None

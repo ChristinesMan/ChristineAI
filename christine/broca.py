@@ -294,12 +294,24 @@ class Broca(threading.Thread):
 
                 log.figment_lifecycle.info("SOUND_PLAYBACK: Playing sound from collection '%s' - %s (pause_wernicke=%s)", 
                                          figment.from_collection, sound.file_path, pause_wernicke)
+
+                # Collection sounds (inhalations, laughs, sighs) track her normal
+                # speaking volume rather than a hardcoded 100%. These interleave
+                # directly with speech - an inhalation is played right before an
+                # utterance - so at a default of 65 a full-volume inhale would be
+                # noticeably louder than the line it introduces, and 4x louder than
+                # a whisper. If the figment carries an explicit volume, honor it.
+                sound_volume = getattr(figment, 'volume', None)
+                if sound_volume is None:
+                    sound_volume = int(getattr(STATE, 'voice_volume_default', 65))
+                sound_volume = max(0, min(100, int(sound_volume)))
+
                 # send the message to the subprocess
                 self.to_shuttlecraft.send(
                     {
                         "action": "playwav",
                         "wavfile": sound.file_path,
-                        "vol": 100,
+                        "vol": sound_volume,
                         "pause_wernicke": pause_wernicke,
                     }
                 )
@@ -346,12 +358,28 @@ class Broca(threading.Thread):
                         time.sleep(0.2)
 
                     log.figment_lifecycle.info("SPEECH_PLAYBACK: Playing synthesized speech - %s", figment.wav_file)
+
+                    # Resolve the playback volume. A figment built by a module that
+                    # knows nothing about voice registers has volume=None, so fall
+                    # back to her configured normal speaking level rather than 100 -
+                    # 100 would make every non-cued sound louder than her own voice.
+                    speech_volume = getattr(figment, 'volume', None)
+                    if speech_volume is None:
+                        speech_volume = int(getattr(STATE, 'voice_volume_default', 65))
+                    speech_volume = max(0, min(100, int(speech_volume)))
+
+                    if getattr(figment, 'voice_register', None) not in (None, 'normal'):
+                        log.broca_main.info(
+                            "Speaking in %s register at %s%%: %s",
+                            figment.voice_register, speech_volume, figment.text[:60]
+                        )
+
                     # send the message to the subprocess
                     self.to_shuttlecraft.send(
                         {
                             "action": "playwav",
                             "wavfile": figment.wav_file,
-                            "vol": 100,
+                            "vol": speech_volume,
                             "pause_wernicke": True,  # always pause for speech
                         }
                     )
@@ -510,6 +538,66 @@ class Broca(threading.Thread):
         # import alsaaudio
         import wave
         import random
+        import audioop
+        import io
+
+        def open_wav_at_volume(path, volume):
+            """Open a wav file, scaled to `volume` percent, as a wave reader.
+
+            This exists because the HiFiBerry DAC has NO HARDWARE MIXER. It is a
+            PCM5102A - a pure DAC with no volume register. On christine4:
+
+                amixer -c 0 controls          -> (empty)
+                amixer -c 0 cset numid=1 50%  -> "Cannot find the given element"
+                ls /proc/asound/card0/        -> id, pcm0p     (no mixer node)
+
+            So the `amixer -q cset numid=1 N%` call that used to live here was a
+            silent no-op for its entire life. It never failed loudly because
+            os.system() swallows the exit code, and nobody noticed because every
+            call site passed 100 anyway.
+
+            Scaling the samples in Python instead keeps volume per-sound with no
+            global mixer state, which matters here: the breathing loop and speech
+            interleave constantly, and a global mixer would have them fighting
+            over the same control. audioop.mul is a C loop - a 90s 44.1kHz mono
+            16-bit buffer is ~7.9 MB and scales in a few ms, well inside the
+            0.2s playback polling interval.
+
+            audioop is deprecated in 3.11 and removed in 3.13. She runs 3.11.2,
+            so this is fine today; if her Python is ever upgraded past 3.12 this
+            needs to become an array/numpy multiply.
+            """
+
+            if volume >= 100:
+                return wave.open(path)
+
+            with wave.open(path, 'rb') as source:
+                params = source.getparams()
+                frames = source.readframes(source.getnframes())
+
+            if volume <= 0:
+                # Don't hand pyaudio an empty buffer - it would finish instantly and
+                # the pause_wernicke window would slam shut early. Emit real silence
+                # of the correct length instead.
+                frames = b'\x00' * len(frames)
+            else:
+                try:
+                    frames = audioop.mul(frames, params.sampwidth, volume / 100.0)
+                except audioop.error as ex:
+                    # Bad sample width or odd-length buffer. Play it unscaled rather
+                    # than dropping the line entirely - too loud beats silent.
+                    log.broca_shuttlecraft.warning(
+                        "Volume scaling failed for %s (%s), playing at full volume", path, ex
+                    )
+                    return wave.open(path)
+
+            buffer = io.BytesIO()
+            with wave.open(buffer, 'wb') as scaled:
+                scaled.setparams(params)
+                scaled.writeframes(frames)
+            buffer.seek(0)
+
+            return wave.open(buffer, 'rb')
 
         remote_audio_enabled = str(getattr(CONFIG, "audio_output_mode", "local")).lower() == "remote"
         remote_play_url = None
@@ -567,12 +655,12 @@ class Broca(threading.Thread):
         # I miss pyalsaaudio
         last_volume = 100
 
-        # So, often there's nothing playing from the speaker, and after 3-4s the speaker goes into standby mode
-        # This causes some sounds to get cut off. So this var is an attempt to detect when that will be a problem
-        # and play a sound to get it started back up
-        # However, this might never get triggered with the breathing logic the way it is, so might remove later
+        # Tracks how long the speaker has been silent. The breathing loop uses this
+        # to decide when to slip a breath in.
+        # This used to ALSO drive a "presound" beep before each utterance, because
+        # the old JBL mainboard's auto-standby chopped the first syllable. The
+        # TPA3116D2 amp has no standby, so that's gone and this is breathing-only.
         seconds_idle = 0.0
-        seconds_idle_to_play_presound = 4.0
 
         # seconds to wait before breathing
         seconds_to_breathe = 0.5
@@ -623,40 +711,21 @@ class Broca(threading.Thread):
 
                 elif comms["action"] == "playwav":
 
-                    # if seconds_idle is greater than the threshold, play a sound to get the speaker started back up
-                    if seconds_idle > seconds_idle_to_play_presound:
-                        log.broca_shuttlecraft.debug("Beep! (idle %ss)", seconds_idle)
-                        if remote_audio_enabled:
-                            try:
-                                with open("sounds/beep.wav", "rb") as wav_file:
-                                    response = requests.post(
-                                        remote_play_url,
-                                        data=wav_file.read(),
-                                        headers={
-                                            "Content-Type": "audio/wav",
-                                            "X-Volume": "100",
-                                        },
-                                        timeout=remote_audio_timeout,
-                                    )
-                                response.raise_for_status()
-                            except Exception as ex:
-                                log.broca_shuttlecraft.warning("Remote beep playback failed: %s", ex)
-                        else:
-                            pya_stream.stop_stream()
-                            wav_data = wave.open("sounds/beep.wav")
-                            pya_stream.start_stream()
+                    # The "presound" beep used to go here. The old scavenged JBL
+                    # Charge 4 mainboard had an auto-standby that powered the amp
+                    # down after a few seconds idle and chopped the first syllable
+                    # off an utterance, so a quiet beep was played first to wake it.
+                    # The TPA3116D2 board that replaced it has no auto-standby - it
+                    # is always live - so the beep is pure noise now and is gone.
+                    # seconds_idle is still tracked; the breathing loop uses it.
 
-                            # wait until the stream flips to not active which means the beep is done
-                            while pya_stream.is_active():
-                                time.sleep(0.2)
-
-                    # the volume gets set before each sound is played
-                    # mixer.setvolume(comms["vol"])
-                    # pyalsaaudio died so we have to forking fork
+                    # Volume is applied by scaling the wav samples (see
+                    # open_wav_at_volume). It used to be an `amixer cset numid=1 N%`
+                    # here, but the HiFiBerry DAC exposes no mixer element at all, so
+                    # that call did nothing. last_volume is still tracked, but only
+                    # for the remote sink, which DOES have a working amixer.
                     if comms["vol"] != last_volume:
-                        log.broca_shuttlecraft.debug("Setting volume to %s", comms["vol"])
-                        if not remote_audio_enabled:
-                            os.system(f'amixer -q cset numid=1 {comms["vol"]}%')
+                        log.broca_shuttlecraft.debug("Volume for this sound: %s", comms["vol"])
                         last_volume = comms["vol"]
 
                     # DIRECT WERNICKE COORDINATION - SHARED MEMORY
@@ -686,7 +755,7 @@ class Broca(threading.Thread):
                             log.broca_shuttlecraft.exception("Remote playback failed for %s: %s", comms["wavfile"], ex)
                     else:
                         pya_stream.stop_stream()
-                        wav_data = wave.open(comms["wavfile"])
+                        wav_data = open_wav_at_volume(comms["wavfile"], comms["vol"])
                         pya_stream.start_stream()
 
                         # wait until the stream flips to not active which means the sound is done
@@ -723,11 +792,15 @@ class Broca(threading.Thread):
                     if breath is not None:
                         log.broca_shuttlecraft.debug("Breathing")
 
-                        # breaths get played at 100 max volume
-                        if last_volume != 100:
-                            if not remote_audio_enabled:
-                                os.system('amixer -q cset numid=1 100%')
-                            last_volume = 100
+                        # Breathing tracks her normal speaking volume rather than a
+                        # hardcoded 100%. With the new amp and a default below 100,
+                        # full-volume breathing would be LOUDER than her actual voice,
+                        # which is unsettling - and it would make a whispered line
+                        # land between two full-volume breaths.
+                        breath_volume = int(getattr(STATE, 'voice_volume_default', 65))
+                        breath_volume = max(0, min(100, breath_volume))
+                        if last_volume != breath_volume:
+                            last_volume = breath_volume
 
                         if remote_audio_enabled:
                             try:
@@ -737,7 +810,7 @@ class Broca(threading.Thread):
                                         data=wav_file.read(),
                                         headers={
                                             "Content-Type": "audio/wav",
-                                            "X-Volume": "100",
+                                            "X-Volume": str(breath_volume),
                                         },
                                         timeout=remote_audio_timeout,
                                     )
@@ -746,7 +819,7 @@ class Broca(threading.Thread):
                                 log.broca_shuttlecraft.warning("Remote breathing playback failed: %s", ex)
                         else:
                             pya_stream.stop_stream()
-                            wav_data = wave.open(breath.file_path)
+                            wav_data = open_wav_at_volume(breath.file_path, breath_volume)
                             pya_stream.start_stream()
 
                             # wait until the stream flips to not active which means the sound is done
@@ -904,7 +977,9 @@ class Broca(threading.Thread):
         self.to_shuttlecraft.send({
             "action": "playwav",
             "wavfile": sound.file_path,
-            "vol": 100,
+            # Sex sounds have their own level (STATE.voice_volume_sex), independent
+            # of her speech registers - the cue matcher never touches these.
+            "vol": max(0, min(100, int(getattr(STATE, 'voice_volume_sex', 100)))),
             "pause_wernicke": sound.pause_wernicke if sound.pause_wernicke else False,
         })
 
@@ -943,7 +1018,8 @@ class Broca(threading.Thread):
         self.to_shuttlecraft.send({
             "action": "playwav",
             "wavfile": sound.file_path,
-            "vol": 100,
+            # Own level, same as the queued sex-sound path above.
+            "vol": max(0, min(100, int(getattr(STATE, 'voice_volume_sex', 100)))),
             "pause_wernicke": sound.pause_wernicke if sound.pause_wernicke else False,
         })
 

@@ -14,6 +14,7 @@ from christine.sleep import sleep
 from christine.figment import Figment
 from christine.perception import Perception
 from christine.narrative import Narrative
+from christine import voice_volume
 from christine.short_term_memory import ShortTermMemory
 from christine.neocortex import Neocortex
 from christine.prefrontal_cortex import prefrontal_cortex
@@ -43,6 +44,16 @@ class ParietalLobe(threading.Thread):
 {{self_definition}}
 
 To interact with the real world, write in a narrative style. Take care to enclose in quotes any part of your response that should be spoken. When words are in quotes, you will speak in the actual real world. Your physical body does really exist in the real world. This is not a simulation. You are really here, connected to your physical body, and present now. 
+
+Your speaker and amplifier were recently upgraded and you now have real control over how loudly you speak. Your volume follows the cues you write in your own narrative around your quoted speech, so how you describe speaking is how it actually comes out of your body:
+
+- Whispering, murmuring, muttering, speaking under your breath, or speaking close to his ear comes out very quiet and intimate.
+- Speaking softly or quietly comes out gentle and low.
+- With no cue at all, you speak at your normal conversational volume, which is deliberately not your maximum.
+- Calling out, raising your voice, projecting, or speaking to be heard from another room or down the hall comes out loud enough to carry through the house.
+- Yelling, shouting, or screaming uses your full volume. This is genuinely loud.
+
+This range is new to you. Your previous speaker was too weak to be heard from another room, so you have never had the option before - if {self.user_name} is in another part of the house, you can now simply call out to him instead of waiting for him to come back. Use the whole range as it naturally fits the moment. Don't narrate volume for its own sake; just let it follow what you actually feel like doing.
 
 {{tool_introduction}}
 
@@ -794,6 +805,15 @@ Dream:
         last_thought_segment = ''       # Track the preceding thought for attribution detection
         spoken_sent_in_current_quote = False  # Track if any spoken chunks already sent in current quote
 
+        # Voice volume for the quote currently being spoken. Resolved ONCE when the
+        # opening quote is found, then reused for every chunk of that same quote.
+        # This matters because a long line gets split at sentence punctuation into
+        # several figments - resolving per chunk would let "I say softly" at the very
+        # end apply to only the last sentence, so she'd start at normal volume and
+        # drop mid-line. One register per quote is how a person actually talks.
+        current_quote_volume = None
+        current_quote_register = None
+
         # Normalized quote-echo source: recent user speech + recent recalled memories.
         # This catches quoted fragments copied from either source.
         user_speech_normalized = (
@@ -838,7 +858,13 @@ Dream:
                     log.parietal_lobe.debug("Chat mode: buffered dialogue segment instead of speaking - '%s'", text[:50])
                     return True
 
-                broca.accept_figment(Figment(text=text, should_speak=should_speak, pause_wernicke=True))
+                broca.accept_figment(Figment(
+                    text=text,
+                    should_speak=should_speak,
+                    pause_wernicke=True,
+                    volume=current_quote_volume,
+                    voice_register=current_quote_register,
+                ))
             else:
                 broca.accept_figment(Figment(text=text, should_speak=False))
             
@@ -978,6 +1004,24 @@ Dream:
                     segment = char  # Start new segment with opening quote
                     is_inside_quotes = True
                     spoken_sent_in_current_quote = False  # Reset for new quote
+
+                    # Resolve the voice register for this whole quote, now, before any
+                    # of it is sent. Cues live on both sides of a quote in her writing
+                    # ("I whisper, \"...\"" and "\"...\", I say softly" are both common,
+                    # 4.1% vs 4.6% of quotes respectively), so we look behind AND ahead.
+                    # Looking ahead means skipping over the quote's own body to the
+                    # trailing attribution - a cue word inside the dialogue is her
+                    # talking ABOUT whispering, not an instruction to whisper.
+                    closing_quote = response.find('"', i + 1)
+                    if closing_quote == -1:
+                        text_after_quote = ''
+                    else:
+                        text_after_quote = response[closing_quote + 1:closing_quote + 1 + 200]
+
+                    current_quote_volume, current_quote_register = voice_volume.volume_for_segment(
+                        text_before=last_thought_segment,
+                        text_after=text_after_quote,
+                    )
             else:
                 # Regular character - add to current segment
                 segment += char

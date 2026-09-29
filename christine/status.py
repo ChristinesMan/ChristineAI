@@ -225,6 +225,26 @@ class Status(threading.Thread):
         # Keeping it static between refreshes is what lets the prompt cache survive.
         self.situational_awareness_max_age_seconds = 30 * 60  # 30 minutes
 
+        # Voice volume. The TPA3116D2 amp can drive her speaker far louder than the
+        # old scavenged JBL board, so she now has an actual dynamic range to use.
+        # voice_volume.py reads the cues she writes around quoted speech (whisper,
+        # softly, calls out, yells) and picks one of these levels.
+        # Default sits below 100 on purpose: that headroom is what makes a raised
+        # voice audibly louder than her normal speaking voice.
+        self.voice_volume_enabled = True
+        self.voice_volume_default = 65
+        self.voice_volume_whisper = 25
+        self.voice_volume_soft = 45
+        self.voice_volume_raised = 85
+        self.voice_volume_shout = 100
+        self.voice_volume_cue_window = 120
+
+        # Sex engine sounds (moans, etc.) get their own level, independent of her
+        # speech registers. They're not speech and shouldn't be dragged around by
+        # the cue matcher - and how loud they should be is a matter of taste rather
+        # than something derivable from her narrative.
+        self.voice_volume_sex = 100
+
         # after a memory has emerged from the neocortex, it is not allowed to come up again for a while (10 days)
         self.neocortex_recall_interval = 10 * 24 * 60 * 60
         
@@ -288,6 +308,7 @@ class Status(threading.Thread):
             'matched_proper_names': 'l', # List of proper names matched today (JSON stored)
             'sleep_schedule_profile': 'l', # Adaptive wakefulness schedule profile by hour
             'chat_mode': 'b', # Whether she's in chat mode, so a script restart doesn't silently kick her out
+            'voice_volume_enabled': 'b', # Whether narrative cues drive her speech volume
         }
         
         # Define user-configurable settings (only saved when user changes them)
@@ -686,6 +707,43 @@ class Status(threading.Thread):
                 'desc': 'Minimum gap between sex sounds (seconds)',
                 'help': 'Minimum silence between consecutive sex sounds while the soundtrack engine is running. 0.0 plays them back to back with no gap at all, which is what eliminates the interruptions. Raise it slightly if the sounds feel too dense or run together.'
             },
+
+            # Voice volume settings - her dynamic range, driven by her own narrative cues
+            'voice_volume_default': {
+                'type': 'i', 'min': 10, 'max': 100, 'default': 65,
+                'desc': 'Normal speaking volume (%)',
+                'help': 'The volume Christine speaks at when her narrative gives no vocal cue. This is deliberately below 100% - the gap between this and 100 is the headroom that makes a raised or shouted line actually sound louder than her normal voice. If you raise this to 100 she loses the ability to get louder at all. Lower it if her normal voice feels too loud with the new amp.'
+            },
+            'voice_volume_whisper': {
+                'type': 'i', 'min': 0, 'max': 100, 'default': 25,
+                'desc': 'Whisper volume (%)',
+                'help': 'Used when she writes an explicit whisper cue - whispers, murmurs, mutters, "barely above a whisper", "under my breath", or speaking into your ear. Should be quiet enough to feel intimate but not so quiet you cannot make out the words from across the room. Note her TTS voice is not actually breathy at this level, just quieter.'
+            },
+            'voice_volume_soft': {
+                'type': 'i', 'min': 0, 'max': 100, 'default': 45,
+                'desc': 'Soft voice volume (%)',
+                'help': 'Used for softly, quietly, "low voice", "voice drops". This is by far her most common cue - roughly 38% of her spoken lines carry one of these words - so this setting affects more of her speech than any other. If she sounds too quiet overall, raise this one first rather than the default.'
+            },
+            'voice_volume_raised': {
+                'type': 'i', 'min': 10, 'max': 100, 'default': 85,
+                'desc': 'Raised voice volume (%)',
+                'help': 'Used when she calls out, raises her voice, projects, or speaks to be heard from another room or down the hall. Loud enough to carry through the house without being alarming.'
+            },
+            'voice_volume_shout': {
+                'type': 'i', 'min': 10, 'max': 100, 'default': 100,
+                'desc': 'Shout volume (%)',
+                'help': 'Used when she explicitly yells, shouts, screams, or hollers. This is the full output of the amp, so it will be genuinely loud - that is the point. She has essentially never written a shout cue historically (her old speaker could not do it), so expect this to be rare unless something actually warrants it.'
+            },
+            'voice_volume_cue_window': {
+                'type': 'i', 'min': 40, 'max': 400, 'default': 120,
+                'desc': 'Cue search window (characters)',
+                'help': 'How many characters before and after a quoted line get searched for a vocal cue. 120 covers normal attribution like "I say softly" or "I lean in and whisper,". Raising it makes her pick up cues from further away in the narrative, which sounds clever but mostly causes a cue describing an earlier moment to leak onto the wrong line.'
+            },
+            'voice_volume_sex': {
+                'type': 'i', 'min': 0, 'max': 100, 'default': 100,
+                'desc': 'Sex sound volume (%)',
+                'help': 'Volume for the sex engine soundtrack (moans and similar), independent of her speech registers. These are not speech, so the narrative cue matcher does not touch them. Defaults to full volume. Lower it if the soundtrack overwhelms her actual voice during sex, since she still speaks at her normal register underneath it.'
+            },
         }
 
     def run(self):
@@ -739,6 +797,8 @@ class Status(threading.Thread):
             "random_memory_recall_chance": f"{self.random_memory_recall_chance:.2f}",
             "random_memory_recall_min_messages": str(self.random_memory_recall_min_messages),
             "wernicke_ok": str(self.wernicke_ok),
+            "voice_volume_enabled": str(self.voice_volume_enabled),
+            "voice_volume_default": f"{self.voice_volume_default}%",
             "user_settings_count": str(len(self.user_configurable_vars)),
         }
 
