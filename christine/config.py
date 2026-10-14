@@ -66,6 +66,17 @@ class Config:
         self.openrouter_stt_language = os.getenv('CHRISTINE_OPENROUTER_STT_LANGUAGE', '').strip()
         self.openrouter_stt_timeout_seconds = int(os.getenv('CHRISTINE_OPENROUTER_STT_TIMEOUT_SECONDS', '60'))
 
+        # Audio logging for STT evaluation. Off by default. When enabled, each
+        # perception's raw ear audio is saved as a .wav plus a .json sidecar
+        # containing the live STT's transcript, so alternative STT engines can be
+        # scored against real recordings from her actual mics. Total directory size
+        # is capped; oldest captures are pruned first so an enabled-and-forgotten
+        # setting cannot fill the Pi's SD card.
+        self.audio_log_enabled = os.getenv('CHRISTINE_AUDIO_LOG_ENABLED', 'false').lower() == 'true'
+        self.audio_log_dir = os.getenv('CHRISTINE_AUDIO_LOG_DIR', '/root/ChristineAI/logs/audio_captures')
+        self.audio_log_max_mb = int(os.getenv('CHRISTINE_AUDIO_LOG_MAX_MB', '500'))
+        self.audio_log_min_bytes = int(os.getenv('CHRISTINE_AUDIO_LOG_MIN_BYTES', '16000'))
+
         # Prompt caching. The big stable prefix (context + yesterday + earlier today) gets a
         # cache breakpoint so it's billed at the cheap cache-read rate instead of full price.
         # TTL of '1h' costs more to write but survives the gaps between conversations. Set
@@ -77,6 +88,39 @@ class Config:
         self.openai_api_key = os.getenv('CHRISTINE_OPENAI_API_KEY', '')
         
         self.gemini_api_key = os.getenv('CHRISTINE_GEMINI_API_KEY', '')
+
+        # Gemini Interactions API STT with speaker diarization. This is what lets her
+        # tell "User said X" from "someone else said Y" instead of hearing everyone's
+        # words as if one person said them all.
+        self.gemini_stt_url = os.getenv('CHRISTINE_GEMINI_STT_URL', 'https://generativelanguage.googleapis.com/v1beta/interactions')
+        self.gemini_stt_model = os.getenv('CHRISTINE_GEMINI_STT_MODEL', 'gemini-3.5-flash-lite')
+        self.gemini_stt_timeout_seconds = int(os.getenv('CHRISTINE_GEMINI_STT_TIMEOUT_SECONDS', '20'))
+        # Latency tracks audio duration: under 15s essentially never timed out in
+        # testing, over 15s failed 8/15 times. Longer audio goes to the fallback STT
+        # rather than blocking her hearing. 0 disables the limit.
+        self.gemini_stt_max_audio_seconds = float(os.getenv('CHRISTINE_GEMINI_STT_MAX_AUDIO_SECONDS', '15'))
+        # 'low' is effectively mandatory - the default thinking level spends 20-200s
+        # reasoning about a transcription and times out.
+        self.gemini_stt_thinking_level = os.getenv('CHRISTINE_GEMINI_STT_THINKING_LEVEL', 'low').strip()
+        # store=true lets Google retain interactions, which enables server-side state
+        # and gives better cache hit rates. User opted in deliberately.
+        self.gemini_stt_store = os.getenv('CHRISTINE_GEMINI_STT_STORE', 'true').lower() == 'true'
+        self.gemini_stt_primary_speaker = os.getenv('CHRISTINE_GEMINI_STT_PRIMARY_SPEAKER', 'User').strip()
+        self.gemini_stt_other_speaker_label = os.getenv('CHRISTINE_GEMINI_STT_OTHER_SPEAKER_LABEL', 'Unknown Speaker').strip()
+        # Used when the model attributes speech to a named person but flags the
+        # attribution as low confidence. Telling her "someone" said it is honest;
+        # confidently naming the wrong person is not.
+        self.gemini_stt_unsure_speaker_label = os.getenv('CHRISTINE_GEMINI_STT_UNSURE_SPEAKER_LABEL', 'someone').strip()
+        # Names and jargon the model should spell correctly. Deliberately a vocabulary
+        # roster, NOT recent conversation: pasting prior transcript made the model
+        # replay old sentences as if freshly spoken.
+        self.gemini_stt_vocabulary = os.getenv('CHRISTINE_GEMINI_STT_VOCABULARY', '').strip()
+        # Failure backoff. api_selector restores the primary STT on a timer and
+        # is_available() can only prove a key exists, so without this a degraded
+        # Gemini gets retried on every single utterance and each retry burns the
+        # full timeout before she hears anything.
+        self.gemini_stt_failure_threshold = int(os.getenv('CHRISTINE_GEMINI_STT_FAILURE_THRESHOLD', '3'))
+        self.gemini_stt_cooldown_seconds = int(os.getenv('CHRISTINE_GEMINI_STT_COOLDOWN_SECONDS', '300'))
 
         # Ollama configuration
         self.ollama_base_url = os.getenv('CHRISTINE_OLLAMA_BASE_URL', 'http://server.lan:11434')
@@ -246,6 +290,21 @@ class Config:
                 errors.append("CHRISTINE_OPENAI_API_KEY is required when whisper STT is enabled")
             elif stt == 'openrouter' and not self.openrouter_api_key:
                 errors.append("CHRISTINE_OPENROUTER_API_KEY is required when openrouter STT is enabled")
+            elif stt == 'gemini' and not self.gemini_api_key:
+                errors.append("CHRISTINE_GEMINI_API_KEY is required when gemini STT is enabled")
+
+        # Gemini is gated behind STATE.diarization_enabled, which defaults OFF
+        # because it hallucinates on quiet domestic speech. With the switch off it
+        # declines every buffer and relies on another STT to pick it up - so if it
+        # is the ONLY enabled STT, she goes completely deaf, silently, with just a
+        # warning in the log. Refuse to start in that configuration.
+        if self.enabled_stts == ['gemini']:
+            errors.append(
+                "gemini cannot be the only STT: it is gated behind the "
+                "'Speaker identification' switch and declines all audio while that "
+                "is off, which would leave her unable to hear anything. Add a "
+                "plain STT, e.g. CHRISTINE_ENABLED_STTS=gemini,openrouter"
+            )
         
         # Validate that enabled TTSs have required configuration
         for tts in self.enabled_ttss:
@@ -293,6 +352,40 @@ class Config:
                 f"CHRISTINE_OPENROUTER_STT_TIMEOUT_SECONDS must be positive, got {self.openrouter_stt_timeout_seconds}"
             )
 
+        if self.audio_log_enabled and self.audio_log_max_mb <= 0:
+            errors.append(
+                f"CHRISTINE_AUDIO_LOG_MAX_MB must be positive, got {self.audio_log_max_mb}"
+            )
+
+        if self.audio_log_enabled and self.audio_log_min_bytes < 0:
+            errors.append(
+                f"CHRISTINE_AUDIO_LOG_MIN_BYTES must not be negative, got {self.audio_log_min_bytes}"
+            )
+
+        if 'gemini' in self.enabled_stts:
+            if self.gemini_stt_timeout_seconds <= 0:
+                errors.append(
+                    f"CHRISTINE_GEMINI_STT_TIMEOUT_SECONDS must be positive, got {self.gemini_stt_timeout_seconds}"
+                )
+            if self.gemini_stt_max_audio_seconds < 0:
+                errors.append(
+                    f"CHRISTINE_GEMINI_STT_MAX_AUDIO_SECONDS must not be negative, got {self.gemini_stt_max_audio_seconds}"
+                )
+            if self.gemini_stt_thinking_level not in ['low', 'medium', 'high']:
+                errors.append(
+                    f"CHRISTINE_GEMINI_STT_THINKING_LEVEL must be 'low', 'medium', or 'high', got '{self.gemini_stt_thinking_level}'"
+                )
+            if not self.gemini_stt_primary_speaker:
+                errors.append("CHRISTINE_GEMINI_STT_PRIMARY_SPEAKER must not be empty")
+            if self.gemini_stt_failure_threshold < 1:
+                errors.append(
+                    f"CHRISTINE_GEMINI_STT_FAILURE_THRESHOLD must be at least 1, got {self.gemini_stt_failure_threshold}"
+                )
+            if self.gemini_stt_cooldown_seconds < 0:
+                errors.append(
+                    f"CHRISTINE_GEMINI_STT_COOLDOWN_SECONDS must not be negative, got {self.gemini_stt_cooldown_seconds}"
+                )
+        
         # Skin (MCP23017 body touch sensors)
         if self.skin_enabled:
             if not 0x20 <= self.skin_i2c_address <= 0x27:

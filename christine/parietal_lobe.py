@@ -581,7 +581,18 @@ Dream:
                             continue
 
                         log.conversation_flow.info("USER_MESSAGE: User said - '%s'", perception.audio_result)
-                        new_messages.append({'speaker': STATE.who_is_speaking, 'text': perception.audio_result})
+
+                        # If the STT could tell voices apart, emit one message per
+                        # speaker so she knows who said what instead of hearing a
+                        # roomful of people as a single utterance from User.
+                        # Otherwise fall back to the single-speaker assumption.
+                        segments = getattr(perception, 'audio_segments', None) or []
+                        if segments:
+                            for segment in segments:
+                                new_messages.append({'speaker': segment['speaker'],
+                                                     'text': segment['text']})
+                        else:
+                            new_messages.append({'speaker': STATE.who_is_speaking, 'text': perception.audio_result})
 
                         # VOICE-TRIGGERED SILENT MODE EXIT: If user speaks, automatically exit silent mode
                         if STATE.silent_mode:

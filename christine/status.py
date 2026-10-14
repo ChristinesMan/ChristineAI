@@ -295,6 +295,14 @@ class Status(threading.Thread):
         # Optional minimum gap between engine sounds. 0.0 = back to back, no silence at all.
         self.sex_engine_min_gap = 0.0
 
+        # Whether the diarizing STT (Gemini) is allowed to serve audio. OFF by
+        # default: it hallucinates confidently on quiet domestic mumbling -
+        # "I love you" came back as "I don't know. I don't know. I don't know."
+        # Worse than a slow-but-honest transcript, because she acts on it.
+        # Turn it ON for meetings and group conversations, where several people
+        # are actively talking clearly and speaker attribution is the whole point.
+        self.diarization_enabled = False
+
         # Define which status variables should be persisted to the database.
         # Auto-persisted vars are saved every 25 seconds automatically
         # Type codes: 'f' = float, 'b' = boolean, 'i' = integer, 's' = string, 'l' = list (JSON)
@@ -309,6 +317,8 @@ class Status(threading.Thread):
             'sleep_schedule_profile': 'l', # Adaptive wakefulness schedule profile by hour
             'chat_mode': 'b', # Whether she's in chat mode, so a script restart doesn't silently kick her out
             'voice_volume_enabled': 'b', # Whether narrative cues drive her speech volume
+            'diarization_enabled': 'b', # Whether the diarizing STT may serve audio (meetings only)
+            'midnight_tasks_done_time': 'f', # Last time the midnight dream/memory task actually completed - must survive restarts so the dream-deprivation failsafe can't be reset by a service bounce
         }
         
         # Define user-configurable settings (only saved when user changes them)
