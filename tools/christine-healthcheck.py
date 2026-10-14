@@ -26,9 +26,12 @@ from pathlib import Path
 
 STATE_FILE = Path("/root/ChristineAI/logs/healthcheck_state.json")
 MAIN_LOG  = Path("/root/ChristineAI/logs/main.log")
+LIGHT_LOG = Path("/root/ChristineAI/logs/light.log")
+DREAMS_DIR = Path("/root/ChristineAI/logs/dreams")
 DORA_ENDPOINT = "http://dora.lan:8650/christine"
 ALERT_COOLDOWN_MINUTES = 180  # Don't re-alert for the same check for 3 hours
 LOG_TAIL_LINES = 500           # How many tail lines to scan for errors
+DREAM_GAP_HOURS = 48           # Alert if no dream in this many hours
 
 # Thresholds
 DISK_MIN_GB   = 5.0    # Alert if less than this many GB free on /
@@ -230,6 +233,61 @@ def check_log_errors():
     return None, None
 
 
+def check_camera():
+    """Checks if the forehead camera (/dev/video0) is present.
+
+    Even if the camera is working but light level is stuck (e.g. after a
+    restart with a stale persisted value), the light.py thread will update
+    it within 20 s. A missing device node means the camera has disconnected
+    at the USB level and needs physical attention.
+    """
+    try:
+        if not Path("/dev/video0").exists():
+            # Check if light.log has recent failures for context
+            if LIGHT_LOG.exists():
+                lines = LIGHT_LOG.read_text().splitlines()
+                recent = lines[-20:]
+                camera_fails = [l for l in recent if "Cannot open device" in l or "No such file" in l]
+                detail = f"/dev/video0 missing — {len(camera_fails)} failures in last 20 light.log lines"
+            else:
+                detail = "/dev/video0 missing — no light.log to check"
+            return "forehead camera missing", detail
+    except Exception as e:
+        return "cannot check camera", str(e)
+    return None, None
+
+
+def check_dream_gap():
+    """Alerts if the most recent dream is older than DREAM_GAP_HOURS.
+
+    Dreams are written when the midnight process runs during deep sleep.
+    No dream for 48+ hours means she hasn't been sleeping deeply enough
+    to trigger the midnight task — usually caused by a stuck sensor keeping
+    wakefulness above the fall-asleep threshold.
+    """
+    if not DREAMS_DIR.exists():
+        return None, None  # No dreams dir yet, not an error
+
+    try:
+        dream_files = sorted(DREAMS_DIR.glob("dream_*.txt"))
+        if not dream_files:
+            return "no dreams recorded", "dreams/ directory exists but contains no dream files"
+
+        newest = dream_files[-1]
+        age_hours = (time.time() - newest.stat().st_mtime) / 3600
+        if age_hours > DREAM_GAP_HOURS:
+            from datetime import datetime
+            last_dt = datetime.fromtimestamp(newest.stat().st_mtime)
+            return (
+                f"no dream in {age_hours:.0f} hours",
+                f"Last dream: {last_dt.strftime('%Y-%m-%d %H:%M')} AZ "
+                f"(threshold: {DREAM_GAP_HOURS}h). Check sleep.log for stuck wakefulness."
+            )
+    except Exception as e:
+        return "cannot check dreams", str(e)
+    return None, None
+
+
 # ── Main ────────────────────────────────────────────────────────────────────
 
 CHECKS = [
@@ -239,6 +297,8 @@ CHECKS = [
     ("memory",      check_memory),
     ("neocortex",   check_neocortex),
     ("dora_channel",check_dora_channel),
+    ("camera",      check_camera),
+    ("dream_gap",   check_dream_gap),
     ("log_errors",  check_log_errors),
 ]
 

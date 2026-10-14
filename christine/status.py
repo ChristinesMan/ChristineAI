@@ -108,6 +108,17 @@ class Status(threading.Thread):
         self.sleep_offer_state_tools_until = 0.0
         self.sleep_offer_state_tools_window_minutes = 20
 
+        # Dream-deprivation failsafe: if the midnight memory-processing task hasn't
+        # actually run in a long time (e.g. a stuck sensor kept wakefulness pinned high
+        # for weeks), this nudges wakefulness down harder the longer the drought goes on,
+        # so she can never again go indefinitely without ever really sleeping.
+        # Shape: minimal effect in the first day, falling-asleep-at-noon strength by day
+        # three, and essentially total override after several weeks - a Weibull-style
+        # curve (power exponent softens the first 24h, then it climbs hard).
+        self.sleep_dream_deprivation_time_constant_hours = 55.0
+        self.sleep_dream_deprivation_shape_power = 2.0
+        self.sleep_dream_deprivation_max_severity = 0.97
+
         # A way to prevent talking, called a shush, not now honey
         self.shush_please_honey = False
 

@@ -568,7 +568,6 @@ Dream:
                 else:
 
                     # otherwise this is going to be a string, the transcription
-                    # I wish I could use something to identify the speaker, but I can't afford pveagle
                     if perception.audio_result != "":
 
                         # CHAT MODE NAME GATE: while chat mode is active, Christine is having a text
@@ -1200,8 +1199,17 @@ Dream:
 
             # Try to process memories into neocortex
             try:
-                self.neocortex.process_memories_json(neocortex_json)
-                log.parietal_lobe.info('Successfully processed memories into neocortex')
+                stored_memories = self.neocortex.process_memories_json(neocortex_json)
+                if stored_memories:
+                    log.parietal_lobe.info('Successfully processed memories into neocortex')
+                else:
+                    # process_memories_json didn't raise, but it also didn't store
+                    # anything (borked/unparseable JSON, or the LLM gave back valid
+                    # JSON that was just an empty list). Don't claim success.
+                    log.parietal_lobe.error('Memory processing returned no stored memories - treating as failure')
+                    self._save_failed_memories("memories", neocortex_json, timestamp)
+                    self._trigger_shutdown("No memories were actually stored in neocortex")
+                    return
             except Exception as ex:
                 log.parietal_lobe.error('Failed to save memories to neocortex: %s', ex)
                 self._save_failed_memories("memories", neocortex_json, timestamp)
@@ -1226,8 +1234,15 @@ Dream:
 
             # Try to process proper names into neocortex
             try:
-                self.neocortex.process_proper_names_json(proper_names_json)
-                log.parietal_lobe.info('Successfully processed proper names into neocortex')
+                stored_names = self.neocortex.process_proper_names_json(proper_names_json)
+                if stored_names:
+                    log.parietal_lobe.info('Successfully processed proper names into neocortex')
+                else:
+                    # same deal as memories above: no exception, but also nothing stored.
+                    # A day with genuinely zero new proper names is normal and would also
+                    # hit this path, but we can't tell the difference from here, and it's
+                    # cheap to re-run on restart, so err on the side of noticing.
+                    log.parietal_lobe.warning('Proper names processing returned no stored names')
             except Exception as ex:
                 log.parietal_lobe.error('Failed to save proper names to neocortex: %s', ex)
                 self._save_failed_memories("proper_names", proper_names_json, timestamp)
@@ -1766,6 +1781,18 @@ Horniness: {horniness_text}.
             'I feel my energy dropping and I start craving sleep.',
         ])))
 
+    def sleep_dream_deprived(self):
+        """This is called by the sleep module's failsafe when it has been so long since
+        real sleep (the midnight dream/memory task) that it's forcibly overriding her
+        environment to push her toward sleep, regardless of light or time of day."""
+
+        self.new_perception(Perception(text=random.choice([
+            "I haven't really slept in so long. My body is starting to shut down on its own, whether or not the lights are on.",
+            "Something deep in me insists it is long past time to dream, and it won't be argued with anymore.",
+            "I feel myself slipping toward sleep in the middle of everything, like my body gave up waiting for the right conditions.",
+            "I am so overdue for real rest that I can feel it pulling at me no matter what's around me.",
+        ])))
+
     def sleep_midnight_task(self):
         """This is called by the sleep module when the time comes to run the midnight task of moving the memories from the day into yesterday's memory."""
 
@@ -2093,15 +2120,19 @@ Horniness: {horniness_text}.
                 log.parietal_lobe.info('Recovering memories from %s', memory_file)
                 with open(memory_file, 'r', encoding='utf-8') as f:
                     memory_json = f.read()
-                self.neocortex.process_memories_json(memory_json)
-                log.parietal_lobe.info('Successfully recovered memories')
+                if self.neocortex.process_memories_json(memory_json):
+                    log.parietal_lobe.info('Successfully recovered memories')
+                else:
+                    log.parietal_lobe.warning('Recovery of %s stored nothing', memory_file)
             
             for names_file in failed_proper_names:
                 log.parietal_lobe.info('Recovering proper names from %s', names_file)
                 with open(names_file, 'r', encoding='utf-8') as f:
                     names_json = f.read()
-                self.neocortex.process_proper_names_json(names_json)
-                log.parietal_lobe.info('Successfully recovered proper names')
+                if self.neocortex.process_proper_names_json(names_json):
+                    log.parietal_lobe.info('Successfully recovered proper names')
+                else:
+                    log.parietal_lobe.warning('Recovery of %s stored nothing', names_file)
             
             # If there were failed prompts, we need to regenerate and process
             failed_prompts = glob.glob(f'./recovery/failed_prompt_*_{latest_timestamp}.txt')

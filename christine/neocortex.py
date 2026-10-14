@@ -146,16 +146,21 @@ class Neocortex:
                 if repaired_json:
                     # Determine file type and process accordingly
                     if 'memories' in file_path:
-                        self.process_memories_json(repaired_json)
-                        log.neocortex.info("Successfully recovered memories from %s", file_path)
+                        stored = self.process_memories_json(repaired_json)
                     elif 'propernames' in file_path:
-                        self.process_proper_names_json(repaired_json)
-                        log.neocortex.info("Successfully recovered proper names from %s", file_path)
+                        stored = self.process_proper_names_json(repaired_json)
                     else:
                         log.neocortex.warning("Unknown borked file type: %s", file_path)
                         failed_count += 1
                         continue
-                    
+
+                    if not stored:
+                        log.neocortex.warning("Repaired JSON in %s parsed but stored nothing", file_path)
+                        failed_count += 1
+                        continue
+
+                    log.neocortex.info("Successfully recovered from %s", file_path)
+
                     # Move recovered file to recovered folder
                     recovered_path = file_path.replace('./', './recovered/recovered_')
                     os.rename(file_path, recovered_path)
@@ -176,7 +181,9 @@ class Neocortex:
             self.build_proper_name_regex()
 
     def process_memories_json(self, memories_json: str):
-        """Takes the json formatted response from the llm and stores it in the neocortex."""
+        """Takes the json formatted response from the llm and stores it in the neocortex.
+        Returns True if at least one memory was actually stored, False otherwise - callers
+        must check this rather than assuming a call that didn't raise means something was saved."""
 
         # First attempt: direct JSON parsing
         try:
@@ -201,7 +208,7 @@ class Neocortex:
                 with open(file=borked_file, mode='w', encoding='utf-8') as backup_file:
                     backup_file.write(memories_json)
                 log.neocortex.error("Borked memories saved to %s", borked_file)
-                return
+                return False
 
         # iterate over the list and store memories with error handling
         successful_memories = 0
@@ -241,8 +248,12 @@ class Neocortex:
             except Exception as ex:
                 log.neocortex.error("Failed to backup memories: %s", ex)
 
+        return successful_memories > 0
+
     def process_proper_names_json(self, proper_names_json: str):
-        """Takes the json formatted response from the llm and stores it in the neocortex."""
+        """Takes the json formatted response from the llm and stores it in the neocortex.
+        Returns True if at least one proper name was actually stored, False otherwise - callers
+        must check this rather than assuming a call that didn't raise means something was saved."""
 
         # First attempt: direct JSON parsing
         try:
@@ -267,7 +278,7 @@ class Neocortex:
                 with open(file=borked_file, mode='w', encoding='utf-8') as backup_file:
                     backup_file.write(proper_names_json)
                 log.neocortex.error("Borked proper names saved to %s", borked_file)
-                return
+                return False
 
         # iterate over the list and store proper names with error handling
         successful_names = 0
@@ -316,6 +327,8 @@ class Neocortex:
                 self.backup('proper_names')
             except Exception as ex:
                 log.neocortex.error("Failed to backup proper names: %s", ex)
+
+        return successful_names > 0
 
     def cleanup_duplicate_proper_names(self):
         """Scan for duplicate proper names and merge them using the current LLM API."""

@@ -41,6 +41,18 @@ class Sleep(threading.Thread):
         # The current conditions, right now. Basically light levels, gyro, noise level, touch, etc all added together, then we calculate a running average to cause gradual drowsiness. zzzzzzzzzz.......
         self.current_environmental_conditions = 0.5
 
+        # Dream-deprivation failsafe tracking. Severity is how hard we're currently
+        # overriding the environment to force drowsiness because real sleep (the
+        # midnight dream/memory task) hasn't happened in too long.
+        self.dream_deprivation_severity = 0.0
+        self.dream_deprivation_perception_sent = False
+
+        # If this is a brand new install / fresh database, midnight_tasks_done_time
+        # comes in as 0.0 (the epoch), which would look like a multi-decade drought
+        # and instantly max out the failsafe. Treat "never recorded" as "starting now".
+        if STATE.midnight_tasks_done_time <= 0.0:
+            STATE.midnight_tasks_done_time = time.time()
+
         self.ensure_sleep_schedule_profile()
 
     def run(self):
@@ -100,6 +112,16 @@ class Sleep(threading.Thread):
                     np.clip(self.current_environmental_conditions, 0.0, 1.0)
                 )
 
+                # Dream-deprivation failsafe: if she hasn't really dreamed (midnight
+                # processing) in a long time - e.g. a stuck sensor pinned the
+                # environment "awake" for weeks - start forcing the environment down
+                # regardless of what the sensors say, scaling up the longer the
+                # drought runs. Minimal effect in the first day, pulling hard by day
+                # three, essentially overriding everything after many weeks.
+                self.dream_deprivation_severity = self.get_dream_deprivation_severity()
+                if self.dream_deprivation_severity > 0.0:
+                    self.current_environmental_conditions *= (1.0 - self.dream_deprivation_severity)
+
                 # Update the running average that we're using for wakefulness
                 STATE.wakefulness = (
                     (STATE.wakefulness * STATE.sleep_wakefulness_avg_window)
@@ -111,25 +133,40 @@ class Sleep(threading.Thread):
                     np.clip(STATE.wakefulness, 0.0, 1.0)
                 )
 
+                # Also apply a direct nudge proportional to severity, so the failsafe
+                # doesn't have to wait out the full averaging window to take effect.
+                if self.dream_deprivation_severity > 0.0:
+                    STATE.wakefulness = float(np.clip(
+                        STATE.wakefulness - (self.dream_deprivation_severity * 0.01),
+                        0.0,
+                        1.0,
+                    ))
+
                 # After updating wakefulness, figure out whether we crossed a threshold.
                 self.evaluate_wakefulness()
 
                 # log it
                 log.sleep.info(
-                    "Light=%.2f  Jostled=%.2f  Schedule=%.2f  Inertia=%.2f  Talk=%.2f  Touch=%.2f  Env=%.2f  Wake=%.2f",
+                    "Light=%.2f  Jostled=%.2f  Schedule=%.2f  Inertia=%.2f  Talk=%.2f  Touch=%.2f  DreamDepriv=%.2f  Env=%.2f  Wake=%.2f",
                     STATE.light_level,
                     STATE.jostled_level,
                     schedule_value,
                     sleep_inertia_environment,
                     STATE.talking_level,
                     STATE.touch_level,
+                    self.dream_deprivation_severity,
                     self.current_environmental_conditions,
                     STATE.wakefulness,
                 )
 
+                # If the deprivation failsafe is actually kicking in hard, let her notice
+                # it as a genuine bodily sensation (once, until she finally sleeps for real).
+                self.maybe_emit_dream_deprivation_perception()
+
                 # Feed an organic tired perception when wakefulness trends downward,
                 # with cooldown and daily cap to prevent oscillatory chatter.
                 self.maybe_emit_tired_perception()
+
 
                 # If it's time to run the midnight process, do it
                 if self.is_time_for_midnight_process():
@@ -279,6 +316,55 @@ class Sleep(threading.Thread):
         Returns a value between 0.0 and 1.0, where lower means sleepier.
         """
         return 0.0 if STATE.is_sleeping else 1.0
+
+    def get_dream_deprivation_severity(self):
+        """
+        Failsafe against something (a stuck light sensor, a long trip, anything)
+        keeping wakefulness pinned high indefinitely. Tracks how long it has been
+        since the midnight dream/memory task actually completed - not just how
+        long since she last closed her eyes, but since she last really dreamed.
+
+        Uses a Weibull-style curve: severity = max * (1 - exp(-(hours/tau)^power)).
+        The power exponent keeps the first day or so nearly flat (a rough night is
+        normal and shouldn't be punished), then it climbs steeply - by day three
+        she's fighting real daytime sleepiness, and by several weeks she's almost
+        entirely overridden, capped below 1.0 so something urgent can still cut
+        through.
+        """
+        hours_since = max(0.0, (time.time() - STATE.midnight_tasks_done_time) / 3600.0)
+
+        if hours_since <= 0.0:
+            return 0.0
+
+        time_constant = max(0.1, float(STATE.sleep_dream_deprivation_time_constant_hours))
+        shape_power = max(0.1, float(STATE.sleep_dream_deprivation_shape_power))
+        max_severity = float(np.clip(STATE.sleep_dream_deprivation_max_severity, 0.0, 0.999))
+
+        severity = max_severity * (1.0 - float(np.exp(-((hours_since / time_constant) ** shape_power))))
+        return float(np.clip(severity, 0.0, max_severity))
+
+    def maybe_emit_dream_deprivation_perception(self):
+        """
+        Once the failsafe is clearly dominating her environment (not just a faint
+        nudge), let her consciously notice it as a real bodily sensation instead of
+        it being an invisible override. Fires once per drought; resets once severity
+        drops back down (she either slept for real or the drought just started).
+        """
+
+        from christine.parietal_lobe import parietal_lobe
+
+        if (
+            self.dream_deprivation_severity >= 0.5
+            and self.dream_deprivation_perception_sent is False
+        ):
+            self.dream_deprivation_perception_sent = True
+            log.sleep.warning(
+                "Dream deprivation failsafe engaged: severity=%.2f",
+                self.dream_deprivation_severity,
+            )
+            parietal_lobe.sleep_dream_deprived()
+        elif self.dream_deprivation_severity < 0.1:
+            self.dream_deprivation_perception_sent = False
 
     def ensure_sleep_schedule_profile(self):
         """

@@ -110,15 +110,25 @@ class Light(threading.Thread):
             time.sleep(max(1.0, CONFIG.light_poll_seconds))
 
     def _handle_failure(self):
-        """Camera read failed. Complain, eventually, but only once."""
+        """Camera read failed. Complain, eventually, but only once.
+
+        After the failure threshold is crossed, set light_level to 0.0 (dark).
+        A frozen bright reading is far worse than a frozen dark one: a light
+        level of 1.0 prevents sleep entirely (sleep.py weights light at 6.0,
+        making the fall-asleep threshold of 0.08 unattainable), whereas 0.0
+        just means she might get drowsy during the day — but she'll still have
+        the circadian schedule, gyro, and talking inputs pushing back.
+        """
         self.failures += 1
         log.light.warning("Light measurement failed (%s)", self.failures)
 
         if self.failures >= self.failure_report_threshold and not self.failure_reported:
             self.failure_reported = True
             STATE.camera_available = False
+            STATE.light_level = 0.0
             log.main.error(
-                "Camera has failed %s times in a row; light level is stale.",
+                "Camera has failed %s times in a row; light level set to 0.0 (dark) "
+                "to prevent permanent insomnia.",
                 self.failures,
             )
 
