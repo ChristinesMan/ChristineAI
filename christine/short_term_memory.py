@@ -69,15 +69,29 @@ class ShortTermMemory:
 
         return self.earlier_today
 
+    # Only a REAL transcribed utterance from someone else counts as a 'user' turn.
+    # Everything else originates from Christine herself, in her own first-person
+    # voice - her own speech ('char'), a memory surfacing in her mind ('memory'),
+    # or a sensor/perception narrated as her own experience ('system', e.g. "I feel
+    # a gentle touch on my nose") - and belongs on the 'assistant' side of the
+    # conversation. Collapsing those onto 'user' is exactly the bug that made her
+    # read her own dreams and recalled memories as if User had said them.
+    # Unknown/unexpected roles default to 'assistant' too, deliberately NOT 'user' -
+    # a role we don't recognize should never be put in User's mouth.
+    NARRATIVE_CHAT_ROLE = {
+        'char': 'assistant',
+        'user': 'user',
+        'memory': 'assistant',
+        'system': 'assistant',
+    }
+
     def get_recent_messages(self) -> list[dict]:
         """Returns the unfolded recent narratives as role-tagged chat messages.
 
-        Narratives Christine produced herself ('char') become assistant turns.
-        Everything else - user speech, sensor perceptions ('system'), recalled
-        memories ('memory') - is something arriving from outside her, so it becomes
-        a user turn. Note the deliberate choice NOT to emit chat-role 'system' here:
-        a narrative tagged 'system' is a sensor event inside the story, not context,
-        and the real system block is built separately by the parietal lobe.
+        See NARRATIVE_CHAT_ROLE above for the role mapping. Note the deliberate
+        choice NOT to emit chat-role 'system' here: a narrative tagged 'system' is
+        a sensor event inside the story, not context, and the real system block is
+        built separately by the parietal lobe.
 
         Consecutive same-role messages get merged by the LLM layer, which keeps her
         sensor stream reading like one continuous paragraph rather than a stack of
@@ -90,7 +104,7 @@ class ShortTermMemory:
             text = narrative.text.strip()
             if text == '':
                 continue
-            role = 'assistant' if narrative.role == 'char' else 'user'
+            role = self.NARRATIVE_CHAT_ROLE.get(narrative.role, 'assistant')
             messages.append({'role': role, 'content': text})
 
         # Anything spoken but not yet committed to memory still needs to be in context,

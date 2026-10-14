@@ -7,6 +7,15 @@ from christine import log
 from christine.config import CONFIG
 from christine.llm_class import LLMAPI
 
+
+class OpenRouterRefusalError(Exception):
+    """Raised when the model/provider declines to generate content at all
+    (content_filter / native 'refusal'), as opposed to returning malformed text.
+    This is a real failure, not an empty-but-successful response, so callers
+    (call_api's retry/failover, and anything checking success) must see it as
+    an exception rather than silently getting back ''."""
+
+
 class OpenRouter(LLMAPI):
     """This handles the API for OpenRouter"""
 
@@ -135,9 +144,21 @@ class OpenRouter(LLMAPI):
         choice = response['choices'][0]
         response_text = (choice.get('message', {}).get('content') or '').strip()
 
+        # A content-filter refusal (native_finish_reason='refusal') comes back with
+        # content=None, not malformed text. Treat it as a real failure (so call_api's
+        # failover/retry logic engages) rather than returning '' and letting it look
+        # downstream like the model just said nothing - that made a refused midnight
+        # memory-processing call log as "success" with zero memories actually stored.
+        finish_reason = choice.get('finish_reason')
+        native_finish_reason = choice.get('native_finish_reason')
+        if response_text == '' and (finish_reason == 'content_filter' or native_finish_reason == 'refusal'):
+            raise OpenRouterRefusalError(
+                f"Model refused the request (finish_reason={finish_reason}, native_finish_reason={native_finish_reason})"
+            )
+
         # some models put their answer in reasoning only; fall back rather than returning nothing
         if response_text == '':
-            log.llm_stream.warning('Empty content in response, finish_reason=%s', choice.get('finish_reason'))
+            log.llm_stream.warning('Empty content in response, finish_reason=%s', finish_reason)
 
         # return the text of the response
         return response_text

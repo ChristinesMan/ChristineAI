@@ -1556,7 +1556,7 @@ Horniness: {horniness_text}.
 
         # ---- 2. the dream, if she's still carrying one ----
         if self.current_dream:
-            messages.append({'role': 'user', 'content': self.current_dream.strip()})
+            messages.append({'role': 'assistant', 'content': self.current_dream.strip()})
 
         # ---- 3. the live conversation, role-separated ----
         messages.extend(self.short_term_memory.get_recent_messages())
