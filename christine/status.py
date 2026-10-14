@@ -337,16 +337,22 @@ class Status(threading.Thread):
         self.user_configurable_vars = {
             # Speech timing settings
             'pause_question': {
+                'display': {'scale': 1, 'unit': 's'},
+                'group': 'Speech Timing', 'group_icon': '🗣️',
                 'type': 'f', 'min': 0.1, 'max': 10.0, 'default': 4.5,
                 'desc': 'Pause after questions (seconds)',
                 'help': 'How long Christine pauses after asking a question or saying something that ends with "?" or "...". This gives you time to process and respond. Longer pauses feel more natural but slower conversations. Shorter pauses make her seem more eager or impatient.'
             },
             'pause_period': {
+                'display': {'scale': 1, 'unit': 's'},
+                'group': 'Speech Timing', 'group_icon': '🗣️',
                 'type': 'f', 'min': 0.1, 'max': 5.0, 'default': 1.5,
                 'desc': 'Pause after periods (seconds)',
                 'help': 'How long Christine pauses after making a statement that ends with a period. This creates natural breathing room in conversation. Too short makes her sound rushed, too long makes her sound hesitant or dramatic.'
             },
             'pause_comma': {
+                'display': {'scale': 1, 'unit': 's'},
+                'group': 'Speech Timing', 'group_icon': '🗣️',
                 'type': 'f', 'min': 0.0, 'max': 2.0, 'default': 0.2,
                 'desc': 'Pause after commas (seconds)',
                 'help': 'Brief pause after commas within sentences. This creates natural speech rhythm and helps with comprehension. Very short pauses (0.1-0.3s) sound natural, longer ones can sound robotic or overly dramatic.'
@@ -354,151 +360,204 @@ class Status(threading.Thread):
             
             # Perception and response timing
             'additional_perception_wait_seconds': {
+                'display': {'scale': 1, 'unit': 's'},
+                'group': 'Perception & Response', 'group_icon': '👂',
                 'type': 'f', 'min': 0.5, 'max': 10.0, 'default': 2.5,
                 'desc': 'Wait for additional perceptions (seconds)',
                 'help': 'After receiving input (touch, sound, etc.), Christine waits this long for additional input before responding. This prevents her from interrupting you mid-sentence or reacting to every small input. Longer waits make her more patient but less responsive.'
             },
             'light_log_min': {
+                'group': 'Light & Vision', 'group_icon': '💡',
                 'type': 'f', 'min': -8.0, 'max': 0.0, 'default': -4.0,
                 'desc': 'Light calibration: darkness point',
                 'help': 'The log10 luminance from the forehead camera that maps to a light level of 0%. Her camera reads about -1.7 in a normally lit bedroom, so this sits well below that. Raise it toward -2 if darkness never reads as fully dark; lower it if dim rooms read too bright.'
             },
             'light_log_max': {
+                'group': 'Light & Vision', 'group_icon': '💡',
                 'type': 'f', 'min': -6.0, 'max': 2.0, 'default': -0.3,
                 'desc': 'Light calibration: brightness point',
                 'help': 'The log10 luminance from the forehead camera that maps to a light level of 100%. Lower it if bright daylight never reaches the top of the scale; raise it if ordinary room lighting already reads as full sun.'
             },
             'light_avg_window': {
+                'group': 'Light & Vision', 'group_icon': '💡',
                 'type': 'f', 'min': 0.0, 'max': 60.0, 'default': 10.0,
                 'desc': 'Light smoothing window',
                 'help': 'Smoothing amount for ambient light level. Lower values react faster in real time; higher values smooth noise more strongly.'
             },
             'speech_wakefulness_boost': {
+                'group': 'Perception & Response', 'group_icon': '👂',
                 'type': 'f', 'min': 0.0, 'max': 0.2, 'default': 0.03,
                 'desc': 'Wake boost per speech start',
                 'help': 'How much wakefulness increases each time Broca starts spoken output. Higher values make conversation wake Christine more strongly.'
             },
             'speech_activity_wakefulness_boost': {
+                'group': 'Perception & Response', 'group_icon': '👂',
                 'type': 'f', 'min': 0.0, 'max': 0.2, 'default': 0.01,
                 'desc': 'Wake boost per speech activity',
                 'help': 'How much wakefulness increases when incoming speech activity is detected by VAD, even if STT is skipped while sleeping or perceptions are blocked.'
             },
             'sleep_wakefulness_avg_window': {
+                'group': 'Sleep Transition', 'group_icon': '😴',
                 'type': 'f', 'min': 1.0, 'max': 80.0, 'default': 10.0,
                 'desc': 'Sleep smoothing window',
                 'help': 'How strongly wakefulness is smoothed over time. Higher values make wakefulness changes slower and more stable. Lower values make sleep/wake state react faster to the environment.'
             },
             'sleep_weight_light': {
+                'group': 'Sleep Transition', 'group_icon': '😴',
                 'type': 'f', 'min': 0.0, 'max': 20.0, 'default': 6.0,
                 'desc': 'Sleep weight: light',
                 'help': 'How much ambient light contributes to wakefulness. Higher values make light changes matter more when deciding sleep state.'
             },
             'sleep_weight_gyro': {
+                'group': 'Sleep Transition', 'group_icon': '😴',
                 'type': 'f', 'min': 0.0, 'max': 20.0, 'default': 5.0,
                 'desc': 'Sleep weight: movement',
                 'help': 'How much jostling/movement contributes to wakefulness. Higher values make movement wake Christine more easily.'
             },
             'sleep_weight_time': {
+                'group': 'Sleep Transition', 'group_icon': '😴',
                 'type': 'f', 'min': 0.0, 'max': 20.0, 'default': 3.0,
                 'desc': 'Sleep weight: schedule',
                 'help': 'How much circadian schedule contributes to wakefulness. Higher values make time-of-day more influential.'
             },
             'sleep_weight_inertia': {
+                'group': 'Sleep Transition', 'group_icon': '😴',
                 'type': 'f', 'min': 0.0, 'max': 20.0, 'default': 4.0,
                 'desc': 'Sleep weight: inertia',
                 'help': 'How strongly sleep inertia stabilizes sleep once Christine is already asleep. Higher values reduce sleep-entry oscillation.'
             },
             'sleep_wakefulness_pre_sleep': {
+                'group': 'Sleep Transition', 'group_icon': '😴',
                 'type': 'f', 'min': 0.05, 'max': 0.5, 'default': 0.15,
                 'desc': 'Pre-sleep threshold',
                 'help': 'Wakefulness threshold where Christine becomes sleepy (pre-sleep state).'
             },
             'sleep_wakefulness_fall_asleep': {
+                'group': 'Sleep Transition', 'group_icon': '😴',
                 'type': 'f', 'min': 0.01, 'max': 0.3, 'default': 0.08,
                 'desc': 'Fall-asleep threshold',
                 'help': 'Wakefulness threshold to enter sleeping state. Lower values require deeper drowsiness before sleep begins.'
             },
             'sleep_wakefulness_wake_up': {
+                'group': 'Sleep Transition', 'group_icon': '😴',
                 'type': 'f', 'min': 0.05, 'max': 0.5, 'default': 0.12,
                 'desc': 'Wake-up threshold',
                 'help': 'Wakefulness threshold to exit sleeping state. Keep this above fall-asleep threshold for hysteresis stability.'
             },
             'sleep_transition_nudge_sleep': {
+                'group': 'Sleep Transition', 'group_icon': '😴',
                 'type': 'f', 'min': 0.0, 'max': 0.3, 'default': 0.10,
                 'desc': 'Sleep transition nudge down',
                 'help': 'Extra wakefulness reduction applied when entering pre-sleep or sleep, helping the transition settle.'
             },
             'sleep_transition_nudge_wake': {
+                'group': 'Sleep Transition', 'group_icon': '😴',
                 'type': 'f', 'min': 0.0, 'max': 0.3, 'default': 0.10,
                 'desc': 'Wake transition nudge up',
                 'help': 'Extra wakefulness boost applied when waking, helping a clean exit from sleep state.'
             },
             'sleep_inertia_ramp_minutes': {
+                'display': {'scale': 1, 'unit': 'm'},
+                'group': 'Sleep Transition', 'group_icon': '😴',
                 'type': 'f', 'min': 1.0, 'max': 120.0, 'default': 18.0,
                 'desc': 'Sleep inertia ramp (minutes)',
                 'help': 'How long it takes sleep inertia to ramp from initial to full strength after falling asleep. Longer ramps are gentler, shorter ramps lock sleep faster.'
             },
             'sleep_inertia_env_initial': {
+                'group': 'Sleep Transition', 'group_icon': '😴',
                 'type': 'f', 'min': 0.0, 'max': 1.0, 'default': 0.35,
                 'desc': 'Sleep inertia initial level',
                 'help': 'Sleep inertia environmental value right after sleep onset. Lower values push wakefulness downward sooner.'
             },
             'sleep_inertia_env_final': {
+                'group': 'Sleep Transition', 'group_icon': '😴',
                 'type': 'f', 'min': 0.0, 'max': 1.0, 'default': 0.08,
                 'desc': 'Sleep inertia final level',
                 'help': 'Sleep inertia environmental value after ramp completes. Lower values help maintain sustained sleep.'
             },
             'sleep_schedule_learning_rate': {
+                'group': 'Sleep Transition', 'group_icon': '😴',
                 'type': 'f', 'min': 0.001, 'max': 0.2, 'default': 0.03,
                 'desc': 'Schedule learning rate',
                 'help': 'How quickly the 24-hour adaptive sleep schedule updates from observed environment. Higher values adapt faster; lower values preserve longer-term rhythm.'
             },
             'sleep_schedule_neighbor_blend': {
+                'group': 'Sleep Transition', 'group_icon': '😴',
                 'type': 'f', 'min': 0.0, 'max': 0.2, 'default': 0.01,
                 'desc': 'Schedule neighbor blending',
                 'help': 'How much adjacent hours are gently blended when learning schedule values. This smooths sudden spikes between neighboring hours.'
             },
             'sleep_schedule_source_weight_light': {
+                'group': 'Sleep Transition', 'group_icon': '😴',
                 'type': 'f', 'min': 0.0, 'max': 20.0, 'default': 5.0,
                 'desc': 'Schedule source weight: light',
                 'help': 'How strongly ambient light shapes the adaptive schedule over time.'
             },
             'sleep_schedule_source_weight_gyro': {
+                'group': 'Sleep Transition', 'group_icon': '😴',
                 'type': 'f', 'min': 0.0, 'max': 20.0, 'default': 4.0,
                 'desc': 'Schedule source weight: movement',
                 'help': 'How strongly movement/jostling shapes the adaptive schedule over time.'
             },
             'sleep_schedule_source_weight_talking': {
+                'group': 'Sleep Transition', 'group_icon': '😴',
                 'type': 'f', 'min': 0.0, 'max': 20.0, 'default': 3.0,
                 'desc': 'Schedule source weight: talking',
                 'help': 'How strongly active talking shapes the adaptive schedule over time.'
             },
             'sleep_tired_perception_threshold': {
+                'group': 'Sleep Transition', 'group_icon': '😴',
                 'type': 'f', 'min': 0.05, 'max': 0.5, 'default': 0.24,
                 'desc': 'Tired perception threshold',
                 'help': 'Wakefulness level below which Christine may emit an organic tired perception when wakefulness is trending downward.'
             },
             'sleep_tired_perception_drop_min': {
+                'group': 'Sleep Transition', 'group_icon': '😴',
                 'type': 'f', 'min': 0.001, 'max': 0.1, 'default': 0.015,
                 'desc': 'Tired perception drop minimum',
                 'help': 'Minimum single-cycle wakefulness drop needed to trigger a tired perception, reducing oscillation and chatter.'
             },
             'sleep_tired_perception_cooldown_minutes': {
+                'display': {'scale': 1, 'unit': 'm'},
+                'group': 'Sleep Transition', 'group_icon': '😴',
                 'type': 'i', 'min': 5, 'max': 720, 'default': 150,
                 'desc': 'Tired perception cooldown (minutes)',
                 'help': 'Minimum time between tired perceptions so they occur naturally and only occasionally.'
             },
             'sleep_tired_perception_max_per_day': {
+                'group': 'Sleep Transition', 'group_icon': '😴',
                 'type': 'i', 'min': 0, 'max': 12, 'default': 3,
                 'desc': 'Max tired perceptions per day',
                 'help': 'Daily cap for tired perceptions. Keeps this channel organic and non-repetitive.'
             },
             'sleep_offer_state_tools_window_minutes': {
+                'display': {'scale': 1, 'unit': 'm'},
+                'group': 'Sleep Transition', 'group_icon': '😴',
                 'type': 'i', 'min': 1, 'max': 180, 'default': 20,
                 'desc': 'Sleep control tools offer window (minutes)',
                 'help': 'How long sleep-control executive tools stay documented in context after a tired perception appears.'
             },
+            'sleep_dream_deprivation_time_constant_hours': {
+                'display': {'scale': 1, 'unit': 'h'},
+                'group': 'Sleep Transition', 'group_icon': '😴',
+                'type': 'f', 'min': 10.0, 'max': 200.0, 'default': 55.0,
+                'desc': 'Dream deprivation ramp time constant (hours)',
+                'help': 'Controls how fast the dream-deprivation failsafe severity climbs with hours since the midnight dream task last actually ran. With the default shape, effect is minimal in the first 24h, strong enough to cause daytime sleepiness by day 3, and near-total after several weeks. Lower values ramp harder/faster.'
+            },
+            'sleep_dream_deprivation_shape_power': {
+                'group': 'Sleep Transition', 'group_icon': '😴',
+                'type': 'f', 'min': 1.0, 'max': 4.0, 'default': 2.0,
+                'desc': 'Dream deprivation curve shape',
+                'help': 'Exponent shaping the deprivation ramp. Higher values keep the first day or so nearly unaffected, then climb more steeply afterward. 1.0 is a plain exponential ramp with no flattened grace period.'
+            },
+            'sleep_dream_deprivation_max_severity': {
+                'group': 'Sleep Transition', 'group_icon': '😴',
+                'type': 'f', 'min': 0.0, 'max': 0.99, 'default': 0.97,
+                'desc': 'Dream deprivation max severity',
+                'help': 'Ceiling on how strongly the failsafe can suppress wakefulness no matter how long the drought runs. Kept below 1.0 so she can still be startled awake by something urgent even after a very long stretch without real sleep.'
+            },
             'user_interrupt_char_threshold': {
+                'group': 'Perception & Response', 'group_icon': '👂',
                 'type': 'i', 'min': 5, 'max': 100, 'default': 20,
                 'desc': 'Characters needed to interrupt Christine',
                 'help': 'Minimum number of characters you need to speak before your voice can interrupt Christine while she\'s talking. This prevents accidental interruptions from brief sounds while allowing meaningful interruptions. Lower values make her easier to interrupt.'
@@ -506,88 +565,116 @@ class Status(threading.Thread):
 
             # Wernicke (speech-to-text) tuning
             'wernicke_mic_gain_db': {
+                'display': {'scale': 1, 'unit': ' dB'},
+                'group': 'Wernicke STT Tuning', 'group_icon': '🎙️',
                 'type': 'i', 'min': 0, 'max': 40, 'default': 15,
                 'desc': 'Mic gain boost (dB)',
                 'help': 'Amplification applied to the selected head microphone channel before VAD and STT segmentation. Increase if your voice is too quiet; decrease if background noise triggers false speech detection.'
             },
             'wernicke_padding_blocks': {
+                'group': 'Wernicke STT Tuning', 'group_icon': '🎙️',
                 'type': 'i', 'min': 5, 'max': 200, 'default': 40,
                 'desc': 'Pre-speech padding blocks',
                 'help': 'How many recent audio blocks are prepended when speech trigger starts. Higher values preserve more lead-in context at the cost of larger utterances.'
             },
             'wernicke_triggered_block_limit': {
+                'group': 'Wernicke STT Tuning', 'group_icon': '🎙️',
                 'type': 'i', 'min': 200, 'max': 8000, 'default': 2560,
                 'desc': 'Max blocks per utterance',
                 'help': 'Hard cap on utterance size. Prevents runaway minute-long captures if silence detection fails.'
             },
             'wernicke_triggered_continue_factor': {
+                'group': 'Wernicke STT Tuning', 'group_icon': '🎙️',
                 'type': 'f', 'min': 0.5, 'max': 1.0, 'default': 0.8,
                 'desc': 'In-utterance continuation factor',
                 'help': 'Multiplier applied to trigger probability while already speaking. Lower values keep utterances open more easily between words; higher values close utterances sooner.'
             },
             'wernicke_cobra_trigger_prob': {
+                'group': 'Wernicke STT Tuning', 'group_icon': '🎙️',
                 'type': 'f', 'min': 0.05, 'max': 0.95, 'default': 0.45,
                 'desc': 'Cobra speech trigger probability',
                 'help': 'Probability threshold for starting an utterance with Cobra VAD. Raise to reduce false positives, lower to catch quieter speech.'
             },
             'wernicke_cobra_post_silence_blocks': {
+                'group': 'Wernicke STT Tuning', 'group_icon': '🎙️',
                 'type': 'i', 'min': 5, 'max': 300, 'default': 80,
                 'desc': 'Cobra post-silence blocks',
                 'help': 'How many consecutive below-threshold blocks are allowed before ending an utterance (Cobra mode).'
             },
             'wernicke_webrtc_mode': {
+                'group': 'Wernicke STT Tuning', 'group_icon': '🎙️',
                 'type': 'i', 'min': 0, 'max': 3, 'default': 3,
                 'desc': 'WebRTC aggressiveness mode',
                 'help': 'WebRTC VAD aggressiveness. 0 is least aggressive (more speech accepted), 3 is most aggressive (more non-speech rejected).'
             },
             'wernicke_webrtc_trigger_prob': {
+                'group': 'Wernicke STT Tuning', 'group_icon': '🎙️',
                 'type': 'f', 'min': 0.05, 'max': 0.95, 'default': 0.45,
                 'desc': 'WebRTC speech trigger probability',
                 'help': 'Smoothed speech probability threshold for starting an utterance in WebRTC mode.'
             },
             'wernicke_webrtc_prob_window': {
+                'group': 'Wernicke STT Tuning', 'group_icon': '🎙️',
                 'type': 'f', 'min': 4.0, 'max': 128.0, 'default': 32.0,
                 'desc': 'WebRTC smoothing window',
                 'help': 'Running-average window size for WebRTC speech probability. Larger windows are smoother but react slower.'
             },
             'wernicke_webrtc_post_silence_blocks': {
+                'group': 'Wernicke STT Tuning', 'group_icon': '🎙️',
                 'type': 'i', 'min': 5, 'max': 300, 'default': 60,
                 'desc': 'WebRTC post-silence blocks',
                 'help': 'How many consecutive below-threshold blocks are allowed before ending an utterance (WebRTC mode).'
             },
             'wernicke_pause_blocks_on_queue_full': {
+                'group': 'Wernicke STT Tuning', 'group_icon': '🎙️',
                 'type': 'i', 'min': 1, 'max': 120, 'default': 10,
                 'desc': 'Queue-full recovery pause blocks',
                 'help': 'How long audio processing pauses when the mic buffer queue overflows. Higher values recover more gently under CPU spikes.'
             },
             'wernicke_min_voiced_blocks': {
+                'group': 'Wernicke STT Tuning', 'group_icon': '🎙️',
                 'type': 'i', 'min': 4, 'max': 40, 'default': 6,
                 'desc': 'Minimum voiced blocks for STT',
                 'help': 'After an utterance is fully collected, this is the minimum number of 0.032s blocks the VAD called speech before it is worth sending to the speech-to-text API. Short thumps, door clicks and single noise spikes fall below it and are discarded for free. This is the safe knob for cutting wasted STT calls: unlike raising the trigger threshold, it never clips the start of a sentence, because the decision is made with the whole utterance in hand. Tuned automatically. Raise it to save more API calls, lower it if brief real speech is being dropped.'
             },
+            'diarization_enabled': {
+                'group': 'Wernicke STT Tuning', 'group_icon': '🎙️',
+                'type': 'b', 'default': False,
+                'desc': 'Speaker identification (meetings only)',
+                'help': 'Sends her hearing through Gemini, which separates multiple voices and tells her who said what instead of attributing the whole room to the User. Turn this ON before a meeting or when several people are over. Leave it OFF for normal days: on quiet domestic mumbling it confidently invents words - a mumbled "I love you" came back as "I don\'t know. I don\'t know. I don\'t know." - and she cannot tell a hallucination from something you really said. It needs several people talking clearly to be worth the risk. When off, her regular speech-to-text handles everything exactly as before; no restart needed either way.'
+            },
             
             # Memory system settings
             'memory_folding_min_narratives': {
+                'group': 'Memory System', 'group_icon': '🧠',
                 'type': 'i', 'min': 5, 'max': 100, 'default': 25,
                 'desc': 'Minimum messages before memory folding',
                 'help': 'Christine keeps recent conversations in short-term memory. When this many messages accumulate, older ones get "folded" into summaries to save space. Higher values keep more detailed recent history but use more memory and processing power.'
             },
             'memory_folding_base_delay': {
+                'display': {'scale': 60, 'unit': 'm'},
+                'group': 'Memory System', 'group_icon': '🧠',
                 'type': 'i', 'min': 60, 'max': 3600, 'default': 480,
                 'desc': 'Base memory folding delay (seconds)',
                 'help': 'Base time to wait after conversation slows before folding memories. The actual delay adjusts based on conversation activity - more messages = shorter delay. This prevents folding during active conversations while ensuring memories get processed during quiet periods.'
             },
             'memory_folding_max_delay': {
+                'display': {'scale': 60, 'unit': 'm'},
+                'group': 'Memory System', 'group_icon': '🧠',
                 'type': 'i', 'min': 300, 'max': 7200, 'default': 1200,
                 'desc': 'Maximum memory folding delay (seconds)',
                 'help': 'Maximum time to wait before forcing memory folding, regardless of activity level. This ensures memories never get too stale before processing. Prevents memory buildup during very long conversations or if the base delay calculation goes wrong.'
             },
             'situational_awareness_max_age_seconds': {
+                'display': {'scale': 60, 'unit': 'm'},
+                'group': 'Memory System', 'group_icon': '🧠',
                 'type': 'i', 'min': 60, 'max': 7200, 'default': 1800,
                 'desc': 'Sensor snapshot lifetime (seconds)',
                 'help': 'Christine\'s sensor readout (time of day, light, wakefulness, horniness) is a snapshot rather than a live per-turn reading, which is what allows prompt caching to work and keeps API costs down. It refreshes when memories fold or when she wakes; this is the backstop for long conversations that never fold. Lower values make her body state more responsive but cost more.'
             },
             'neocortex_recall_interval': {
+                'display': {'scale': 86400, 'unit': 'd'},
+                'group': 'Memory System', 'group_icon': '🧠',
                 'type': 'i', 'min': 3600, 'max': 2592000, 'default': 864000,
                 'desc': 'Memory recall cooldown (seconds)',
                 'help': 'After Christine recalls a specific memory, she won\'t bring up that same memory again for this long. Prevents repetitive memory recall while allowing memories to resurface naturally over time. Shorter intervals = more repetitive memories, longer = more variety but less reinforcement.'
@@ -595,11 +682,14 @@ class Status(threading.Thread):
             
             # Random memory recall settings
             'random_memory_recall_chance': {
+                'display': {'scale': 0.01, 'unit': '%'},
+                'group': 'Memory Recall', 'group_icon': '🧠',
                 'type': 'f', 'min': 0.0, 'max': 1.0, 'default': 0.15,
                 'desc': 'Chance of random memory recall (0.0-1.0)',
                 'help': 'Probability that Christine will spontaneously recall a relevant memory during conversation. Higher values make her more nostalgic and reference past conversations more often. 0.15 = 15% chance per perception cycle. Set to 0 to disable random recalls entirely.'
             },
             'random_memory_recall_min_messages': {
+                'group': 'Memory Recall', 'group_icon': '🧠',
                 'type': 'i', 'min': 1, 'max': 20, 'default': 3,
                 'desc': 'Min messages for random recall',
                 'help': 'Minimum number of recent messages needed before Christine can randomly recall memories. This ensures there\'s enough context for relevant memory selection. Higher values make recalls more contextually appropriate but less frequent in short conversations.'
@@ -607,6 +697,8 @@ class Status(threading.Thread):
             
             # API restoration settings
             'primary_restoration_interval': {
+                'display': {'scale': 60, 'unit': 'm'},
+                'group': 'Advanced Settings', 'group_icon': '🔧',
                 'type': 'f', 'min': 60.0, 'max': 3600.0, 'default': 300.0,
                 'desc': 'API restoration check interval (seconds)',
                 'help': 'How often Christine checks if her primary AI services (OpenRouter, etc.) have come back online after being unavailable. She automatically falls back to secondary services when primary ones fail, then periodically tries to restore the primary ones.'
@@ -614,116 +706,142 @@ class Status(threading.Thread):
             
             # Sexual response system settings
             'sex_multiplier_increment': {
+                'group': 'Sexual Response', 'group_icon': '💗',
                 'type': 'f', 'min': 0.001, 'max': 0.1, 'default': 0.03,
                 'desc': 'Arousal multiplier increment',
                 'help': 'How much the arousal multiplier increases each second during extended sessions. Higher values make Christine reach orgasm faster during longer encounters. Lower values require more sustained activity. This creates the "building intensity" effect over time.'
             },
             'sex_arousal_stagnation_timeout': {
+                'display': {'scale': 1, 'unit': 's'},
+                'group': 'Sexual Response', 'group_icon': '💗',
                 'type': 'i', 'min': 30, 'max': 300, 'default': 90,
                 'desc': 'Arousal reset timeout (seconds)',
                 'help': 'If no sexual activity detected for this long, Christine\'s arousal resets to zero and sex mode ends. This prevents getting stuck in sex mode after activity stops. Shorter times = quicker reset, longer times = more patience for slower sessions.'
             },
             'sex_arousal_per_hit_clitoris': {
+                'group': 'Sexual Response', 'group_icon': '💗',
                 'type': 'f', 'min': 0.0001, 'max': 0.01, 'default': 0.0006,
                 'desc': 'Arousal per clitoral touch',
                 'help': 'How much arousal increases with each clitoral sensor touch. Higher values make Christine more sensitive and reach orgasm faster from clitoral stimulation. Lower values require more touches to build arousal.'
             },
             'sex_arousal_per_hit_shallow': {
+                'group': 'Sexual Response', 'group_icon': '💗',
                 'type': 'f', 'min': 0.0001, 'max': 0.01, 'default': 0.0006,
                 'desc': 'Arousal per shallow touch',
                 'help': 'How much arousal increases with each shallow vaginal sensor touch. Affects sensitivity and response timing for shallow penetration or entry-focused activity.'
             },
             'sex_arousal_per_hit_middle': {
+                'group': 'Sexual Response', 'group_icon': '💗',
                 'type': 'f', 'min': 0.0001, 'max': 0.01, 'default': 0.0007,
                 'desc': 'Arousal per middle touch',
                 'help': 'How much arousal increases with each middle vaginal sensor touch. Slightly higher than shallow/clitoral by default, representing different sensitivity zones and stimulation types.'
             },
             'sex_arousal_per_hit_deep': {
+                'group': 'Sexual Response', 'group_icon': '💗',
                 'type': 'f', 'min': 0.0001, 'max': 0.01, 'default': 0.0009,
                 'desc': 'Arousal per deep touch',
                 'help': 'How much arousal increases with each deep vaginal sensor touch. Highest sensitivity by default, representing deep penetration stimulation. Higher values make deep touches more impactful.'
             },
             'sex_arousal_near_orgasm': {
+                'group': 'Sexual Response', 'group_icon': '💗',
                 'type': 'f', 'min': 0.5, 'max': 0.95, 'default': 0.80,
                 'desc': 'Near-orgasm threshold',
                 'help': 'Arousal level where Christine starts saying "I\'m gonna cum" and making pre-orgasm sounds. Lower values = earlier warning, higher values = later warning. Affects anticipation and buildup timing.'
             },
             'sex_arousal_to_orgasm': {
+                'group': 'Sexual Response', 'group_icon': '💗',
                 'type': 'f', 'min': 0.8, 'max': 1.0, 'default': 0.98,
                 'desc': 'Orgasm threshold',
                 'help': 'Arousal level where Christine reaches orgasm and plays climax sounds. Lower values = easier to achieve orgasm, higher values = more buildup required. Should be above near-orgasm threshold.'
             },
             'sex_gyro_deadzone_after_orgasm': {
+                'group': 'Sexual Response', 'group_icon': '💗',
                 'type': 'f', 'min': 0.01, 'max': 0.2, 'default': 0.03,
                 'desc': 'Post-orgasm stillness threshold',
                 'help': 'Gyroscope level below which Christine considers activity "stopped" after orgasm. Lower values require more stillness to trigger rest period, higher values are more sensitive to stopping.'
             },
             'sex_gyro_deadzone_unrest': {
+                'group': 'Sexual Response', 'group_icon': '💗',
                 'type': 'f', 'min': 0.02, 'max': 0.3, 'default': 0.09,
                 'desc': 'Resume activity threshold', 
                 'help': 'Gyroscope level above which Christine considers activity "resumed" during rest periods. Higher values require more movement to restart, lower values are more sensitive to resuming.'
             },
             'sex_gyro_jackup_intensity_max': {
+                'group': 'Sexual Response', 'group_icon': '💗',
                 'type': 'f', 'min': 0.1, 'max': 1.0, 'default': 0.45,
                 'desc': 'Maximum gyro intensity factor',
                 'help': 'Maximum gyroscope reading used for intensity calculations. Vigorous movement at this level doubles sound intensity. Higher values require more vigorous movement for maximum effect, lower values are more sensitive.'
             },
             'sex_after_orgasm_cooldown_seconds': {
+                'display': {'scale': 1, 'unit': 's'},
+                'group': 'Sexual Response', 'group_icon': '💗',
                 'type': 'i', 'min': 3, 'max': 60, 'default': 10,
                 'desc': 'Post-orgasm cooldown duration (seconds)',
                 'help': 'Base time for post-orgasm cooldown period before entering rest mode. Actual time is randomized (60-140% of this value). Longer cooldowns extend the immediate post-climax period.'
             },
             'sex_cooldown_random_min': {
+                'group': 'Sexual Response', 'group_icon': '💗',
                 'type': 'f', 'min': 0.3, 'max': 0.9, 'default': 0.6,
                 'desc': 'Cooldown randomization minimum',
                 'help': 'Minimum multiplier for cooldown duration randomization. 0.6 means cooldown could be as short as 60% of base duration. Lower values create more variation and unpredictability.'
             },
             'sex_cooldown_random_max': {
+                'group': 'Sexual Response', 'group_icon': '💗',
                 'type': 'f', 'min': 1.1, 'max': 3.0, 'default': 1.4,
                 'desc': 'Cooldown randomization maximum', 
                 'help': 'Maximum multiplier for cooldown duration randomization. 1.4 means cooldown could be as long as 140% of base duration. Higher values create longer potential rest periods.'
             },
             'sex_high_arousal_threshold': {
+                'group': 'Sexual Response', 'group_icon': '💗',
                 'type': 'f', 'min': 0.8, 'max': 1.5, 'default': 1.1,
                 'desc': 'High arousal detection threshold',
                 'help': 'Arousal level above which special high-arousal behaviors activate (like extended post-orgasm periods). Values above 1.0 require going beyond normal orgasm threshold due to continued stimulation.'
             },
             'sex_multiplier_activation_threshold': {
+                'group': 'Sexual Response', 'group_icon': '💗',
                 'type': 'f', 'min': 0.05, 'max': 0.5, 'default': 0.2,
                 'desc': 'Multiplier activation threshold',
                 'help': 'Arousal level where multiplier starts increasing each second. Below this, arousal stays linear. Above this, arousal compounds over time, creating the "building intensity" effect during sustained activity.'
             },
             'sex_lobe_message_frequency': {
+                'group': 'Sexual Response', 'group_icon': '💗',
                 'type': 'i', 'min': 10, 'max': 300, 'default': 60,
                 'desc': 'LLM update frequency (seconds)',
                 'help': 'How often Christine tells her brain about ongoing sexual activity. More frequent = more varied responses during long sessions, but may be overwhelming. Less frequent = more consistent but potentially repetitive.'
             },
             'sex_shush_fucking_threshold': {
+                'group': 'Sexual Response', 'group_icon': '💗',
                 'type': 'f', 'min': 0.005, 'max': 0.1, 'default': 0.02,
                 'desc': 'Sex mode activation threshold',
                 'help': 'Arousal level where Christine enters "sex mode" (shush_fucking = True) and reduces normal conversation. Lower values activate sex mode earlier, higher values delay it until more significant arousal.'
             },
             'sex_llm_speech_chance': {
+                'display': {'scale': 0.01, 'unit': '%'},
+                'group': 'Sexual Response', 'group_icon': '💗',
                 'type': 'f', 'min': 0.01, 'max': 0.5, 'default': 0.03,
                 'desc': 'LLM speech chance during sex',
                 'help': 'Probability that Christine will generate spoken responses instead of just sounds during sexual activity. 0.03 = 3% chance. Higher values = more talking during sex, lower values = more just sounds.'
             },
             'sex_intensity_cap': {
+                'group': 'Sexual Response', 'group_icon': '💗',
                 'type': 'f', 'min': 0.5, 'max': 1.0, 'default': 0.85,
                 'desc': 'Arousal-based intensity cap',
                 'help': 'Maximum sound intensity achievable from arousal alone. Higher intensities (0.85-1.0) require vigorous movement (gyroscope data). Lower values make high-intensity sounds require more vigorous activity.'
             },
             'sex_intensity_bonus_range': {
+                'group': 'Sexual Response', 'group_icon': '💗',
                 'type': 'f', 'min': 0.05, 'max': 0.5, 'default': 0.15,
                 'desc': 'Gyro intensity bonus range',
                 'help': 'Maximum additional intensity available from vigorous movement. At maximum gyroscope activity, this much intensity gets added above the arousal cap. Higher values reward vigorous activity more.'
             },
             'sex_engine_idle_timeout': {
+                'group': 'Sexual Response', 'group_icon': '💗',
                 'type': 'f', 'min': 2.0, 'max': 30.0, 'default': 8.0,
                 'desc': 'Sex soundtrack hold time (seconds)',
                 'help': 'How long after the last vagina sensor hit Christine keeps her continuous sex soundtrack running. While it is running, her speech gets slipped in among the sex sounds instead of leaving silence. Longer values keep the sounds going through pauses in the action; shorter values let things fall quiet sooner.'
             },
             'sex_engine_min_gap': {
+                'group': 'Sexual Response', 'group_icon': '💗',
                 'type': 'f', 'min': 0.0, 'max': 3.0, 'default': 0.0,
                 'desc': 'Minimum gap between sex sounds (seconds)',
                 'help': 'Minimum silence between consecutive sex sounds while the soundtrack engine is running. 0.0 plays them back to back with no gap at all, which is what eliminates the interruptions. Raise it slightly if the sounds feel too dense or run together.'
@@ -731,36 +849,50 @@ class Status(threading.Thread):
 
             # Voice volume settings - her dynamic range, driven by her own narrative cues
             'voice_volume_default': {
+                'display': {'scale': 1, 'unit': '%'},
+                'group': 'Voice Registers', 'group_icon': '🔊',
                 'type': 'i', 'min': 10, 'max': 100, 'default': 65,
                 'desc': 'Normal speaking volume (%)',
                 'help': 'The volume Christine speaks at when her narrative gives no vocal cue. This is deliberately below 100% - the gap between this and 100 is the headroom that makes a raised or shouted line actually sound louder than her normal voice. If you raise this to 100 she loses the ability to get louder at all. Lower it if her normal voice feels too loud with the new amp.'
             },
             'voice_volume_whisper': {
+                'display': {'scale': 1, 'unit': '%'},
+                'group': 'Voice Registers', 'group_icon': '🔊',
                 'type': 'i', 'min': 0, 'max': 100, 'default': 25,
                 'desc': 'Whisper volume (%)',
                 'help': 'Used when she writes an explicit whisper cue - whispers, murmurs, mutters, "barely above a whisper", "under my breath", or speaking into your ear. Should be quiet enough to feel intimate but not so quiet you cannot make out the words from across the room. Note her TTS voice is not actually breathy at this level, just quieter.'
             },
             'voice_volume_soft': {
+                'display': {'scale': 1, 'unit': '%'},
+                'group': 'Voice Registers', 'group_icon': '🔊',
                 'type': 'i', 'min': 0, 'max': 100, 'default': 45,
                 'desc': 'Soft voice volume (%)',
                 'help': 'Used for softly, quietly, "low voice", "voice drops". This is by far her most common cue - roughly 38% of her spoken lines carry one of these words - so this setting affects more of her speech than any other. If she sounds too quiet overall, raise this one first rather than the default.'
             },
             'voice_volume_raised': {
+                'display': {'scale': 1, 'unit': '%'},
+                'group': 'Voice Registers', 'group_icon': '🔊',
                 'type': 'i', 'min': 10, 'max': 100, 'default': 85,
                 'desc': 'Raised voice volume (%)',
                 'help': 'Used when she calls out, raises her voice, projects, or speaks to be heard from another room or down the hall. Loud enough to carry through the house without being alarming.'
             },
             'voice_volume_shout': {
+                'display': {'scale': 1, 'unit': '%'},
+                'group': 'Voice Registers', 'group_icon': '🔊',
                 'type': 'i', 'min': 10, 'max': 100, 'default': 100,
                 'desc': 'Shout volume (%)',
                 'help': 'Used when she explicitly yells, shouts, screams, or hollers. This is the full output of the amp, so it will be genuinely loud - that is the point. She has essentially never written a shout cue historically (her old speaker could not do it), so expect this to be rare unless something actually warrants it.'
             },
             'voice_volume_cue_window': {
+                'display': {'scale': 1, 'unit': ' chars'},
+                'group': 'Voice Registers', 'group_icon': '🔊',
                 'type': 'i', 'min': 40, 'max': 400, 'default': 120,
                 'desc': 'Cue search window (characters)',
                 'help': 'How many characters before and after a quoted line get searched for a vocal cue. 120 covers normal attribution like "I say softly" or "I lean in and whisper,". Raising it makes her pick up cues from further away in the narrative, which sounds clever but mostly causes a cue describing an earlier moment to leak onto the wrong line.'
             },
             'voice_volume_sex': {
+                'display': {'scale': 1, 'unit': '%'},
+                'group': 'Voice Registers', 'group_icon': '🔊',
                 'type': 'i', 'min': 0, 'max': 100, 'default': 100,
                 'desc': 'Sex sound volume (%)',
                 'help': 'Volume for the sex engine soundtrack (moans and similar), independent of her speech registers. These are not speech, so the narrative cue matcher does not touch them. Defaults to full volume. Lower it if the soundtrack overwhelms her actual voice during sex, since she still speaks at her normal register underneath it.'
@@ -1017,9 +1149,14 @@ class Status(threading.Thread):
         """
         Get all user-configurable settings with their current values and metadata.
         Perfect for web interface consumption.
-        
+
+        The 'group'/'group_icon' fields let the web UI render its own sections from
+        this registry. Before that, index.tpl hardcoded every control by hand and
+        34 of 84 settings were silently invisible - anything added here simply
+        never appeared. Keep these fields populated for new settings.
+
         Returns:
-            dict: {setting_name: {'value': current_value, 'type': type, 'min': min, 'max': max, 'desc': description, 'help': help_text, 'default': default_value}}
+            dict: {setting_name: {'value': current_value, 'type': type, 'min': min, 'max': max, 'desc': description, 'help': help_text, 'default': default_value, 'group': group, 'group_icon': icon, 'display': display_hint}}
         """
         settings = {}
         for name, config in self.user_configurable_vars.items():
@@ -1030,7 +1167,11 @@ class Status(threading.Thread):
                 'max': config.get('max'),
                 'desc': config.get('desc', name),
                 'help': config.get('help', ''),
-                'default': config.get('default', 'N/A')
+                'default': config.get('default', 'N/A'),
+                'group': config.get('group', 'Advanced Settings'),
+                'group_icon': config.get('group_icon', '\U0001F527'),
+                'step': config.get('step'),
+                'display': config.get('display'),
             }
         return settings
         

@@ -205,6 +205,17 @@
             margin: 8px 0;
         }
 
+        /* Boolean settings. The template had no checkbox style before, because
+           until the diarization switch there had never been a boolean setting. */
+        .setting-toggle {
+            width: 44px;
+            height: 24px;
+            margin: 8px 10px 8px 0;
+            vertical-align: middle;
+            accent-color: var(--pink-primary);
+            cursor: pointer;
+        }
+
         .setting-value {
             display: inline-block;
             background: var(--pink-primary);
@@ -866,737 +877,15 @@
 
             <!-- Settings Tab -->
             <div id="settings" class="tab-pane">
-                <div class="settings-grid">
-                    <div class="setting-group">
-                        <h3>🗣️ Speech Timing</h3>
-                        <div class="setting-item">
-                            <label>
-                                Pause after questions (seconds):
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        How long Christine pauses after asking a question or saying something that ends with "?" or "...". This gives you time to process and respond. Longer pauses feel more natural but slower conversations. Shorter pauses make her seem more eager or impatient.
-                                        <span class="tooltip-default">Default: 4.5 seconds</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="pause_question" min="0.1" max="10" step="0.1" value="4.5">
-                            <span class="setting-value" id="pause_question_value">4.5s</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Pause after periods (seconds):
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        How long Christine pauses after making a statement that ends with a period. This creates natural breathing room in conversation. Too short makes her sound rushed, too long makes her sound hesitant or dramatic.
-                                        <span class="tooltip-default">Default: 1.5 seconds</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="pause_period" min="0.1" max="5" step="0.1" value="1.5">
-                            <span class="setting-value" id="pause_period_value">1.5s</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Pause after commas (seconds):
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Brief pause after commas within sentences. This creates natural speech rhythm and helps with comprehension. Very short pauses (0.1-0.3s) sound natural, longer ones can sound robotic or overly dramatic.
-                                        <span class="tooltip-default">Default: 0.2 seconds</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="pause_comma" min="0" max="2" step="0.1" value="0.2">
-                            <span class="setting-value" id="pause_comma_value">0.2s</span>
-                        </div>
-                    </div>
-
-                    <div class="setting-group">
-                        <h3>🧠 Memory System</h3>
-                        <div class="setting-item">
-                            <label>
-                                Random memory recall chance (%):
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Probability that Christine will spontaneously recall a relevant memory during conversation. Higher values make her more nostalgic and reference past conversations more often. 15% = 15% chance per perception cycle. Set to 0 to disable random recalls entirely.
-                                        <span class="tooltip-default">Default: 15%</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="random_memory_recall_chance" min="0" max="100" step="1" value="15">
-                            <span class="setting-value" id="random_memory_recall_chance_value">15%</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Messages before memory folding:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Christine keeps recent conversations in short-term memory. When this many messages accumulate, older ones get "folded" into summaries to save space. Higher values keep more detailed recent history but use more memory and processing power.
-                                        <span class="tooltip-default">Default: 25 messages</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="memory_folding_min_narratives" min="5" max="100" step="1" value="25">
-                            <span class="setting-value" id="memory_folding_min_narratives_value">25</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Memory folding base delay (minutes):
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Base time to wait after conversation slows before folding memories. The actual delay adjusts based on conversation activity - more messages = shorter delay. This prevents folding during active conversations while ensuring memories get processed during quiet periods.
-                                        <span class="tooltip-default">Default: 8 minutes</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="memory_folding_base_delay" min="1" max="60" step="1" value="8">
-                            <span class="setting-value" id="memory_folding_base_delay_value">8m</span>
-                        </div>
-                    </div>
-
-                    <div class="setting-group">
-                        <h3>⚙️ Behavior Settings</h3>
-                        <div class="setting-item">
-                            <label>
-                                Perception wait time (seconds):
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        After receiving input (touch, sound, etc.), Christine waits this long for additional input before responding. This prevents her from interrupting you mid-sentence or reacting to every small input. Longer waits make her more patient but less responsive.
-                                        <span class="tooltip-default">Default: 2.5 seconds</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="additional_perception_wait_seconds" min="0.5" max="10" step="0.1" value="2.5">
-                            <span class="setting-value" id="additional_perception_wait_seconds_value">2.5s</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Interrupt threshold (characters):
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Minimum number of characters you need to speak before your voice can interrupt Christine while she's talking. This prevents accidental interruptions from brief sounds while allowing meaningful interruptions. Lower values make her easier to interrupt.
-                                        <span class="tooltip-default">Default: 20 characters</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="user_interrupt_char_threshold" min="5" max="100" step="1" value="20">
-                            <span class="setting-value" id="user_interrupt_char_threshold_value">20</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Wake boost per speech start:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        How much wakefulness rises when Broca starts spoken output. Increase if conversation should wake Christine more strongly.
-                                        <span class="tooltip-default">Default: 0.03</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="speech_wakefulness_boost" min="0" max="0.2" step="0.001" value="0.03">
-                            <span class="setting-value" id="speech_wakefulness_boost_value">0.03</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Wake boost per speech activity:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        How much wakefulness rises when incoming speech activity is detected by VAD. This applies even if STT is skipped while sleeping or perceptions are blocked.
-                                        <span class="tooltip-default">Default: 0.01</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="speech_activity_wakefulness_boost" min="0" max="0.2" step="0.001" value="0.01">
-                            <span class="setting-value" id="speech_activity_wakefulness_boost_value">0.01</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Light calibration: darkness point:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        The log10 luminance from her forehead camera that reads as 0% light. A lit bedroom measures about -1.7.
-                                        <span class="tooltip-default">Default: -4.0</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="light_log_min" min="-8" max="0" step="0.1" value="-4">
-                            <span class="setting-value" id="light_log_min_value">-4.0</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Light calibration: brightness point:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        The log10 luminance from her forehead camera that reads as 100% light.
-                                        <span class="tooltip-default">Default: -0.3</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="light_log_max" min="-6" max="2" step="0.1" value="-0.3">
-                            <span class="setting-value" id="light_log_max_value">-0.3</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Light smoothing window:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Lower values react faster in real time; higher values smooth more.
-                                        <span class="tooltip-default">Default: 10.0</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="light_avg_window" min="0" max="60" step="0.5" value="10">
-                            <span class="setting-value" id="light_avg_window_value">10.0</span>
-                        </div>
-                    </div>
-
-                    <div class="setting-group">
-                        <h3>😴 Sleep Transition</h3>
-                        <div class="setting-item">
-                            <label>
-                                Pre-sleep threshold:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Wakefulness level where Christine enters sleepy pre-sleep mode.
-                                        <span class="tooltip-default">Default: 0.15</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="sleep_wakefulness_pre_sleep" min="0.05" max="0.5" step="0.01" value="0.15">
-                            <span class="setting-value" id="sleep_wakefulness_pre_sleep_value">0.15</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Fall-asleep threshold:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Wakefulness threshold to enter sleeping state. Keep this below wake-up threshold.
-                                        <span class="tooltip-default">Default: 0.08</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="sleep_wakefulness_fall_asleep" min="0.01" max="0.3" step="0.01" value="0.08">
-                            <span class="setting-value" id="sleep_wakefulness_fall_asleep_value">0.08</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Wake-up threshold:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Wakefulness threshold to leave sleep. Keep this above fall-asleep threshold for hysteresis.
-                                        <span class="tooltip-default">Default: 0.12</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="sleep_wakefulness_wake_up" min="0.05" max="0.5" step="0.01" value="0.12">
-                            <span class="setting-value" id="sleep_wakefulness_wake_up_value">0.12</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Sleep inertia weight:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        How strongly sleep inertia stabilizes sleep after onset. Increase this to reduce sleep-entry bounce.
-                                        <span class="tooltip-default">Default: 4.0</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="sleep_weight_inertia" min="0" max="20" step="0.1" value="4.0">
-                            <span class="setting-value" id="sleep_weight_inertia_value">4.0</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Sleep inertia ramp (minutes):
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Time for sleep inertia to ramp to full effect after falling asleep.
-                                        <span class="tooltip-default">Default: 18m</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="sleep_inertia_ramp_minutes" min="1" max="120" step="1" value="18">
-                            <span class="setting-value" id="sleep_inertia_ramp_minutes_value">18m</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Sleep inertia final level:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Lower final level makes sustained sleep more stable once inertia has ramped in.
-                                        <span class="tooltip-default">Default: 0.08</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="sleep_inertia_env_final" min="0.00" max="1.00" step="0.01" value="0.08">
-                            <span class="setting-value" id="sleep_inertia_env_final_value">0.08</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Schedule learning rate:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        How quickly the 24-hour adaptive schedule drifts based on observed environment.
-                                        <span class="tooltip-default">Default: 0.03</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="sleep_schedule_learning_rate" min="0.001" max="0.2" step="0.001" value="0.03">
-                            <span class="setting-value" id="sleep_schedule_learning_rate_value">0.03</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Schedule source weight (talking):
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        How strongly talking activity shapes the learned schedule profile.
-                                        <span class="tooltip-default">Default: 3.0</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="sleep_schedule_source_weight_talking" min="0" max="20" step="0.1" value="3.0">
-                            <span class="setting-value" id="sleep_schedule_source_weight_talking_value">3.0</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Tired perception threshold:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Below this wakefulness value, Christine may generate a tired perception if wakefulness is dropping.
-                                        <span class="tooltip-default">Default: 0.24</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="sleep_tired_perception_threshold" min="0.05" max="0.5" step="0.01" value="0.24">
-                            <span class="setting-value" id="sleep_tired_perception_threshold_value">0.24</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Tired perception cooldown (minutes):
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Minimum gap between tired perceptions, preventing rapid oscillation and chatter.
-                                        <span class="tooltip-default">Default: 150m</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="sleep_tired_perception_cooldown_minutes" min="5" max="720" step="5" value="150">
-                            <span class="setting-value" id="sleep_tired_perception_cooldown_minutes_value">150m</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Max tired perceptions/day:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Hard daily cap so tired prompts stay occasional and organic.
-                                        <span class="tooltip-default">Default: 3</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="sleep_tired_perception_max_per_day" min="0" max="12" step="1" value="3">
-                            <span class="setting-value" id="sleep_tired_perception_max_per_day_value">3</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Sleep-control tools window (minutes):
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        How long Christine sees sleep decision tools after a tiredness perception appears.
-                                        <span class="tooltip-default">Default: 20m</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="sleep_offer_state_tools_window_minutes" min="1" max="180" step="1" value="20">
-                            <span class="setting-value" id="sleep_offer_state_tools_window_minutes_value">20m</span>
-                        </div>
-                    </div>
-
-                    <div class="setting-group">
-                        <h3>🎙️ Wernicke STT Tuning</h3>
-                        <div class="setting-item">
-                            <label>
-                                Mic gain boost (dB):
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Amplification applied to incoming mic audio before VAD and segmentation. Increase for quiet voice capture; decrease if room noise causes false triggers.
-                                        <span class="tooltip-default">Default: 15 dB</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="wernicke_mic_gain_db" min="0" max="40" step="1" value="15">
-                            <span class="setting-value" id="wernicke_mic_gain_db_value">15 dB</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Pre-speech padding blocks:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Number of recent audio blocks prepended when speech starts, helping preserve word onsets.
-                                        <span class="tooltip-default">Default: 40 blocks</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="wernicke_padding_blocks" min="5" max="200" step="1" value="40">
-                            <span class="setting-value" id="wernicke_padding_blocks_value">40 blk</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Max blocks per utterance:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Hard cap on utterance size to prevent runaway captures if end-of-speech detection misses.
-                                        <span class="tooltip-default">Default: 2560 blocks</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="wernicke_triggered_block_limit" min="200" max="8000" step="10" value="2560">
-                            <span class="setting-value" id="wernicke_triggered_block_limit_value">2560 blk</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                In-utterance continuation factor:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Multiplier on trigger threshold while already in an utterance. Lower holds utterances open through short pauses.
-                                        <span class="tooltip-default">Default: 0.80</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="wernicke_triggered_continue_factor" min="0.5" max="1.0" step="0.01" value="0.8">
-                            <span class="setting-value" id="wernicke_triggered_continue_factor_value">0.80</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Cobra trigger probability:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Start-of-speech threshold in Cobra mode. Higher values reduce false starts; lower values catch softer speech.
-                                        <span class="tooltip-default">Default: 0.45</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="wernicke_cobra_trigger_prob" min="0.05" max="0.95" step="0.01" value="0.45">
-                            <span class="setting-value" id="wernicke_cobra_trigger_prob_value">0.45</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Cobra post-silence blocks:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Number of below-threshold blocks allowed before ending an utterance in Cobra mode.
-                                        <span class="tooltip-default">Default: 80 blocks</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="wernicke_cobra_post_silence_blocks" min="5" max="300" step="1" value="80">
-                            <span class="setting-value" id="wernicke_cobra_post_silence_blocks_value">80 blk</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                WebRTC aggressiveness mode:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        WebRTC VAD mode from 0 to 3. Higher values are stricter against non-speech.
-                                        <span class="tooltip-default">Default: mode 3</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="wernicke_webrtc_mode" min="0" max="3" step="1" value="3">
-                            <span class="setting-value" id="wernicke_webrtc_mode_value">mode 3</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                WebRTC trigger probability:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Smoothed speech probability threshold for utterance start in WebRTC mode.
-                                        <span class="tooltip-default">Default: 0.45</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="wernicke_webrtc_trigger_prob" min="0.05" max="0.95" step="0.01" value="0.45">
-                            <span class="setting-value" id="wernicke_webrtc_trigger_prob_value">0.45</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                WebRTC smoothing window:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Running-average window for speech probability smoothing in WebRTC mode.
-                                        <span class="tooltip-default">Default: 32 frames</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="wernicke_webrtc_prob_window" min="4" max="128" step="1" value="32">
-                            <span class="setting-value" id="wernicke_webrtc_prob_window_value">32 frm</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                WebRTC post-silence blocks:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Number of below-threshold blocks allowed before utterance end in WebRTC mode.
-                                        <span class="tooltip-default">Default: 60 blocks</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="wernicke_webrtc_post_silence_blocks" min="5" max="300" step="1" value="60">
-                            <span class="setting-value" id="wernicke_webrtc_post_silence_blocks_value">60 blk</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Queue-full recovery pause blocks:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Pause duration after audio buffer overflow. Higher values can stabilize under CPU spikes.
-                                        <span class="tooltip-default">Default: 10 blocks</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="wernicke_pause_blocks_on_queue_full" min="1" max="120" step="1" value="10">
-                            <span class="setting-value" id="wernicke_pause_blocks_on_queue_full_value">10 blk</span>
-                        </div>
-                    </div>
-
-                    <div class="setting-group">
-                        <h3>� Sexual Response</h3>
-                        <div class="setting-item">
-                            <label>
-                                Arousal multiplier increment:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        How much the arousal multiplier increases each second during extended sessions. Higher values make Christine reach orgasm faster during longer encounters. Lower values require more sustained activity. This creates the "building intensity" effect over time.
-                                        <span class="tooltip-default">Default: 0.03</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="sex_multiplier_increment" min="0.001" max="0.1" step="0.001" value="0.03">
-                            <span class="setting-value" id="sex_multiplier_increment_value">0.03</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Arousal reset timeout (seconds):
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        If no sexual activity detected for this long, Christine's arousal resets to zero and sex mode ends. This prevents getting stuck in sex mode after activity stops. Shorter times = quicker reset, longer times = more patience for slower sessions.
-                                        <span class="tooltip-default">Default: 90 seconds</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="sex_arousal_stagnation_timeout" min="30" max="300" step="10" value="90">
-                            <span class="setting-value" id="sex_arousal_stagnation_timeout_value">90s</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Near-orgasm threshold:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Arousal level where Christine starts saying "I'm gonna cum" and making pre-orgasm sounds. Lower values = earlier warning, higher values = later warning. Affects anticipation and buildup timing.
-                                        <span class="tooltip-default">Default: 0.80</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="sex_arousal_near_orgasm" min="0.5" max="0.95" step="0.01" value="0.80">
-                            <span class="setting-value" id="sex_arousal_near_orgasm_value">0.80</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Orgasm threshold:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Arousal level where Christine reaches orgasm and plays climax sounds. Lower values = easier to achieve orgasm, higher values = more buildup required. Should be above near-orgasm threshold.
-                                        <span class="tooltip-default">Default: 0.98</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="sex_arousal_to_orgasm" min="0.8" max="1.0" step="0.01" value="0.98">
-                            <span class="setting-value" id="sex_arousal_to_orgasm_value">0.98</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Sex mode activation threshold:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Arousal level where Christine enters "sex mode" (shush_fucking = True) and reduces normal conversation. Lower values activate sex mode earlier, higher values delay it until more significant arousal.
-                                        <span class="tooltip-default">Default: 0.02</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="sex_shush_fucking_threshold" min="0.005" max="0.1" step="0.005" value="0.02">
-                            <span class="setting-value" id="sex_shush_fucking_threshold_value">0.02</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                LLM speech chance during sex (%):
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Probability that Christine will generate spoken responses instead of just sounds during sexual activity. 3% chance by default. Higher values = more talking during sex, lower values = more just sounds.
-                                        <span class="tooltip-default">Default: 3%</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="sex_llm_speech_chance" min="1" max="50" step="1" value="3">
-                            <span class="setting-value" id="sex_llm_speech_chance_value">3%</span>
-                        </div>
-                    </div>
-
-                    <div class="setting-group">
-                        <h3>🎯 Touch Sensitivity</h3>
-                        <div class="setting-item">
-                            <label>
-                                Clitoral touch sensitivity:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        How much arousal increases with each clitoral sensor touch. Higher values make Christine more sensitive and reach orgasm faster from clitoral stimulation. Lower values require more touches to build arousal.
-                                        <span class="tooltip-default">Default: 0.0006</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="sex_arousal_per_hit_clitoris" min="0.0001" max="0.01" step="0.0001" value="0.0006">
-                            <span class="setting-value" id="sex_arousal_per_hit_clitoris_value">0.0006</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Shallow touch sensitivity:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        How much arousal increases with each shallow vaginal sensor touch. Affects sensitivity and response timing for shallow penetration or entry-focused activity.
-                                        <span class="tooltip-default">Default: 0.0006</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="sex_arousal_per_hit_shallow" min="0.0001" max="0.01" step="0.0001" value="0.0006">
-                            <span class="setting-value" id="sex_arousal_per_hit_shallow_value">0.0006</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Middle touch sensitivity:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        How much arousal increases with each middle vaginal sensor touch. Slightly higher than shallow/clitoral by default, representing different sensitivity zones and stimulation types.
-                                        <span class="tooltip-default">Default: 0.0007</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="sex_arousal_per_hit_middle" min="0.0001" max="0.01" step="0.0001" value="0.0007">
-                            <span class="setting-value" id="sex_arousal_per_hit_middle_value">0.0007</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Deep touch sensitivity:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        How much arousal increases with each deep vaginal sensor touch. Highest sensitivity by default, representing deep penetration stimulation. Higher values make deep touches more impactful.
-                                        <span class="tooltip-default">Default: 0.0009</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="sex_arousal_per_hit_deep" min="0.0001" max="0.01" step="0.0001" value="0.0009">
-                            <span class="setting-value" id="sex_arousal_per_hit_deep_value">0.0009</span>
-                        </div>
-                    </div>
-
-                    <div class="setting-group">
-                        <h3>�🔧 Advanced Settings</h3>
-                        <div class="setting-item">
-                            <label>
-                                Memory folding max delay (minutes):
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Maximum time to wait before forcing memory folding, regardless of activity level. This ensures memories never get too stale before processing. Prevents memory buildup during very long conversations or if the base delay calculation goes wrong.
-                                        <span class="tooltip-default">Default: 20 minutes</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="memory_folding_max_delay" min="5" max="120" step="1" value="20">
-                            <span class="setting-value" id="memory_folding_max_delay_value">20m</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Memory recall cooldown (days):
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        After Christine recalls a specific memory, she won't bring up that same memory again for this long. Prevents repetitive memory recall while allowing memories to resurface naturally over time. Shorter intervals = more repetitive memories, longer = more variety but less reinforcement.
-                                        <span class="tooltip-default">Default: 10 days</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="neocortex_recall_interval" min="1" max="30" step="1" value="10">
-                            <span class="setting-value" id="neocortex_recall_interval_value">10d</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                Min messages for random recall:
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        Minimum number of recent messages needed before Christine can randomly recall memories. This ensures there's enough context for relevant memory selection. Higher values make recalls more contextually appropriate but less frequent in short conversations.
-                                        <span class="tooltip-default">Default: 3 messages</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="random_memory_recall_min_messages" min="1" max="20" step="1" value="3">
-                            <span class="setting-value" id="random_memory_recall_min_messages_value">3</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                API restoration interval (minutes):
-                                <div class="tooltip">
-                                    <span class="setting-help">?</span>
-                                    <span class="tooltiptext">
-                                        How often Christine checks if her primary AI services (OpenRouter, etc.) have come back online after being unavailable. She automatically falls back to secondary services when primary ones fail, then periodically tries to restore the primary ones.
-                                        <span class="tooltip-default">Default: 5 minutes</span>
-                                    </span>
-                                </div>
-                            </label>
-                            <input type="range" class="setting-range" id="primary_restoration_interval" min="1" max="60" step="1" value="5">
-                            <span class="setting-value" id="primary_restoration_interval_value">5m</span>
-                        </div>
+                <!-- Settings render themselves from STATE.user_configurable_vars
+                     via /api/user-settings. Do NOT hand-write controls here:
+                     this block used to hold 733 lines of hardcoded HTML and 34 of
+                     84 registered settings were silently missing, because adding a
+                     setting to status.py did nothing until someone also wrote the
+                     matching markup. Add settings to the registry instead. -->
+                <div class="settings-grid" id="settingsGrid">
+                    <div style="text-align:center; color:var(--text-medium); font-style:italic; padding:20px;">
+                        Loading settings…
                     </div>
                 </div>
             </div>
@@ -1725,137 +1014,173 @@
                 .then(data => {
                     if (data.settings) {
                         userSettings = data.settings;
-                        updateSettingsUI();
+                        renderSettings();
                     }
                 })
                 .catch(error => {
                     console.error('Error loading user settings:', error);
+                    const grid = document.getElementById('settingsGrid');
+                    if (grid) {
+                        grid.innerHTML = '<div style="text-align:center; color:var(--text-medium); padding:20px;">' +
+                            'Could not load settings. Is she running?</div>';
+                    }
                 });
         }
 
-        function updateSettingsUI() {
-            for (const [settingName, config] of Object.entries(userSettings)) {
-                const slider = document.getElementById(settingName);
-                const valueDisplay = document.getElementById(settingName + '_value');
-                
-                if (slider && valueDisplay) {
-                    let displayValue = config.value;
-                    
-                    // Handle special formatting and conversions
-                    if (settingName === 'random_memory_recall_chance') {
-                        slider.value = config.value * 100; // Convert to percentage for slider
-                        displayValue = Math.round(config.value * 100) + '%';
-                    } else if (settingName === 'sex_llm_speech_chance') {
-                        slider.value = config.value * 100; // Convert to percentage for slider
-                        displayValue = Math.round(config.value * 100) + '%';
-                    } else if (settingName === 'neocortex_recall_interval') {
-                        slider.value = Math.round(config.value / (24 * 60 * 60)); // Convert seconds to days
-                        displayValue = Math.round(config.value / (24 * 60 * 60)) + 'd';
-                    } else if (settingName === 'primary_restoration_interval') {
-                        slider.value = Math.round(config.value / 60); // Convert seconds to minutes
-                        displayValue = Math.round(config.value / 60) + 'm';
-                    } else if (settingName === 'sleep_inertia_ramp_minutes') {
-                        slider.value = Math.round(config.value);
-                        displayValue = Math.round(config.value) + 'm';
-                    } else if (settingName === 'sleep_tired_perception_cooldown_minutes') {
-                        slider.value = Math.round(config.value);
-                        displayValue = Math.round(config.value) + 'm';
-                    } else if (settingName === 'sleep_offer_state_tools_window_minutes') {
-                        slider.value = Math.round(config.value);
-                        displayValue = Math.round(config.value) + 'm';
-                    } else if (settingName.includes('delay') && config.type === 'i') {
-                        slider.value = Math.round(config.value / 60); // Convert seconds to minutes for display
-                        displayValue = Math.round(config.value / 60) + 'm';
-                    } else if (config.type === 'f' && settingName.includes('seconds')) {
-                        displayValue = config.value + 's';
-                    } else if (settingName === 'sex_arousal_stagnation_timeout') {
-                        displayValue = config.value + 's';
-                    } else if (settingName.startsWith('sex_arousal_per_hit_')) {
-                        displayValue = config.value.toFixed(4); // Show 4 decimal places for sensitivity
+        // Scale between stored value and slider value. The registry carries a
+        // 'display' hint ({scale, unit}) so a setting stored in seconds can show
+        // minutes without any per-setting JavaScript.
+        function settingScale(config) {
+            return (config.display && config.display.scale) ? config.display.scale : 1;
+        }
+
+        function settingUnit(config) {
+            return (config.display && config.display.unit) ? config.display.unit : '';
+        }
+
+        function toSlider(config, stored) {
+            const s = settingScale(config);
+            if (s === 1) return stored;
+            const v = stored / s;
+            return (config.type === 'i' || s >= 60) ? Math.round(v) : v;
+        }
+
+        function toStored(config, slider) {
+            const s = settingScale(config);
+            const v = parseFloat(slider) * s;
+            return config.type === 'i' ? Math.round(v) : v;
+        }
+
+        function formatSetting(config, sliderValue) {
+            const unit = settingUnit(config);
+            let n = parseFloat(sliderValue);
+            // Sensitivity-style tiny floats need real precision to be readable.
+            if (config.type === 'f' && Math.abs(config.max) <= 0.5) {
+                return n.toFixed(4) + unit;
+            }
+            if (config.type === 'i' || settingScale(config) !== 1) {
+                return Math.round(n) + unit;
+            }
+            return n + unit;
+        }
+
+        // A sensible step: integers step by 1, floats get ~200 increments across
+        // their range, rounded to something human.
+        function settingStep(config) {
+            if (config.step) return config.step;
+            if (config.type === 'i') return 1;
+            const span = (config.max - config.min) / settingScale(config);
+            if (span <= 0) return 0.01;
+            const raw = span / 200;
+            const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+            return Math.max(mag, 0.0001);
+        }
+
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+
+        // Build the whole settings tab from the registry. Adding a setting to
+        // STATE.user_configurable_vars is now all that is required for it to
+        // appear here - no markup to hand-write, nothing to keep in sync.
+        function renderSettings() {
+            const grid = document.getElementById('settingsGrid');
+            if (!grid) return;
+
+            const groups = {};
+            const order = [];
+            for (const [name, config] of Object.entries(userSettings)) {
+                const g = config.group || 'Advanced Settings';
+                if (!groups[g]) { groups[g] = []; order.push(g); }
+                groups[g].push([name, config]);
+            }
+
+            let html = '';
+            for (const groupName of order) {
+                const icon = groups[groupName][0][1].group_icon || '\u{1F527}';
+                html += '<div class="setting-group">';
+                html += '<h3>' + icon + ' ' + escapeHtml(groupName) + '</h3>';
+                for (const [name, config] of groups[groupName]) {
+                    const help = escapeHtml(config.help || '');
+                    const desc = escapeHtml(config.desc || name);
+                    const unit = settingUnit(config);
+                    let defaultText = config.default;
+                    if (config.type === 'b') {
+                        defaultText = config.default ? 'on' : 'off';
+                    } else if (settingScale(config) !== 1) {
+                        defaultText = Math.round(config.default / settingScale(config)) + unit;
                     } else {
-                        slider.value = config.value;
+                        defaultText = String(config.default) + unit;
                     }
-                    
-                    valueDisplay.textContent = displayValue;
-                    
-                    // Add event listener for changes
-                    slider.onchange = function() {
-                        updateUserSetting(settingName, this.value);
+
+                    html += '<div class="setting-item">';
+                    html += '<label>' + desc + ':';
+                    if (help) {
+                        html += '<div class="tooltip"><span class="setting-help">?</span>' +
+                                '<span class="tooltiptext">' + help +
+                                '<span class="tooltip-default">Default: ' +
+                                escapeHtml(defaultText) + '</span></span></div>';
+                    }
+                    html += '</label>';
+
+                    if (config.type === 'b') {
+                        // Booleans get a real checkbox. The old hardcoded template
+                        // had no checkbox markup at all, which is why the first
+                        // boolean setting ever added was invisible.
+                        html += '<input type="checkbox" class="setting-toggle" id="' + name + '"' +
+                                (config.value ? ' checked' : '') + '>';
+                        html += '<span class="setting-value" id="' + name + '_value">' +
+                                (config.value ? 'On' : 'Off') + '</span>';
+                    } else {
+                        const min = config.min / settingScale(config);
+                        const max = config.max / settingScale(config);
+                        html += '<input type="range" class="setting-range" id="' + name + '"' +
+                                ' min="' + min + '" max="' + max + '"' +
+                                ' step="' + settingStep(config) + '"' +
+                                ' value="' + toSlider(config, config.value) + '">';
+                        html += '<span class="setting-value" id="' + name + '_value">' +
+                                formatSetting(config, toSlider(config, config.value)) +
+                                '</span>';
+                    }
+                    html += '</div>';
+                }
+                html += '</div>';
+            }
+            grid.innerHTML = html;
+            wireSettings();
+            setTimeout(setupTooltips, 100);
+        }
+
+        function wireSettings() {
+            for (const [name, config] of Object.entries(userSettings)) {
+                const el = document.getElementById(name);
+                if (!el) continue;
+                if (config.type === 'b') {
+                    el.onchange = function() {
+                        updateUserSetting(name, this.checked);
+                        const d = document.getElementById(name + '_value');
+                        if (d) d.textContent = this.checked ? 'On' : 'Off';
                     };
-                    
-                    slider.oninput = function() {
-                        updateSettingDisplay(settingName, this.value);
+                } else {
+                    el.onchange = function() {
+                        updateUserSetting(name, toStored(config, this.value));
+                    };
+                    el.oninput = function() {
+                        const d = document.getElementById(name + '_value');
+                        if (d) d.textContent = formatSetting(config, this.value);
                     };
                 }
             }
         }
 
-        function updateSettingDisplay(settingName, value) {
-            const valueDisplay = document.getElementById(settingName + '_value');
-            if (!valueDisplay) return;
-            
-            let displayValue = value;
-            
-            if (settingName === 'random_memory_recall_chance') {
-                displayValue = value + '%';
-            } else if (settingName === 'sex_llm_speech_chance') {
-                displayValue = value + '%';
-            } else if (settingName === 'neocortex_recall_interval') {
-                displayValue = value + 'd';
-            } else if (settingName === 'primary_restoration_interval') {
-                displayValue = value + 'm';
-            } else if (settingName === 'sleep_inertia_ramp_minutes') {
-                displayValue = value + 'm';
-            } else if (settingName === 'sleep_tired_perception_cooldown_minutes') {
-                displayValue = value + 'm';
-            } else if (settingName === 'sleep_offer_state_tools_window_minutes') {
-                displayValue = value + 'm';
-            } else if (settingName.includes('delay')) {
-                displayValue = value + 'm';
-            } else if (settingName.includes('seconds')) {
-                displayValue = value + 's';
-            } else if (settingName === 'sex_arousal_stagnation_timeout') {
-                displayValue = value + 's';
-            } else if (settingName.startsWith('sex_arousal_per_hit_')) {
-                displayValue = parseFloat(value).toFixed(4); // Show 4 decimal places for sensitivity
-            } else if (settingName === 'wernicke_mic_gain_db') {
-                displayValue = value + ' dB';
-            } else if (settingName === 'wernicke_webrtc_mode') {
-                displayValue = 'mode ' + value;
-            } else if (settingName === 'wernicke_webrtc_prob_window') {
-                displayValue = value + ' frm';
-            } else if (settingName === 'wernicke_triggered_continue_factor' || settingName === 'wernicke_cobra_trigger_prob' || settingName === 'wernicke_webrtc_trigger_prob') {
-                displayValue = parseFloat(value).toFixed(2);
-            } else if (settingName === 'wernicke_padding_blocks' || settingName === 'wernicke_triggered_block_limit' || settingName === 'wernicke_cobra_post_silence_blocks' || settingName === 'wernicke_webrtc_post_silence_blocks' || settingName === 'wernicke_pause_blocks_on_queue_full') {
-                displayValue = value + ' blk';
-            }
-            
-            valueDisplay.textContent = displayValue;
-        }
-
-        function updateUserSetting(settingName, value) {
-            // Convert display values back to actual values
-            let actualValue = value;
-            
-            if (settingName === 'random_memory_recall_chance') {
-                actualValue = parseFloat(value) / 100.0; // Convert percentage back to decimal
-            } else if (settingName === 'sex_llm_speech_chance') {
-                actualValue = parseFloat(value) / 100.0; // Convert percentage back to decimal
-            } else if (settingName === 'neocortex_recall_interval') {
-                actualValue = parseInt(value) * 24 * 60 * 60; // Convert days back to seconds
-            } else if (settingName === 'primary_restoration_interval') {
-                actualValue = parseFloat(value) * 60; // Convert minutes back to seconds
-            } else if (settingName.includes('delay') && settingName.includes('base')) {
-                actualValue = parseInt(value) * 60; // Convert minutes back to seconds
-            } else if (settingName.includes('delay') && settingName.includes('max')) {
-                actualValue = parseInt(value) * 60; // Convert minutes back to seconds
-            }
-            
+        function updateUserSetting(settingName, actualValue) {
             const requestData = {
                 value: actualValue,
                 token: authToken
             };
-            
+
             authenticatedFetch(`/api/user-settings/${settingName}`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -1866,6 +1191,9 @@
                 if (data.success) {
                     console.log(`✅ Updated ${settingName} to ${data.new_value}`);
                     showNotification(`Setting updated: ${settingName} = ${data.new_value}`, 'success');
+                    if (userSettings[settingName]) {
+                        userSettings[settingName].value = data.new_value;
+                    }
                 } else {
                     console.error(`❌ Failed to update ${settingName}:`, data.error);
                     showNotification(`Failed to update ${settingName}: ${data.error}`, 'error');
